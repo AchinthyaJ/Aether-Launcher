@@ -31,11 +31,33 @@ build_and_package() {
     echo "Packaging for $deb_arch..."
     local pkg_dir="$DEB_DIR/${APP_NAME}_${VERSION}_${deb_arch}"
     mkdir -p "$pkg_dir/usr/local/bin"
+    mkdir -p "$pkg_dir/usr/share/applications"
+    mkdir -p "$pkg_dir/usr/share/pixmaps"
     mkdir -p "$pkg_dir/DEBIAN"
 
     # Copy binary
     cp "$PUBLISH_DIR/$arch/AetherLauncher" "$pkg_dir/usr/local/bin/${APP_NAME}"
     chmod +x "$pkg_dir/usr/local/bin/${APP_NAME}"
+
+    # Copy icon
+    if [ -f "assets/aether-logo.png" ]; then
+        cp "assets/aether-logo.png" "$pkg_dir/usr/share/pixmaps/${APP_NAME}.png"
+    fi
+
+    # Create desktop entry
+    cat <<EOT > "$pkg_dir/usr/share/applications/${APP_NAME}.desktop"
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=${DISPLAY_NAME}
+Comment=${DESCRIPTION}
+Exec=${APP_NAME}
+Icon=${APP_NAME}
+Terminal=false
+Categories=Game;
+StartupWMClass=AetherLauncher
+EOT
+    chmod 644 "$pkg_dir/usr/share/applications/${APP_NAME}.desktop"
 
     # Create control file
     cat <<EOT > "$pkg_dir/DEBIAN/control"

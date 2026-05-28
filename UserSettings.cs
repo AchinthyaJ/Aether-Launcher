@@ -202,6 +202,7 @@ internal sealed class UserSettings
     public bool EnableFancyMenu { get; set; } = false;
     public bool OfflineMode { get; set; } = true;
     public string ClientLayout { get; set; } = string.Empty; // Legacy — kept for migration only
+    public string ThemeVariant { get; set; } = "dark";
     public string AccentColor { get; set; } = "#6E5BFF";
     public LayoutStyle Style { get; set; } = new();
     public List<string> SectionOrder { get; set; } = ["Hero", "Stats", "Actions"];
@@ -218,6 +219,7 @@ internal sealed class UserSettings
     public int WindowHeight { get; set; } = 480;
     public bool PerformanceMode { get; set; } = false;
     public bool IsFirstRun { get; set; } = true;
+    public string AfterLaunchBehavior { get; set; } = "close"; // "close" | "minimize" | "background"
 
     /// <summary>
     /// Migrates legacy ClientLayout semicolon-tokens into the new Style object.
