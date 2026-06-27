@@ -12,11 +12,22 @@ internal static class LauncherLog
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".death-client");
     private static readonly string LogDirectory = Path.Combine(BaseDirectory, "logs");
-    private static readonly string LogPath = Path.Combine(LogDirectory, "launcher.log");
+    private static readonly string LogPath = Path.Combine(LogDirectory, "latest.log");
+    private static readonly string PreviousLogPath = Path.Combine(LogDirectory, "previous.log");
 
     static LauncherLog()
     {
         Directory.CreateDirectory(LogDirectory);
+        // Rotate: move current latest.log to previous.log on startup
+        try
+        {
+            if (File.Exists(LogPath))
+            {
+                File.Copy(LogPath, PreviousLogPath, overwrite: true);
+                File.Delete(LogPath);
+            }
+        }
+        catch { /* Rotation must never crash the launcher */ }
     }
 
     public static void Info(string message) => Write("INFO", message, null);

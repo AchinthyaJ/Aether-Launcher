@@ -31,7 +31,18 @@ internal sealed class ModrinthClient : IDisposable
             facets.Add(new List<string> { $"versions:{gameVersion.Trim()}" });
 
         if (!string.IsNullOrWhiteSpace(loader) && !string.Equals(loader, "vanilla", StringComparison.OrdinalIgnoreCase))
-            facets.Add(new List<string> { $"categories:{loader.Trim().ToLowerInvariant()}" });
+        {
+            var l = loader.Trim().ToLowerInvariant();
+            if (l == "paper" || l == "spigot" || l == "purpur" || l == "bukkit")
+            {
+                // Support searching across all common plugin categories so we don't miss plugins tagged only as spigot or bukkit
+                facets.Add(new List<string> { "categories:spigot", "categories:paper", "categories:purpur", "categories:bukkit" });
+            }
+            else
+            {
+                facets.Add(new List<string> { $"categories:{l}" });
+            }
+        }
 
         var encodedFacets = Uri.EscapeDataString(JsonSerializer.Serialize(facets));
         var encodedQuery = Uri.EscapeDataString(query.Trim());
@@ -64,7 +75,17 @@ internal sealed class ModrinthClient : IDisposable
             query.Add($"game_versions={Uri.EscapeDataString(JsonSerializer.Serialize(new[] { gameVersion.Trim() }))}");
 
         if (!string.IsNullOrWhiteSpace(loader) && !string.Equals(loader, "vanilla", StringComparison.OrdinalIgnoreCase))
-            query.Add($"loaders={Uri.EscapeDataString(JsonSerializer.Serialize(new[] { loader.Trim().ToLowerInvariant() }))}");
+        {
+            var l = loader.Trim().ToLowerInvariant();
+            if (l == "paper" || l == "spigot" || l == "purpur" || l == "bukkit")
+            {
+                query.Add($"loaders={Uri.EscapeDataString(JsonSerializer.Serialize(new[] { "spigot", "paper", "purpur", "bukkit" }))}");
+            }
+            else
+            {
+                query.Add($"loaders={Uri.EscapeDataString(JsonSerializer.Serialize(new[] { l }))}");
+            }
+        }
 
         var suffix = query.Count == 0 ? string.Empty : $"?{string.Join("&", query)}";
         var response = await _httpClient.GetAsync($"project/{Uri.EscapeDataString(projectIdOrSlug)}/version{suffix}", cancellationToken);
@@ -72,7 +93,32 @@ internal sealed class ModrinthClient : IDisposable
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         var payload = await JsonSerializer.DeserializeAsync<List<ModrinthProjectVersion>>(stream, _jsonOptions, cancellationToken);
-        return payload ?? [];
+        if (payload == null) return [];
+
+        var list = payload;
+
+        // Perform strict client-side filtering as a bulletproof safeguard against API parameter variations
+        if (!string.IsNullOrWhiteSpace(gameVersion))
+        {
+            var gv = gameVersion.Trim();
+            list = list.Where(v => v.GameVersions.Contains(gv, StringComparer.OrdinalIgnoreCase)).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(loader) && !string.Equals(loader, "vanilla", StringComparison.OrdinalIgnoreCase))
+        {
+            var l = loader.Trim().ToLowerInvariant();
+            if (l == "paper" || l == "spigot" || l == "purpur" || l == "bukkit")
+            {
+                var pluginLoaders = new[] { "spigot", "paper", "purpur", "bukkit" };
+                list = list.Where(v => v.Loaders.Any(vl => pluginLoaders.Contains(vl.ToLowerInvariant()))).ToList();
+            }
+            else
+            {
+                list = list.Where(v => v.Loaders.Any(vl => string.Equals(vl, l, StringComparison.OrdinalIgnoreCase))).ToList();
+            }
+        }
+
+        return list;
     }
 
     public async Task DownloadFileAsync(string url, string destinationPath, IProgress<(long BytesRead, long? TotalBytes)>? progress, CancellationToken cancellationToken)

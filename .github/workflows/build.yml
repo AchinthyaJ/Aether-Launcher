@@ -1,0 +1,48 @@
+name: Build Aether Launcher
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # Inject the secret Worker URL into .env before build
+      # DISCOVERY_API_URL is stored as a GitHub repo secret — never in source
+      - name: Inject discovery API URL
+        run: |
+          echo "DISCOVERY_API_URL=${{ secrets.DISCOVERY_API_URL }}" > .env
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build (Linux)
+        run: dotnet publish -c Release -r linux-x64 --self-contained true -o dist/linux-x64
+
+      - name: Build (Windows)
+        run: dotnet publish -c Release -r win-x64 --self-contained true -o dist/windows-x64
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-launcher-linux
+          path: dist/linux-x64/
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-launcher-windows
+          path: dist/windows-x64/

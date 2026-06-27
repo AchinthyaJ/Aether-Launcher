@@ -3,7 +3,214 @@
              x:Class="OfflineMinecraftLauncher.App"
              RequestedThemeVariant="Dark">
 
-<Application.Styles>
-    <FluentTheme/>
-</Application.Styles>
+    <Application.Styles>
+        <FluentTheme/>
+
+        <!-- Default Font Family -->
+        <Style Selector="TextBlock">
+            <Setter Property="FontFamily" Value="SF Pro, Inter, Segoe UI, system-ui, sans-serif"/>
+        </Style>
+        <Style Selector="TemplatedControl">
+            <Setter Property="FontFamily" Value="SF Pro, Inter, Segoe UI, system-ui, sans-serif"/>
+        </Style>
+
+        <!-- Global Sick Button Styles & Animations -->
+        <Style Selector="Button">
+            <Setter Property="Background" Value="#1A1F2C"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#4C6E5BFF"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="14 10"/>
+            <Setter Property="RenderTransform" Value="scale(1.0) rotate(0deg) translate(0px, 0px)"/>
+            <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.3" Easing="BackEaseOut"/>
+                    <BrushTransition Property="Background" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+                    <BrushTransition Property="Foreground" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border x:Name="ButtonBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Padding="{TemplateBinding Padding}"
+                            BoxShadow="0 0 0 0 Transparent"
+                            Transitions="{TemplateBinding Transitions}">
+                        <ContentPresenter x:Name="PART_ContentPresenter"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          RecognizesAccessKey="True" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+
+        <!-- Override Fluent theme default triggers to prevent rectangular backgrounds on hover/press -->
+        <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+
+        <!-- Button Hover (PointerOver) State: Scale up, tilt slightly, lift up, and add dual-color neon glow -->
+        <Style Selector="Button:pointerover">
+            <Setter Property="RenderTransform" Value="scale(1.07) rotate(1.5deg) translate(0px, -3px)"/>
+        </Style>
+        <Style Selector="Button:pointerover /template/ Border#ButtonBorder">
+            <Setter Property="BoxShadow" Value="0 8 20 0 #4C00F2FE, 0 2 8 0 #4C6E5BFF"/>
+            <Setter Property="BorderBrush" Value="#00F2FE"/>
+        </Style>
+
+        <!-- Button Pressed State: scale down, counter-rotate, and decrease glow for click feedback -->
+        <Style Selector="Button:pressed">
+            <Setter Property="RenderTransform" Value="scale(0.92) rotate(-1.5deg) translate(0px, 1px)"/>
+        </Style>
+        <Style Selector="Button:pressed /template/ Border#ButtonBorder">
+            <Setter Property="BoxShadow" Value="0 2 6 0 #2C00F2FE"/>
+            <Setter Property="Background" Value="#252538"/>
+        </Style>
+
+        <!-- Global Sleek TextBox Styles -->
+        <Style Selector="TextBox">
+            <Setter Property="RenderTransform" Value="scale(1.0)"/>
+            <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="TextBox:pointerover">
+            <Setter Property="RenderTransform" Value="scale(1.02)"/>
+        </Style>
+        <Style Selector="TextBox:focus">
+            <Setter Property="RenderTransform" Value="scale(1.03)"/>
+        </Style>
+        
+        <Style Selector="TextBox /template/ Border">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+                    <BoxShadowsTransition Property="BoxShadow" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="TextBox:pointerover /template/ Border">
+            <Setter Property="BorderBrush" Value="#6E5BFF"/>
+            <Setter Property="BoxShadow" Value="0 0 10 1 #336E5BFF"/>
+        </Style>
+        <Style Selector="TextBox:focus /template/ Border">
+            <Setter Property="BorderBrush" Value="#00F2FE"/>
+            <Setter Property="BoxShadow" Value="0 0 15 2 #5500F2FE"/>
+        </Style>
+
+        <!-- Global ComboBox Styles -->
+        <Style Selector="ComboBox">
+            <Setter Property="RenderTransform" Value="scale(1.0)"/>
+            <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="ComboBox:pointerover">
+            <Setter Property="RenderTransform" Value="scale(1.02)"/>
+        </Style>
+        <Style Selector="ComboBox /template/ Border">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+                    <BoxShadowsTransition Property="BoxShadow" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="ComboBox:pointerover /template/ Border">
+            <Setter Property="BorderBrush" Value="#6E5BFF"/>
+            <Setter Property="BoxShadow" Value="0 0 10 1 #336E5BFF"/>
+        </Style>
+        <Style Selector="ComboBox:dropdownopen /template/ Border">
+            <Setter Property="BorderBrush" Value="#00F2FE"/>
+            <Setter Property="BoxShadow" Value="0 0 15 2 #5500F2FE"/>
+        </Style>
+
+        <!-- ListBoxItem (Account list, Profiles list, Worlds list, Mods list) Hoverstates -->
+        <Style Selector="ListBoxItem">
+            <Setter Property="RenderTransform" Value="scale(1.0) translate(0px, 0px)"/>
+            <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.3" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="ListBoxItem:pointerover">
+            <Setter Property="RenderTransform" Value="scale(1.03) translate(8px, 0px)"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected">
+            <Setter Property="RenderTransform" Value="scale(1.04) translate(10px, 0px)"/>
+        </Style>
+        
+        <Style Selector="ListBoxItem /template/ Border">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+                    <BoxShadowsTransition Property="BoxShadow" Duration="0:0:0.3" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="ListBoxItem:pointerover /template/ Border">
+            <Setter Property="Background" Value="#221E3F"/>
+            <Setter Property="BorderBrush" Value="#6E5BFF"/>
+            <Setter Property="BoxShadow" Value="0 4 12 0 #336E5BFF"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ Border">
+            <Setter Property="Background" Value="#2D2B55"/>
+            <Setter Property="BorderBrush" Value="#00F2FE"/>
+            <Setter Property="BoxShadow" Value="0 6 16 0 #4C00F2FE"/>
+        </Style>
+
+        <!-- CheckBox & ToggleSwitch Hoverstates -->
+        <Style Selector="CheckBox">
+            <Setter Property="RenderTransform" Value="scale(1.0)"/>
+            <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="CheckBox:pointerover">
+            <Setter Property="RenderTransform" Value="scale(1.05)"/>
+        </Style>
+
+        <Style Selector="ToggleSwitch">
+            <Setter Property="RenderTransform" Value="scale(1.0)"/>
+            <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="ToggleSwitch:pointerover">
+            <Setter Property="RenderTransform" Value="scale(1.04)"/>
+        </Style>
+    </Application.Styles>
 </Application>

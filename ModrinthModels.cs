@@ -46,6 +46,12 @@ internal sealed class ModrinthProject
     [JsonPropertyName("categories")]
     public List<string> Categories { get; set; } = [];
 
+    [JsonPropertyName("client_side")]
+    public string? ClientSide { get; set; }
+
+    [JsonPropertyName("server_side")]
+    public string? ServerSide { get; set; }
+
     [JsonIgnore]
     public bool IsCurseForge { get; set; }
 

@@ -1,0 +1,30 @@
+<linker>
+  <!-- Keep all Avalonia assemblies untrimmed — it uses reflection heavily for XAML binding -->
+  <assembly fullname="Avalonia" preserve="all" />
+  <assembly fullname="Avalonia.Base" preserve="all" />
+  <assembly fullname="Avalonia.Controls" preserve="all" />
+  <assembly fullname="Avalonia.Desktop" preserve="all" />
+  <assembly fullname="Avalonia.Themes.Fluent" preserve="all" />
+  <assembly fullname="Avalonia.Markup.Xaml" preserve="all" />
+  <assembly fullname="Avalonia.Markup.Xaml.Loader" preserve="all" />
+  <assembly fullname="Avalonia.Skia" preserve="all" />
+  <assembly fullname="Avalonia.Native" preserve="all" />
+  <assembly fullname="Avalonia.Win32" preserve="all" />
+  <assembly fullname="Avalonia.X11" preserve="all" />
+
+
+  <!-- Keep CmlLib untrimmed — uses reflection for version/loader resolution -->
+  <assembly fullname="CmlLib.Core" preserve="all" />
+
+  <!-- Keep the launcher itself untrimmed -->
+  <assembly fullname="AetherLauncher" preserve="all" />
+
+  <!-- Keep System.Text.Json for discovery client serialization -->
+  <assembly fullname="System.Text.Json" preserve="all" />
+
+  <!-- Keep other critical dependencies untrimmed -->
+  <assembly fullname="System.Resources.Extensions" preserve="all" />
+  <assembly fullname="SixLabors.ImageSharp" preserve="all" />
+  <assembly fullname="System.Net.Http" preserve="all" />
+</linker>
+

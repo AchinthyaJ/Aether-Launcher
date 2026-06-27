@@ -26,7 +26,18 @@ internal sealed class CurseForgeClient : IDisposable
     public async Task<IReadOnlyList<ModrinthProject>> SearchModsAsync(string query, string? gameVersion, string? loader, CancellationToken cancellationToken)
     {
         var gameId = "432"; // Minecraft
-        var classId = "6"; // Mods
+        var classId = "6"; // Mods by default
+        
+        var isPlugin = false;
+        if (!string.IsNullOrWhiteSpace(loader))
+        {
+            var l = loader.ToLowerInvariant();
+            if (l == "paper" || l == "spigot" || l == "purpur" || l == "bukkit")
+            {
+                classId = "5"; // Bukkit Plugins
+                isPlugin = true;
+            }
+        }
         
         var queryParams = new List<string>
         {
@@ -39,9 +50,9 @@ internal sealed class CurseForgeClient : IDisposable
         if (!string.IsNullOrWhiteSpace(gameVersion))
             queryParams.Add($"gameVersion={Uri.EscapeDataString(gameVersion.Trim())}");
 
-        // Map loaders to CurseForge modLoaderType
+        // Map loaders to CurseForge modLoaderType (only for mods, not plugins)
         // 1 = Forge, 4 = Fabric, 5 = Quilt, 6 = NeoForge
-        if (!string.IsNullOrWhiteSpace(loader))
+        if (!isPlugin && !string.IsNullOrWhiteSpace(loader))
         {
             var l = loader.ToLowerInvariant();
             if (l.Contains("forge") && !l.Contains("neo")) queryParams.Add("modLoaderType=1");
@@ -84,26 +95,37 @@ internal sealed class CurseForgeClient : IDisposable
 
     public async Task<IReadOnlyList<CurseForgeFile>> GetProjectVersionsAsync(string projectId, string? gameVersion, string? loader, CancellationToken cancellationToken)
     {
-        var queryParams = new List<string>();
-        if (!string.IsNullOrWhiteSpace(gameVersion))
-            queryParams.Add($"gameVersion={Uri.EscapeDataString(gameVersion.Trim())}");
-
-        if (!string.IsNullOrWhiteSpace(loader))
-        {
-            var l = loader.ToLowerInvariant();
-            if (l.Contains("forge") && !l.Contains("neo")) queryParams.Add("modLoaderType=1");
-            else if (l.Contains("fabric")) queryParams.Add("modLoaderType=4");
-            else if (l.Contains("quilt")) queryParams.Add("modLoaderType=5");
-            else if (l.Contains("neoforge")) queryParams.Add("modLoaderType=6");
-        }
-
-        var suffix = queryParams.Count == 0 ? string.Empty : $"?{string.Join("&", queryParams)}";
-        var response = await _httpClient.GetAsync($"mods/{projectId}/files{suffix}", cancellationToken);
+        var response = await _httpClient.GetAsync($"mods/{projectId}/files", cancellationToken);
         if (!response.IsSuccessStatusCode) return [];
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         var payload = await JsonSerializer.DeserializeAsync<CurseForgeFilesResponse>(stream, _jsonOptions, cancellationToken);
-        return payload?.Data ?? [];
+        if (payload == null || payload.Data == null) return [];
+
+        var files = payload.Data;
+
+        if (!string.IsNullOrWhiteSpace(gameVersion))
+        {
+            var gv = gameVersion.Trim();
+            files = files.Where(f => f.GameVersions.Contains(gv, StringComparer.OrdinalIgnoreCase)).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(loader))
+        {
+            var l = loader.Trim().ToLowerInvariant();
+            string curseForgeLoaderTag = "";
+            if (l.Contains("forge") && !l.Contains("neo")) curseForgeLoaderTag = "Forge";
+            else if (l.Contains("fabric")) curseForgeLoaderTag = "Fabric";
+            else if (l.Contains("quilt")) curseForgeLoaderTag = "Quilt";
+            else if (l.Contains("neoforge")) curseForgeLoaderTag = "NeoForge";
+
+            if (!string.IsNullOrEmpty(curseForgeLoaderTag))
+            {
+                files = files.Where(f => f.GameVersions.Contains(curseForgeLoaderTag, StringComparer.OrdinalIgnoreCase)).ToList();
+            }
+        }
+
+        return files;
     }
 
     public async Task DownloadFileAsync(string url, string destinationPath, IProgress<(long BytesRead, long? TotalBytes)>? progress, CancellationToken cancellationToken)

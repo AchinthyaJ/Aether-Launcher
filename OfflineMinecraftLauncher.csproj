@@ -16,6 +16,7 @@
   <SelfContained>true</SelfContained>
   <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
   <InvariantGlobalization>true</InvariantGlobalization>
+  <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
 </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.0" />
@@ -24,16 +25,23 @@
     <PackageReference Include="Avalonia.Markup.Xaml.Loader" Version="11.3.0" />
     <PackageReference Include="CmlLib.Core" Version="4.0.5" />
     <PackageReference Include="System.Resources.Extensions" Version="9.0.10" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <TrimmerRootDescriptor Include="TrimmerRoots.xml" />
   </ItemGroup>
   <ItemGroup>
     <AvaloniaResource Include="assets\**" />
-    <None Include="death-client\ui-layout-format.axaml.runtime">
+    <None Include="death-client\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="node-skin-server\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="assets\video-background-frames\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include=".env" Condition="Exists('.env')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

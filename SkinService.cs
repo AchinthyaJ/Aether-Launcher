@@ -88,6 +88,18 @@ public class SkinService
         {
             var destCape = Path.Combine(capesTarget, capeFileName);
             File.Copy(capePath, destCape, true);
+            
+            var sourceMcmeta = capePath + ".mcmeta";
+            var destMcmeta = Path.Combine(capesTarget, capeFileName + ".mcmeta");
+            if (File.Exists(sourceMcmeta))
+            {
+                File.Copy(sourceMcmeta, destMcmeta, true);
+            }
+            else if (File.Exists(destMcmeta))
+            {
+                File.Delete(destMcmeta);
+            }
+
             capeEnabled = true;
         }
 
@@ -106,7 +118,7 @@ public class SkinService
     public void PublishToNodeServerStorage(string? skinPath, string? capePath)
     {
         PublishAsset(skinPath, Path.Combine(_serverStorageDir, "current-skin.png"));
-        PublishAsset(capePath, Path.Combine(_serverStorageDir, "current-cape.png"));
+        PublishAssetWithMcmeta(capePath, Path.Combine(_serverStorageDir, "current-cape.png"));
     }
 
     private static void PublishAsset(string? sourcePath, string destinationPath)
@@ -119,5 +131,20 @@ public class SkinService
 
         if (File.Exists(destinationPath))
             File.Delete(destinationPath);
+    }
+
+    private static void PublishAssetWithMcmeta(string? sourcePath, string destinationPath)
+    {
+        PublishAsset(sourcePath, destinationPath);
+
+        var destinationMcmeta = destinationPath + ".mcmeta";
+        if (!string.IsNullOrWhiteSpace(sourcePath) && File.Exists(sourcePath) && File.Exists(sourcePath + ".mcmeta"))
+        {
+            File.Copy(sourcePath + ".mcmeta", destinationMcmeta, true);
+        }
+        else if (File.Exists(destinationMcmeta))
+        {
+            File.Delete(destinationMcmeta);
+        }
     }
 }

@@ -27,10 +27,99 @@ internal sealed class NodeSkinServerManager : IDisposable
 
     public Uri ServerBaseUri => BaseUri;
 
+    private static async Task<bool> IsPortOccupiedAsync(int port)
+    {
+        try
+        {
+            using var tcp = new System.Net.Sockets.TcpClient();
+            var connectTask = tcp.ConnectAsync("127.0.0.1", port);
+            var completedTask = await Task.WhenAny(connectTask, Task.Delay(200));
+            if (completedTask == connectTask)
+            {
+                await connectTask;
+                return true;
+            }
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        if (await IsHealthyAsync(cancellationToken))
-            return;
+        var portOccupied = await IsPortOccupiedAsync(47135);
+        if (portOccupied)
+        {
+            LauncherLog.Info("Skin server port 47135 is occupied. Attempting to shutdown old instance...");
+            try
+            {
+                using var response = await HttpClient.PostAsync(new Uri(BaseUri, "shutdown"), null, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                LauncherLog.Warn($"Failed to send shutdown command to old skin server instance: {ex.Message}");
+            }
+
+            for (int i = 0; i < 15; i++)
+            {
+                await Task.Delay(100, cancellationToken);
+                if (!await IsPortOccupiedAsync(47135))
+                {
+                    portOccupied = false;
+                    break;
+                }
+            }
+
+            if (portOccupied)
+            {
+                LauncherLog.Warn("Port 47135 is still occupied. Force-killing process on port 47135...");
+                try
+                {
+                    if (OperatingSystem.IsWindows())
+                    {
+                        // Windows: use netstat to find PID on port, then taskkill
+                        var findPidInfo = new ProcessStartInfo
+                        {
+                            FileName = "cmd.exe",
+                            Arguments = "/c \"for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :47135 ^| findstr LISTENING') do taskkill /F /PID %a\"",
+                            UseShellExecute = false,
+                            CreateNoWindow = true,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true
+                        };
+                        using var killProc = Process.Start(findPidInfo);
+                        if (killProc != null)
+                        {
+                            await killProc.WaitForExitAsync(cancellationToken);
+                        }
+                    }
+                    else
+                    {
+                        // Linux/macOS: use fuser
+                        var killInfo = new ProcessStartInfo
+                        {
+                            FileName = "fuser",
+                            Arguments = "-k 47135/tcp",
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        using var killProc = Process.Start(killInfo);
+                        if (killProc != null)
+                        {
+                            await killProc.WaitForExitAsync(cancellationToken);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LauncherLog.Error($"Failed to force-kill process on port 47135: {ex.Message}");
+                }
+                
+                await Task.Delay(500, cancellationToken);
+            }
+        }
 
         if (_process is { HasExited: false })
             return;

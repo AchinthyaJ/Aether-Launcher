@@ -1,5 +1,6 @@
 using Avalonia;
 using System;
+using System.Threading.Tasks;
 
 namespace OfflineMinecraftLauncher;
 
@@ -22,6 +23,13 @@ internal static class Program
             eventArgs.SetObserved();
         };
 
+        // Apply Windows-specific optimizations before Avalonia startup
+        if (OperatingSystem.IsWindows())
+        {
+            try { Platform.Windows.WindowsOptimizations.Apply(); }
+            catch { /* Non-critical — continue startup */ }
+        }
+
         BuildAvaloniaApp()
             .StartWithClassicDesktopLifetime(args);
     }
@@ -29,7 +37,6 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp()
     {
         return AppBuilder.Configure<App>()
-            .UsePlatformDetect()
-            .LogToTrace();
+            .UsePlatformDetect();
     }
 }

@@ -12,6 +12,10 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using CmlLib.Core;
+using Avalonia.Animation;
+using Avalonia.Animation.Easings;
+using Avalonia.Media.Transformation;
+using Avalonia.Controls.Primitives;
 
 namespace OfflineMinecraftLauncher;
 
@@ -120,7 +124,7 @@ public sealed class FirstRunAccountWindow : Window
             CornerRadius = new CornerRadius(14),
             Padding = new Thickness(16, 14),
             FontSize = 14,
-            FontFamily = new FontFamily("Inter, Segoe UI")
+            FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
         };
 
         // Set initial username if applicable
@@ -152,26 +156,16 @@ public sealed class FirstRunAccountWindow : Window
             Height = 50,
             FontSize = 15,
             FontWeight = FontWeight.Bold,
-            FontFamily = new FontFamily("Inter, Segoe UI")
+            FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
         };
         _submitButton.Click += async (_, _) => await SubmitAsync();
 
-        // Hover effect for submit button
-        _submitButton.PointerEntered += (s, e) =>
-        {
-            _submitButton.BorderBrush = new SolidColorBrush(Color.Parse("#FFFFFF"));
-            _submitButton.BorderThickness = new Thickness(1);
-        };
-        _submitButton.PointerExited += (s, e) =>
-        {
-            _submitButton.BorderBrush = null;
-            _submitButton.BorderThickness = new Thickness(0);
-        };
+        ApplyHoverMotion(_submitButton);
 
         // Segmented Control Tab Buttons
         _offlineTabBtn = new Button
         {
-            Content = "Offline Mode",
+            Content = "Offline Account",
             CornerRadius = new CornerRadius(20),
             BorderThickness = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -180,13 +174,14 @@ public sealed class FirstRunAccountWindow : Window
             VerticalContentAlignment = VerticalAlignment.Center,
             FontWeight = FontWeight.SemiBold,
             FontSize = 13,
-            FontFamily = new FontFamily("Inter, Segoe UI")
+            FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
         };
         _offlineTabBtn.Click += (_, _) =>
         {
             _mode = AccountMode.Offline;
             SyncModeUi();
         };
+        ApplyHoverMotion(_offlineTabBtn);
 
         _microsoftTabBtn = new Button
         {
@@ -199,13 +194,14 @@ public sealed class FirstRunAccountWindow : Window
             VerticalContentAlignment = VerticalAlignment.Center,
             FontWeight = FontWeight.SemiBold,
             FontSize = 13,
-            FontFamily = new FontFamily("Inter, Segoe UI")
+            FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
         };
         _microsoftTabBtn.Click += (_, _) =>
         {
             _mode = AccountMode.Microsoft;
             SyncModeUi();
         };
+        ApplyHoverMotion(_microsoftTabBtn);
 
         // ----------------- LEFT PANEL CONTENT -----------------
         
@@ -243,7 +239,7 @@ public sealed class FirstRunAccountWindow : Window
             {
                 Width = 60,
                 Height = 60,
-                Source = new Bitmap(AssetLoader.Open(new Uri("avares://AetherLauncher/assets/deathclient-taskbar.png"))),
+                Source = new Bitmap(AssetLoader.Open(new Uri((Application.Current?.ActualThemeVariant == Avalonia.Styling.ThemeVariant.Light) ? "avares://AetherLauncher/assets/deathclient-taskbar-light.png" : "avares://AetherLauncher/assets/deathclient-taskbar.png"))),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             }
@@ -256,7 +252,7 @@ public sealed class FirstRunAccountWindow : Window
             FontSize = 22,
             FontWeight = FontWeight.ExtraBold,
             Foreground = Brushes.White,
-            FontFamily = new FontFamily("Inter, Segoe UI")
+            FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
         };
 
         var brandSubtitle = new TextBlock
@@ -265,7 +261,7 @@ public sealed class FirstRunAccountWindow : Window
             FontSize = 9,
             FontWeight = FontWeight.Black,
             Foreground = new SolidColorBrush(Color.Parse("#72C8FF")),
-            FontFamily = new FontFamily("Inter, Segoe UI")
+            FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
         };
 
         var brandHeader = new StackPanel
@@ -308,7 +304,7 @@ public sealed class FirstRunAccountWindow : Window
             FontSize = 26,
             FontWeight = FontWeight.Bold,
             Foreground = Brushes.White,
-            FontFamily = new FontFamily("Inter, Segoe UI")
+            FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
         };
 
         var welcomeSub = new TextBlock
@@ -317,7 +313,7 @@ public sealed class FirstRunAccountWindow : Window
             FontSize = 13,
             Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
             Margin = new Thickness(0, 4, 0, 20),
-            FontFamily = new FontFamily("Inter, Segoe UI")
+            FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
         };
 
         // Pill segmented tab selector container
@@ -355,7 +351,7 @@ public sealed class FirstRunAccountWindow : Window
                     FontSize = 12,
                     FontWeight = FontWeight.SemiBold,
                     Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
-                    FontFamily = new FontFamily("Inter, Segoe UI")
+                    FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
                 },
                 _usernameInput,
                 new TextBlock
@@ -364,7 +360,7 @@ public sealed class FirstRunAccountWindow : Window
                     FontSize = 11,
                     Foreground = new SolidColorBrush(Color.Parse("#64748B")),
                     TextWrapping = TextWrapping.Wrap,
-                    FontFamily = new FontFamily("Inter, Segoe UI")
+                    FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
                 }
             }
         };
@@ -425,7 +421,7 @@ public sealed class FirstRunAccountWindow : Window
                                         FontSize = 13,
                                         FontWeight = FontWeight.Bold,
                                         Foreground = Brushes.White,
-                                        FontFamily = new FontFamily("Inter, Segoe UI")
+                                        FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
                                     },
                                     new TextBlock
                                     {
@@ -433,7 +429,7 @@ public sealed class FirstRunAccountWindow : Window
                                         FontSize = 11,
                                         Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
                                         TextWrapping = TextWrapping.Wrap,
-                                        FontFamily = new FontFamily("Inter, Segoe UI")
+                                        FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
                                     }
                                 }
                             }
@@ -446,7 +442,7 @@ public sealed class FirstRunAccountWindow : Window
                     FontSize = 11,
                     Foreground = new SolidColorBrush(Color.Parse("#64748B")),
                     TextWrapping = TextWrapping.Wrap,
-                    FontFamily = new FontFamily("Inter, Segoe UI")
+                    FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
                 }
             }
         };
@@ -467,8 +463,7 @@ public sealed class FirstRunAccountWindow : Window
             FontWeight = FontWeight.Bold,
             Padding = new Thickness(0)
         };
-        minBtn.PointerEntered += (s, e) => { minBtn.Background = new SolidColorBrush(Color.FromArgb(60, 245, 158, 11)); minBtn.Foreground = Brushes.White; };
-        minBtn.PointerExited += (s, e) => { minBtn.Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)); minBtn.Foreground = new SolidColorBrush(Color.Parse("#94A3B8")); };
+        ApplyHoverMotion(minBtn);
         minBtn.Click += (_, _) => WindowState = WindowState.Minimized;
 
         var closeBtn = new Button
@@ -486,8 +481,7 @@ public sealed class FirstRunAccountWindow : Window
             FontWeight = FontWeight.Bold,
             Padding = new Thickness(0)
         };
-        closeBtn.PointerEntered += (s, e) => { closeBtn.Background = new SolidColorBrush(Color.Parse("#EF4444")); closeBtn.Foreground = Brushes.White; };
-        closeBtn.PointerExited += (s, e) => { closeBtn.Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)); closeBtn.Foreground = new SolidColorBrush(Color.Parse("#94A3B8")); };
+        ApplyHoverMotion(closeBtn);
         closeBtn.Click += (_, _) => Close();
 
         var titleBarControls = new StackPanel
@@ -659,7 +653,7 @@ public sealed class FirstRunAccountWindow : Window
                 FontWeight = FontWeight.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
-                FontFamily = new FontFamily("Inter, Segoe UI")
+                FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
             }
         };
 
@@ -670,7 +664,7 @@ public sealed class FirstRunAccountWindow : Window
             FontSize = 13,
             FontWeight = FontWeight.Medium,
             VerticalAlignment = VerticalAlignment.Center,
-            FontFamily = new FontFamily("Inter, Segoe UI")
+            FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
         };
 
         return new StackPanel
@@ -803,5 +797,92 @@ public sealed class FirstRunAccountWindow : Window
         // Fallback
         new MainWindow().Show();
         Close();
+    }
+    private void ApplyHoverMotion(Control? control)
+    {
+        if (control == null) return;
+        control.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+        
+        var transitions = new Transitions
+        {
+            new DoubleTransition { Property = Control.OpacityProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) },
+            new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Easing = new BackEaseOut(), Duration = TimeSpan.FromMilliseconds(300) }
+        };
+
+        if (control is TemplatedControl)
+        {
+            transitions.Add(new BrushTransition { Property = TemplatedControl.BackgroundProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) });
+            transitions.Add(new BrushTransition { Property = TemplatedControl.ForegroundProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) });
+            transitions.Add(new BrushTransition { Property = TemplatedControl.BorderBrushProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) });
+        }
+        else if (control is Border)
+        {
+            transitions.Add(new BrushTransition { Property = Border.BackgroundProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) });
+            transitions.Add(new BrushTransition { Property = Border.BorderBrushProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) });
+            transitions.Add(new BoxShadowsTransition { Property = Border.BoxShadowProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) });
+        }
+
+        control.Transitions = transitions;
+        
+        IBrush? originalBg = null;
+        IBrush? originalFg = null;
+        IBrush? originalBorder = null;
+        Thickness originalBorderThickness = new Thickness(0);
+        bool captured = false;
+        
+        control.PointerEntered += (s, e) =>
+        {
+            control.Opacity = 0.95;
+            control.RenderTransform = TransformOperations.Parse("scale(1.07) rotate(1.5deg) translate(0px, -3px)");
+            
+            if (control is Button btn)
+            {
+                if (!captured)
+                {
+                    originalBg = btn.Background;
+                    originalFg = btn.Foreground;
+                    originalBorder = btn.BorderBrush;
+                    originalBorderThickness = btn.BorderThickness;
+                    captured = true;
+                }
+                
+                if (btn == _submitButton)
+                {
+                    btn.BorderBrush = new SolidColorBrush(Color.Parse("#FFFFFF"));
+                    btn.BorderThickness = new Thickness(1.5);
+                }
+                else if (btn.Content?.ToString() == "−")
+                {
+                    btn.Background = new SolidColorBrush(Color.FromArgb(60, 245, 158, 11));
+                    btn.Foreground = Brushes.White;
+                }
+                else if (btn.Content?.ToString() == "✕")
+                {
+                    btn.Background = new SolidColorBrush(Color.Parse("#EF4444"));
+                    btn.Foreground = Brushes.White;
+                }
+            }
+        };
+        control.PointerExited += (s, e) =>
+        {
+            control.Opacity = 1.0;
+            control.RenderTransform = TransformOperations.Parse("scale(1.0) rotate(0deg) translate(0px, 0px)");
+            if (captured && control is Button btn)
+            {
+                if (btn == _submitButton)
+                {
+                    btn.Background = _mode == AccountMode.Offline ? _offlineBtnBrush : _microsoftBtnBrush;
+                    btn.BorderBrush = originalBorder;
+                    btn.BorderThickness = originalBorderThickness;
+                }
+                else
+                {
+                    btn.Background = originalBg;
+                    btn.Foreground = originalFg;
+                    btn.BorderBrush = originalBorder;
+                    btn.BorderThickness = originalBorderThickness;
+                }
+            }
+        };
     }
 }
