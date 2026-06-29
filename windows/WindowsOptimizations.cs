@@ -46,9 +46,9 @@ internal static class WindowsOptimizations
     /// </summary>
     public static int GetAdaptiveTimerInterval(bool isWindowFocused, bool isPerformanceMode)
     {
-        if (isPerformanceMode) return 200; // 5 FPS in performance mode
+        if (isPerformanceMode) return 33; // 30 FPS in performance mode
         if (!isWindowFocused && OperatingSystem.IsWindows()) return 100; // 10 FPS when unfocused on Windows
-        return 33; // 30 FPS normal
+        return 16; // 60 FPS normal
     }
 
     private static void SetDpiAwareness()

@@ -375,7 +375,10 @@ public sealed class MainWindow : Window
     private CancellationTokenSource? _revertCts;
     private Border? _revertOverlay;
 
-
+    // Startup animation state
+    private bool _skinHasEverLoaded = false;
+    private bool _homeCardsAnimated = false;
+    private Control? _featuredServersControl;
     public MainWindow()
     {
         var initialPath = new MinecraftPath();
@@ -439,7 +442,28 @@ public sealed class MainWindow : Window
         Opened += async (_, _) => 
         {
             UpdateResponsiveLayout();
-            // Defer initialization to next frame so the window renders immediately
+
+            // ── Home screen fade-in (0.1 s) ────────────────────────────────
+            if (!IsPerformanceModeEnabled())
+            {
+                Opacity = 0.0;
+                Transitions = new Transitions
+                {
+                    new DoubleTransition
+                    {
+                        Property = Window.OpacityProperty,
+                        Duration = TimeSpan.FromMilliseconds(100),
+                        Easing = new CubicEaseOut()
+                    }
+                };
+                await Task.Delay(20);
+                Opacity = 1.0;
+            }
+
+            // ── Staggered card slide-in ─────────────────────────────────────
+            _ = AnimateHomeCardsAsync();
+
+            // Defer heavy init to next frame so window renders immediately
             await Dispatcher.UIThread.InvokeAsync(async () =>
             {
                 try { await InitializeAsync(); } catch { }
@@ -452,9 +476,9 @@ public sealed class MainWindow : Window
         // Calling it on startup would overwrite any per-setting customizations the user made.
         Content = BuildRoot();
 
-        // Use adaptive timer: performance mode = 5fps, normal = 30fps (was 16fps)
-        // 30fps is visually smooth for rotation while halving CPU vs 60ms
-        var timerInterval = IsPerformanceModeEnabled() ? 200 : 33;
+        // Use adaptive timer: performance mode = 30fps (33ms), normal = 60fps (16ms)
+        // 60fps is visually smooth for rotation and animations
+        var timerInterval = IsPerformanceModeEnabled() ? 33 : 16;
         _previewTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(timerInterval)
@@ -1832,10 +1856,15 @@ public sealed class MainWindow : Window
                 Content = "🗑",
                 Background = Brushes.Transparent,
                 Foreground = new SolidColorBrush(Color.Parse("#FF5B5B")),
-                IsVisible = false 
+                IsVisible = true,
+                IsHitTestVisible = false
             };
-            removeBtn.Click += (_, _) =>
+            removeBtn.PointerPressed += (_, e) => e.Handled = true;
+            removeBtn.Click += async (_, _) =>
             {
+                var ok = await DialogService.ShowConfirmAsync(this, "Remove Account", $"Remove '{account.Username}' from the launcher?");
+                if (!ok) return;
+
                 _settings.Accounts.Remove(account);
                 if (_settings.SelectedAccountId == account.Id)
                 {
@@ -1878,12 +1907,14 @@ public sealed class MainWindow : Window
 
             card.PointerEntered += (_, _) =>
             {
+                removeBtn.IsHitTestVisible = true;
                 removeBtn.Opacity = 1.0;
                 card.Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
                 card.RenderTransform = TransformOperations.Parse("scale(1.02)");
             };
             card.PointerExited += (_, _) =>
             {
+                removeBtn.IsHitTestVisible = false;
                 removeBtn.Opacity = 0.0;
                 card.Background = new SolidColorBrush(Color.FromArgb(15, 255, 255, 255));
                 card.RenderTransform = TransformOperations.Parse("scale(1.0)");
@@ -2580,6 +2611,11 @@ public sealed class MainWindow : Window
         modrinthSourceCombo = null!;
         modrinthSearchButton = null!;
         modrinthVersionInput = null!;
+
+        // Reset animation state so cards re-animate on next layout rebuild
+        _homeCardsAnimated = false;
+        _skinHasEverLoaded = false;
+        _featuredServersControl = null;
     }
 
     private Control BuildContent()
@@ -2643,51 +2679,9 @@ public sealed class MainWindow : Window
                     FontSize = 16,
                     FontWeight = FontWeight.Bold
                 },
-                new TextBlock
-                {
-                    Text = "Play, browse, switch.",
-                    Foreground = new SolidColorBrush(Color.Parse("#A8B8D4")),
-                    TextWrapping = TextWrapping.Wrap
-                },
                 launchNavButton,
                 modrinthNavButton,
-                profilesNavButton,
-                new Border
-                {
-                    Background = new LinearGradientBrush
-                    {
-                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                        GradientStops =
-                        {
-                            new GradientStop(Color.Parse("#101A2A"), 0),
-                            new GradientStop(Color.Parse("#0C1320"), 1)
-                        }
-                    },
-                    BorderBrush = new SolidColorBrush(Color.Parse("#23344C")),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(20),
-                    Padding = new Thickness(16),
-                    Child = new StackPanel
-                    {
-                        Spacing = 8,
-                        Children =
-                        {
-                            new TextBlock
-                            {
-                                Text = "Flow",
-                                Foreground = new SolidColorBrush(Color.Parse("#7BC9FF")),
-                                FontWeight = FontWeight.Bold
-                            },
-                            new TextBlock
-                            {
-                                Text = "▶ Play\n⌕ Find mods\n▣ Pick profile",
-                                Foreground = new SolidColorBrush(Color.Parse("#C8D5EC")),
-                                TextWrapping = TextWrapping.Wrap
-                            }
-                        }
-                    }
-                }
+                profilesNavButton
             }
         });
     }
@@ -2821,7 +2815,14 @@ public sealed class MainWindow : Window
         }, padding: new Thickness(16), margin: new Thickness(0));
         avatarPanel.Width = 280;
         _avatarGlass = avatarPanel;
-        _avatarControls = (StackPanel)avatarPanel.Child!;
+        // When Liquid Glass is active, CreateGlassPanel wraps the child in a multi-layer Grid.
+        // The actual content Border is always the LAST child of that wrapper Grid.
+        var avatarPanelDirectChild = avatarPanel.Child;
+        if (avatarPanelDirectChild is Grid wrapperGrid && wrapperGrid.Children.Count >= 2)
+            avatarPanelDirectChild = (wrapperGrid.Children[wrapperGrid.Children.Count - 1] as Border)?.Child
+                                     ?? avatarPanelDirectChild;
+        _avatarControls = (avatarPanelDirectChild as StackPanel)
+            ?? (StackPanel)((Border)avatarPanelDirectChild!).Child!;
         _avatarActions = (Grid)_avatarControls.Children[2];
 
         _avatarGlass.PointerEntered += (s, e) => { if (_isNarrowMode) SetAvatarExpansion(true); };
@@ -2883,8 +2884,8 @@ public sealed class MainWindow : Window
                         },
                         new TextBlock
                         {
-                            Text = "Coming soon — stay tuned for updates.",
-                            FontSize = 12.5,
+                            Text = "Coming soon — optimised for Aether.",
+                            FontSize = 12,
                             Foreground = _settings.ThemeVariant == "light" ? new SolidColorBrush(Color.Parse("#4A5568")) : new SolidColorBrush(Color.Parse("#A0A8B8"))
                         },
                         new TextBlock
@@ -2930,7 +2931,7 @@ public sealed class MainWindow : Window
                 topInfo,
                 actionRow,
                 featuredClientCard,
-                BuildFeaturedServersSection()
+                (_featuredServersControl = BuildFeaturedServersSection())
             }
         };
 
@@ -3040,12 +3041,11 @@ public sealed class MainWindow : Window
 
         return CreateGlassPanel(new StackPanel
         {
-            Spacing = 6,
+            Spacing = 4,
             Children =
             {
-                new TextBlock { Text = title, FontSize = 12.5, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")), FontWeight = FontWeight.Bold },
-                valueBlock,
-                new TextBlock { Text = subLabel, FontSize = 11.5, Foreground = new SolidColorBrush(Color.Parse("#667899")) }
+                new TextBlock { Text = title, FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")), FontWeight = FontWeight.SemiBold },
+                valueBlock
             }
         }, padding: new Thickness(16), margin: new Thickness(0));
     }
@@ -4520,6 +4520,9 @@ public sealed class MainWindow : Window
                         return;
                     }
 
+                    var ok = await DialogService.ShowConfirmAsync(this, "Delete Mod", $"Delete '{modItem.FileName}'?");
+                    if (!ok) return;
+
                     if (File.Exists(modItem.FullPath)) File.Delete(modItem.FullPath);
                     _modItems.Remove(modItem);
                     if (_modsEmptyState != null) _modsEmptyState.IsVisible = _modItems.Count == 0;
@@ -4791,7 +4794,7 @@ public sealed class MainWindow : Window
             // Adjust preview timer speed based on performance mode
             if (_previewTimer != null)
             {
-                _previewTimer.Interval = TimeSpan.FromMilliseconds(IsPerformanceModeEnabled() ? 200 : 33);
+                _previewTimer.Interval = TimeSpan.FromMilliseconds(IsPerformanceModeEnabled() ? 33 : 16);
             }
             
             ApplySelectedPresetStyle();
@@ -5286,37 +5289,10 @@ public sealed class MainWindow : Window
         }
     }
 
-    private async Task<bool> CheckInternetConnectivityAsync()
-    {
-        try
-        {
-            using var client = new System.Net.Http.HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(3);
-            using var response = await client.GetAsync("https://www.google.com");
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+
 
     private async Task InitializeAsync()
     {
-        if (!_settings.OfflineMode)
-        {
-            bool isOnline = await CheckInternetConnectivityAsync();
-            if (!isOnline)
-            {
-                LauncherLog.Info("[Initialize] No internet detected. Auto-enabling No internet mode.");
-                _settings.OfflineMode = true;
-                _settingsStore.Save(_settings);
-                if (_offlineModeToggle != null)
-                {
-                    Dispatcher.UIThread.Post(() => _offlineModeToggle.IsChecked = true);
-                }
-            }
-        }
 
         var tasks = new List<Task>();
         if (!_settings.OfflineMode)
@@ -5380,6 +5356,113 @@ public sealed class MainWindow : Window
         SetProgressState("Ready", 0, 0);
 
         await Task.WhenAll(tasks);
+    }
+
+    // ── Startup animation helpers ────────────────────────────────────────────
+
+    /// <summary>
+    /// Slides each card in _mainContentStack in one-by-one (0.3 s stagger).
+    /// Featured servers section is always last. All within ~3 s of launch.
+    /// </summary>
+    private async Task AnimateHomeCardsAsync()
+    {
+        if (IsPerformanceModeEnabled()) return;
+
+        // Wait for the window fade-in to finish (0.1 s)
+        await Task.Delay(120);
+
+        // All UI reads/writes must happen on the UI thread
+        List<Control>? regularCards = null;
+        Control? featuredEntry = null;
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (_mainContentStack == null || _homeCardsAnimated) return;
+            _homeCardsAnimated = true;
+
+            var children = _mainContentStack.Children.ToList();
+            featuredEntry = _featuredServersControl;
+            regularCards = children.Where(c => c != featuredEntry).ToList();
+
+            void PrepareCard(Control card)
+            {
+                card.Opacity = 0;
+                card.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                card.RenderTransform = TransformOperations.Parse("translate(0px, 28px)");
+                if (card.Transitions == null)
+                {
+                    card.Transitions = new Transitions
+                    {
+                        new DoubleTransition
+                        {
+                            Property = Control.OpacityProperty,
+                            Duration = TimeSpan.FromMilliseconds(320),
+                            Easing = new CubicEaseOut()
+                        },
+                        new TransformOperationsTransition
+                        {
+                            Property = Visual.RenderTransformProperty,
+                            Duration = TimeSpan.FromMilliseconds(320),
+                            Easing = new CubicEaseOut()
+                        }
+                    };
+                }
+            }
+
+            foreach (var card in regularCards) PrepareCard(card);
+            if (featuredEntry != null) PrepareCard(featuredEntry);
+        });
+
+        if (regularCards == null) return;
+
+        await Task.Delay(30);
+
+        void RevealCard(Control card)
+        {
+            card.Opacity = 1.0;
+            card.RenderTransform = TransformOperations.Parse("translate(0px, 0px)");
+        }
+
+        foreach (var card in regularCards)
+        {
+            var captured = card;
+            Dispatcher.UIThread.Post(() => RevealCard(captured));
+            await Task.Delay(300);
+        }
+
+        // Featured servers appear last
+        if (featuredEntry != null)
+        {
+            await Task.Delay(200);
+            var captured = featuredEntry;
+            Dispatcher.UIThread.Post(() => RevealCard(captured));
+        }
+    }
+
+    /// <summary>
+    /// Cross-fades the avatar panel when the first skin bitmap arrives.
+    /// </summary>
+    private async Task FadeInAvatarAsync()
+    {
+        if (_avatarGlass == null) return;
+        if (IsPerformanceModeEnabled()) return;
+
+        if (_avatarGlass.Transitions == null)
+        {
+            _avatarGlass.Transitions = new Transitions
+            {
+                new DoubleTransition
+                {
+                    Property = Control.OpacityProperty,
+                    Duration = TimeSpan.FromMilliseconds(400),
+                    Easing = new CubicEaseOut()
+                }
+            };
+        }
+
+        _avatarGlass.Opacity = 0.0;
+        await Task.Delay(30);
+        _avatarGlass.Opacity = 1.0;
     }
 
     private void SetupSectionTransitions(Control ctrl)
@@ -5626,22 +5709,7 @@ public sealed class MainWindow : Window
 
         try
         {
-            if (!_settings.OfflineMode)
-            {
-                bool isOnline = await CheckInternetConnectivityAsync();
-                if (!isOnline)
-                {
-                    LauncherLog.Info("[Launch] No internet detected during launch. Auto-enabling No internet mode.");
-                    _settings.OfflineMode = true;
-                    _settingsStore.Save(_settings);
-                    if (_offlineModeToggle != null)
-                    {
-                        Dispatcher.UIThread.Post(() => _offlineModeToggle.IsChecked = true);
-                    }
-                    
-                    await DialogService.ShowInfoAsync(this, "Offline Mode", "No internet connection detected. Automatically enabling No internet mode for offline launch.");
-                }
-            }
+
 
             var launcherPath = _selectedProfile is null
                 ? _defaultMinecraftPath
@@ -6247,29 +6315,7 @@ public sealed class MainWindow : Window
         {
             LauncherLog.Error($"[Launch] Failed to launch Minecraft: {ex.Message}\n{ex.StackTrace}");
             
-            // Check if the launch failed due to lack of internet
-            if (!_settings.OfflineMode && 
-                (ex.Message.Contains("mojang.com", StringComparison.OrdinalIgnoreCase) || 
-                 ex.Message.Contains("Resource temporarily unavailable", StringComparison.OrdinalIgnoreCase) ||
-                 ex.Message.Contains("SocketException", StringComparison.OrdinalIgnoreCase) ||
-                 ex.Message.Contains("HttpRequestException", StringComparison.OrdinalIgnoreCase) ||
-                 ex.Message.Contains("WebException", StringComparison.OrdinalIgnoreCase) ||
-                 ex.Message.Contains("Name or service not known", StringComparison.OrdinalIgnoreCase)))
-            {
-                LauncherLog.Info("[Launch] Internet went out during launch process. Auto-enabling No internet mode.");
-                _settings.OfflineMode = true;
-                _settingsStore.Save(_settings);
-                if (_offlineModeToggle != null)
-                {
-                    Dispatcher.UIThread.Post(() => _offlineModeToggle.IsChecked = true);
-                }
-
-                await DialogService.ShowInfoAsync(this, "Offline Mode Enabled", "Internet connection went out or is unstable. Automatically enabling No internet mode. Please try launching again.");
-            }
-            else
-            {
-                await DialogService.ShowInfoAsync(this, "Launch failed", $"Failed to launch Minecraft.\n{ex.Message}");
-            }
+            await DialogService.ShowInfoAsync(this, "Launch failed", $"Failed to launch Minecraft.\n{ex.Message}");
         }
         finally
         {
@@ -6568,13 +6614,26 @@ public sealed class MainWindow : Window
             var startInfo = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = javaPath,
-                WorkingDirectory = Path.GetTempPath(),
+                // Forge installer must run with minecraft dir as workdir — it writes libraries relative to it
+                WorkingDirectory = baseDir,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
             };
-            // Use ArgumentList instead of a single Arguments string to avoid quoting hell on Windows
+
+            // Windows TLS/HTTPS fixes — Java 8 on Windows can fail with Let's Encrypt certs
+            // without these flags, forge exits code 1 after printing host IPs.
+            // IMPORTANT: preferIPv4Stack must be TRUE on Windows — setting it to false causes
+            // the installer to resolve IPv6 addresses (2606:4700:...) that fail on VMs/most ISPs.
+            if (OperatingSystem.IsWindows())
+            {
+                startInfo.ArgumentList.Add("-Djava.net.preferIPv4Stack=true");
+                startInfo.ArgumentList.Add("-Dhttps.protocols=TLSv1.2,TLSv1.3");
+                startInfo.ArgumentList.Add("-Djdk.tls.client.protocols=TLSv1.2,TLSv1.3");
+                startInfo.ArgumentList.Add("-Djava.net.useSystemProxies=true");
+            }
+
             startInfo.ArgumentList.Add("-jar");
             startInfo.ArgumentList.Add(installerPath);
             startInfo.ArgumentList.Add("--installClient");
@@ -7151,6 +7210,13 @@ public sealed class MainWindow : Window
             OperatingSystem.IsWindows() 
                 ? Avalonia.Media.Imaging.BitmapInterpolationMode.LowQuality 
                 : Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality);
+
+        // First-ever skin: fade the avatar panel in
+        if (!_skinHasEverLoaded)
+        {
+            _skinHasEverLoaded = true;
+            _ = FadeInAvatarAsync();
+        }
     }
 
     private static SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32> PrepareSkinImage(string skinPath, out bool isSlim)
@@ -7984,12 +8050,12 @@ public sealed class MainWindow : Window
             installModeLabel.Text = "Default";
             SetButtonText(btnStart, "▶ Play");
             profileInspectorTitle.Text = "Standard Profile";
-            profileInspectorMeta.Text = "No isolated profile is active. Mods install only after you create or select a profile.";
+            profileInspectorMeta.Text = "No profile active.";
             profileInspectorPath.Text = $"Instances root: {_profileStore.GetInstancesRoot()}";
             clearProfileButton.IsEnabled = false;
             renameProfileButton.IsEnabled = false;
             heroInstanceLabel.Text = "Standard Play";
-            heroPerformanceLabel.Text = $"{cbVersion.SelectedItem?.ToString() ?? "1.21.1"} • Ready";
+            heroPerformanceLabel.Text = cbVersion.SelectedItem?.ToString() ?? "1.21.1";
             var ramGbInit = _settings.MaxRamMb / 1024.0;
             var expectedFpsInit = Math.Round(ramGbInit * 41.25).ToString();
             var expectedRamInit = $"{Math.Round(ramGbInit, 1)} GB";
@@ -8011,7 +8077,7 @@ public sealed class MainWindow : Window
         clearProfileButton.IsEnabled = true;
         renameProfileButton.IsEnabled = true;
         heroInstanceLabel.Text = _selectedProfile.Name;
-        heroPerformanceLabel.Text = $"{_selectedProfile.GameVersion} • Ready";
+        heroPerformanceLabel.Text = _selectedProfile.GameVersion;
         var ramGb = _settings.MaxRamMb / 1024.0;
         var fpsText = Math.Round(ramGb * (_selectedProfile.Loader == "vanilla" ? 41.25 : 30)).ToString();
         var ramText = $"{Math.Round(ramGb, 1)} GB";
@@ -9493,41 +9559,82 @@ public sealed class MainWindow : Window
 
     private async Task RenewServerTunnelAsync(string serverId)
     {
-        var srv = _localServers?.FirstOrDefault(s => s.Id == serverId);
-        if (srv == null) return;
-
-        LogServerLine(serverId, "[System] Renewing server tunnel connection...");
-
-        // 1. Kill old tunnel process
-        if (_tunnelProcesses.TryGetValue(serverId, out var oldTunnel) && !oldTunnel.HasExited)
+        try
         {
-            try
+            LocalServerMetadata? srv = null;
+            if (_localServers != null)
             {
-                oldTunnel.Kill(true);
+                lock (_localServers)
+                {
+                    srv = _localServers.FirstOrDefault(s => s.Id == serverId);
+                }
             }
-            catch {}
+            if (srv == null) return;
+
+            LogServerLine(serverId, "[System] Renewing server tunnel connection...");
+
+            // 1. Kill old tunnel process
+            System.Diagnostics.Process? oldTunnel = null;
+            lock (_tunnelProcesses)
+            {
+                _tunnelProcesses.TryGetValue(serverId, out oldTunnel);
+                _tunnelProcesses.Remove(serverId);
+            }
+            lock (_tunnelAddresses)
+            {
+                _tunnelAddresses.Remove(serverId);
+            }
+
+            if (oldTunnel != null)
+            {
+                try
+                {
+                    if (!oldTunnel.HasExited)
+                    {
+                        oldTunnel.Kill(true);
+                        await Task.Run(() => oldTunnel.WaitForExit(3000));
+                    }
+                }
+                catch {}
+                try
+                {
+                    oldTunnel.Dispose();
+                }
+                catch {}
+                // Give the remote tunnel service a brief moment to register the disconnect
+                await Task.Delay(1000);
+            }
+
+            srv.ActiveTunnelAddress = "";
+
+            // 2. Start a new tunnel
+            var portStr = srv.Port?.ToString() ?? "25565";
+            await StartTunnelWithFallbackAsync(serverId, portStr);
+
+            // 3. Update UI
+            Dispatcher.UIThread.Post(() =>
+            {
+                string? newAddr = null;
+                lock (_tunnelAddresses)
+                {
+                    _tunnelAddresses.TryGetValue(serverId, out newAddr);
+                }
+
+                if (!string.IsNullOrEmpty(newAddr))
+                {
+                    LogServerLine(serverId, $"[System] Tunnel renewed successfully! New address: {newAddr}");
+                }
+                else
+                {
+                    LogServerLine(serverId, "[System Error] Failed to renew tunnel.");
+                }
+                RefreshLayoutSection();
+            });
         }
-        _tunnelProcesses.Remove(serverId);
-        _tunnelAddresses.Remove(serverId);
-        srv.ActiveTunnelAddress = "";
-
-        // 2. Start a new tunnel
-        var portStr = srv.Port.ToString();
-        await StartTunnelWithFallbackAsync(serverId, portStr);
-
-        // 3. Update UI
-        Dispatcher.UIThread.Post(() =>
+        catch (Exception ex)
         {
-            if (_tunnelAddresses.TryGetValue(serverId, out var newAddr))
-            {
-                LogServerLine(serverId, $"[System] Tunnel renewed successfully! New address: {newAddr}");
-            }
-            else
-            {
-                LogServerLine(serverId, "[System Error] Failed to renew tunnel.");
-            }
-            RefreshLayoutSection();
-        });
+            LogServerLine(serverId, $"[System Error] Exception during tunnel renewal: {ex.Message}");
+        }
     }
 
     private async Task WaitForServerExitAsync(string serverId)
@@ -11183,6 +11290,8 @@ public sealed class MainWindow : Window
                         var deleteBtn = new Button { Content = "🗑 Delete", Background = new SolidColorBrush(Color.Parse("#FF5555")), Foreground = Brushes.White, FontSize = 11, Padding = new Thickness(8, 4) };
                         var localJar = jar;
                         deleteBtn.Click += async (_, _) => {
+                            var ok = await DialogService.ShowConfirmAsync(this, "Delete File", $"Delete '{localJar}'?");
+                            if (!ok) return;
                             try
                             {
                                 var fullPath = Path.Combine(targetPath, localJar);
@@ -12510,12 +12619,16 @@ public sealed class MainWindow : Window
     private void LogServerLine(string serverId, string text)
     {
         if (string.IsNullOrEmpty(serverId)) return;
-        if (!_serverLogs.ContainsKey(serverId))
+        System.Text.StringBuilder? log = null;
+        lock (_serverLogs)
         {
-            _serverLogs[serverId] = new System.Text.StringBuilder();
+            if (!_serverLogs.TryGetValue(serverId, out log))
+            {
+                log = new System.Text.StringBuilder();
+                _serverLogs[serverId] = log;
+            }
         }
 
-        var log = _serverLogs[serverId];
         lock (log)
         {
             if (log.Length > 100_000)
@@ -13341,9 +13454,15 @@ def get_online_players(client):
     resp = client.send_command(""list"")
     if resp is None:
         return None
-    match = re.search(r""There are (\d+) of \d+ players online"", resp, re.IGNORECASE)
+    # Strip Minecraft color codes (§ followed by any char) and ANSI escape codes if any
+    clean_resp = re.sub(r'§[0-9a-fk-orx]|\x1B\[[0-9;]*[mGKHJlh]', '', resp)
+    match = re.search(r""There are (\d+) of \d+ players online"", clean_resp, re.IGNORECASE)
     if match:
         return int(match.group(1))
+    # Fallback search for just the numbers if formatting differs (e.g. ""4/20 players"")
+    match2 = re.search(r""(\d+) of \d+ players"", clean_resp, re.IGNORECASE)
+    if match2:
+        return int(match2.group(1))
     return 0
 
 def greet_player(client, username):
@@ -13893,199 +14012,240 @@ if __name__ == '__main__':
 
     private async Task StartTunnelWithFallbackAsync(string serverId, string localPort)
     {
-        // Each provider has: Name, SSH command, SSH args, regex to find the address, and a func to extract/build the final address string from the regex match
-        // Order: UPnP is tried first (direct, zero-latency). If UPnP fails/unavailable, these tunnel providers race in parallel.
-        // Priority: Pinggy (443) → Pinggy (22) → Serveo (last fallback)
-        var providers = new List<(string Name, string Cmd, string Args, string RegexPattern, Func<System.Text.RegularExpressions.Match, string> AddressExtractor)>
+        try
         {
-            (
-                "Pinggy (Port 443)", 
-                "ssh", 
-                $"-p 443 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6 -o ServerAliveInterval=15 -R 0:localhost:{localPort} tcp@a.pinggy.io",
-                @"tcp://([a-zA-Z0-9\-\.]+\.pinggy(?:-free)?\.link:\d+)",
-                m => m.Groups[1].Value.Trim()
-            ),
-            (
-                "Pinggy (Port 22)", 
-                "ssh", 
-                $"-p 22 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6 -o ServerAliveInterval=15 -R 0:localhost:{localPort} tcp@a.pinggy.io",
-                @"tcp://([a-zA-Z0-9\-\.]+\.pinggy(?:-free)?\.link:\d+)",
-                m => m.Groups[1].Value.Trim()
-            ),
-            (
-                "Serveo (Port 22, fallback)",
-                "ssh",
-                // Use port 0 so Serveo assigns a free dynamic port instead of failing on a taken fixed port
-                $"-p 22 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6 -o ServerAliveInterval=15 -R 0:localhost:{localPort} serveo.net",
-                // Serveo prints "Allocated port 43821 for remote forwarding to localhost:25565" on stderr
-                @"Allocated port (\d+) for remote forwarding",
-                m => $"serveo.net:{m.Groups[1].Value.Trim()}"
-            )
-        };
-
-        LogServerLine(serverId, "[Tunnel] Launching parallel secure internet tunnels...");
-
-        var cts = new System.Threading.CancellationTokenSource();
-        var tcs = new TaskCompletionSource<(string Address, Process Process, string Provider)>();
-        var activeProcesses = new System.Collections.Concurrent.ConcurrentBag<Process>();
-
-        var tasks = providers.Select(p => Task.Run(async () =>
-        {
-            if (cts.Token.IsCancellationRequested) return;
-
-            var proc = new Process();
-            proc.StartInfo.FileName = p.Cmd;
-            proc.StartInfo.Arguments = p.Args;
-            proc.StartInfo.UseShellExecute = false;
-            proc.StartInfo.RedirectStandardOutput = true;
-            proc.StartInfo.RedirectStandardError = true;
-            proc.StartInfo.CreateNoWindow = true;
-
-            try
+            // Each provider has: Name, SSH command, SSH args, regex to find the address, and a func to extract/build the final address string from the regex match
+            // Order: UPnP is tried first (direct, zero-latency). If UPnP fails/unavailable, these tunnel providers race in parallel.
+            // Priority: Pinggy (443) → Pinggy (22) → Serveo (last fallback)
+            var providers = new List<(string Name, string Cmd, string Args, string RegexPattern, Func<System.Text.RegularExpressions.Match, string> AddressExtractor)>
             {
-                proc.Start();
-                activeProcesses.Add(proc);
+                (
+                    "Pinggy (Port 443)", 
+                    "ssh", 
+                    $"-p 443 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6 -o ServerAliveInterval=15 -R 0:localhost:{localPort} tcp@a.pinggy.io",
+                    @"tcp://([a-zA-Z0-9\-\.]+\.pinggy(?:-free)?\.link:\d+)",
+                    m => m.Groups[1].Value.Trim()
+                ),
+                (
+                    "Pinggy (Port 22)", 
+                    "ssh", 
+                    $"-p 22 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6 -o ServerAliveInterval=15 -R 0:localhost:{localPort} tcp@a.pinggy.io",
+                    @"tcp://([a-zA-Z0-9\-\.]+\.pinggy(?:-free)?\.link:\d+)",
+                    m => m.Groups[1].Value.Trim()
+                ),
+                (
+                    "Serveo (Port 22, fallback)",
+                    "ssh",
+                    // Use port 0 so Serveo assigns a free dynamic port instead of failing on a taken fixed port
+                    $"-p 22 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6 -o ServerAliveInterval=15 -R 0:localhost:{localPort} serveo.net",
+                    // Serveo prints "Allocated port 43821 for remote forwarding to localhost:25565" on stderr
+                    @"Allocated port (\d+) for remote forwarding",
+                    m => $"serveo.net:{m.Groups[1].Value.Trim()}"
+                )
+            };
 
-                // Shared cancellation flag via array (captured by ref in lambdas)
-                var resolved = new bool[] { false };
+            LogServerLine(serverId, "[Tunnel] Launching parallel secure internet tunnels...");
 
-                async Task ReadStream(System.IO.StreamReader stream)
+            var cts = new System.Threading.CancellationTokenSource();
+            var tcs = new TaskCompletionSource<(string Address, Process Process, string Provider)>();
+            var activeProcesses = new System.Collections.Concurrent.ConcurrentBag<Process>();
+
+            var tasks = providers.Select(p => Task.Run(async () =>
+            {
+                if (cts.Token.IsCancellationRequested) return;
+
+                var proc = new Process();
+                proc.StartInfo.FileName = p.Cmd;
+                proc.StartInfo.Arguments = p.Args;
+                proc.StartInfo.UseShellExecute = false;
+                proc.StartInfo.RedirectStandardOutput = true;
+                proc.StartInfo.RedirectStandardError = true;
+                proc.StartInfo.CreateNoWindow = true;
+
+                try
                 {
-                    var buffer = new System.Text.StringBuilder();
-                    char[] charBuf = new char[512];
-                    var lineBuffer = new System.Text.StringBuilder();
-                    try
+                    proc.Start();
+                    activeProcesses.Add(proc);
+
+                    // Shared cancellation flag via array (captured by ref in lambdas)
+                    var resolved = new bool[] { false };
+
+                    async Task ReadStream(System.IO.StreamReader stream)
                     {
-                        while (!proc.HasExited && !resolved[0] && !cts.Token.IsCancellationRequested)
+                        var buffer = new System.Text.StringBuilder();
+                        char[] charBuf = new char[512];
+                        var lineBuffer = new System.Text.StringBuilder();
+                        try
                         {
-                            int read = await stream.ReadAsync(charBuf, 0, charBuf.Length);
-                            if (read <= 0) break;
-
-                            var text = new string(charBuf, 0, read);
-                            buffer.Append(text);
-
-                            // Log clean lines
-                            for (int c = 0; c < text.Length; c++)
+                            while (!proc.HasExited && !resolved[0] && !cts.Token.IsCancellationRequested)
                             {
-                                char ch = text[c];
-                                if (ch == '\n' || ch == '\r')
+                                int read = await stream.ReadAsync(charBuf, 0, charBuf.Length);
+                                if (read <= 0) break;
+
+                                var text = new string(charBuf, 0, read);
+                                buffer.Append(text);
+
+                                // Log clean lines
+                                for (int c = 0; c < text.Length; c++)
                                 {
-                                    if (lineBuffer.Length > 0)
+                                    char ch = text[c];
+                                    if (ch == '\n' || ch == '\r')
                                     {
-                                        var cleanLine = Regex.Replace(lineBuffer.ToString(), @"\x1B\[[0-9;]*[mGKHJlh]|\x1B[\(\)][0-9A-Z]|\x1B\]8;[^;]*;[^\x07]*\x07|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "");
-                                        if (!string.IsNullOrWhiteSpace(cleanLine))
-                                            LogServerLine(serverId, $"[{p.Name}] {cleanLine.Trim()}");
-                                        lineBuffer.Clear();
+                                        if (lineBuffer.Length > 0)
+                                        {
+                                            var cleanLine = Regex.Replace(lineBuffer.ToString(), @"\x1B\[[0-9;]*[mGKHJlh]|\x1B[\(\)][0-9A-Z]|\x1B\]8;[^;]*;[^\x07]*\x07|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "");
+                                            if (!string.IsNullOrWhiteSpace(cleanLine))
+                                                LogServerLine(serverId, $"[{p.Name}] {cleanLine.Trim()}");
+                                            lineBuffer.Clear();
+                                        }
                                     }
+                                    else lineBuffer.Append(ch);
                                 }
-                                else lineBuffer.Append(ch);
-                            }
 
-                            // Scan stripped buffer for assigned address using provider-specific extractor
-                            var cleanBuffer = Regex.Replace(buffer.ToString(), @"\x1B\[[0-9;]*[mGKHJlh]|\x1B[\(\)][0-9A-Z]|\x1B\]8;[^;]*;[^\x07]*\x07|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "");
-                            var match = Regex.Match(cleanBuffer, p.RegexPattern, RegexOptions.IgnoreCase);
-                            if (match.Success)
-                            {
-                                var address = p.AddressExtractor(match);
-                                resolved[0] = true;
-                                tcs.TrySetResult((address, proc, p.Name));
+                                // Scan stripped buffer for assigned address using provider-specific extractor
+                                var cleanBuffer = Regex.Replace(buffer.ToString(), @"\x1B\[[0-9;]*[mGKHJlh]|\x1B[\(\)][0-9A-Z]|\x1B\]8;[^;]*;[^\x07]*\x07|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "");
+                                var match = Regex.Match(cleanBuffer, p.RegexPattern, RegexOptions.IgnoreCase);
+                                if (match.Success)
+                                {
+                                    var address = p.AddressExtractor(match);
+                                    resolved[0] = true;
+                                    tcs.TrySetResult((address, proc, p.Name));
+                                }
                             }
                         }
+                        catch {}
                     }
-                    catch {}
+
+                    var stdoutTask = ReadStream(proc.StandardOutput);
+                    var stderrTask = ReadStream(proc.StandardError);
+                    await Task.WhenAll(stdoutTask, stderrTask);
+                }
+                catch {}
+            })).ToList(); // .ToList() materializes the lazy IEnumerable so Task.Run fires for all providers immediately
+
+            var delayTask = Task.Delay(12000);
+            var completedTask = await Task.WhenAny(tcs.Task, delayTask);
+
+            cts.Cancel();
+
+            if (completedTask == tcs.Task)
+            {
+                var result = tcs.Task.Result;
+                lock (_tunnelAddresses)
+                {
+                    _tunnelAddresses[serverId] = result.Address;
+                }
+                lock (_tunnelProcesses)
+                {
+                    _tunnelProcesses[serverId] = result.Process;
                 }
 
-                var stdoutTask = ReadStream(proc.StandardOutput);
-                var stderrTask = ReadStream(proc.StandardError);
-                await Task.WhenAll(stdoutTask, stderrTask);
-            }
-            catch {}
-        })).ToList(); // .ToList() materializes the lazy IEnumerable so Task.Run fires for all providers immediately
-
-        var delayTask = Task.Delay(12000);
-        var completedTask = await Task.WhenAny(tcs.Task, delayTask);
-
-        cts.Cancel();
-
-        if (completedTask == tcs.Task)
-        {
-            var result = tcs.Task.Result;
-            _tunnelAddresses[serverId] = result.Address;
-            _tunnelProcesses[serverId] = result.Process;
-
-            var srv = _localServers?.FirstOrDefault(s => s.Id == serverId);
-            try
-            {
-                if (srv != null)
+                LocalServerMetadata? srv = null;
+                if (_localServers != null)
                 {
-                    srv.ActiveTunnelAddress = result.Address;
-                    SaveServers();
-
-                    var tunnelPidFile = Path.Combine(srv.FolderPath, "tunnel.pid");
-                    File.WriteAllText(tunnelPidFile, result.Process.Id.ToString());
+                    lock (_localServers)
+                    {
+                        srv = _localServers.FirstOrDefault(s => s.Id == serverId);
+                    }
                 }
-            }
-            catch {}
-
-            LogServerLine(serverId, $"[Tunnel Success] Connected via {result.Provider}! Assigned IP: {result.Address}");
-            Avalonia.Threading.Dispatcher.UIThread.Post(() => RefreshLayoutSection());
-
-            // Start Server Presence Auto-Announcer
-            if (srv != null && !string.IsNullOrEmpty(srv.InviteCode))
-            {
-                _ = Task.Run(async () =>
+                try
                 {
-                    LogServerLine(serverId, $"[Discovery] Announcing server presence for invite code '{srv.InviteCode}'...");
-                    var presence = new DiscoveryClient.ServerPresence
+                    if (srv != null)
                     {
-                        InviteCode = srv.InviteCode,
-                        HostUserId = _settings.Username ?? "host",
-                        ServerName = srv.Name,
-                        Endpoint = result.Address,
-                        Players = srv.AllowedPlayers ?? new List<string>(),
-                        AutoInvite = srv.AutoInvite
-                    };
-                    
-                    var announced = await DiscoveryClient.AnnounceServerAsync(presence);
-                    if (announced)
-                    {
-                        LogServerLine(serverId, $"[Discovery Success] Server successfully published to edge discovery! Invite: '{srv.InviteCode}'");
+                        srv.ActiveTunnelAddress = result.Address;
+                        SaveServers();
 
-                        // Start silent background heartbeat loop to keep active on edge
-                        _ = Task.Run(async () =>
+                        var tunnelPidFile = Path.Combine(srv.FolderPath, "tunnel.pid");
+                        File.WriteAllText(tunnelPidFile, result.Process.Id.ToString());
+                    }
+                }
+                catch {}
+
+                LogServerLine(serverId, $"[Tunnel Success] Connected via {result.Provider}! Assigned IP: {result.Address}");
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => RefreshLayoutSection());
+
+                // Start Server Presence Auto-Announcer
+                if (srv != null && !string.IsNullOrEmpty(srv.InviteCode))
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
                         {
-                            while (_serverProcesses.TryGetValue(serverId, out var p) && !p.HasExited)
+                            LogServerLine(serverId, $"[Discovery] Announcing server presence for invite code '{srv.InviteCode}'...");
+                            var presence = new DiscoveryClient.ServerPresence
                             {
-                                await Task.Delay(30000);
-                                if (!_serverProcesses.TryGetValue(serverId, out var activeProc) || activeProc.HasExited)
-                                    break;
+                                InviteCode = srv.InviteCode,
+                                HostUserId = _settings.Username ?? "host",
+                                ServerName = srv.Name,
+                                Endpoint = result.Address,
+                                Players = srv.AllowedPlayers ?? new List<string>(),
+                                AutoInvite = srv.AutoInvite
+                            };
+                            
+                            var announced = await DiscoveryClient.AnnounceServerAsync(presence);
+                            if (announced)
+                            {
+                                LogServerLine(serverId, $"[Discovery Success] Server successfully published to edge discovery! Invite: '{srv.InviteCode}'");
 
-                                await DiscoveryClient.SendHeartbeatAsync(srv.InviteCode);
+                                // Start silent background heartbeat loop to keep active on edge
+                                _ = Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        while (true)
+                                        {
+                                            System.Diagnostics.Process? activeProc = null;
+                                            lock (_serverProcesses)
+                                            {
+                                                _serverProcesses.TryGetValue(serverId, out activeProc);
+                                            }
+                                            if (activeProc == null || activeProc.HasExited)
+                                                break;
+
+                                            await Task.Delay(30000);
+                                            
+                                            lock (_serverProcesses)
+                                            {
+                                                _serverProcesses.TryGetValue(serverId, out activeProc);
+                                            }
+                                            if (activeProc == null || activeProc.HasExited)
+                                                break;
+
+                                            await DiscoveryClient.SendHeartbeatAsync(srv.InviteCode);
+                                        }
+                                    }
+                                    catch {}
+                                });
                             }
-                        });
-                    }
-                    else
-                    {
-                        LogServerLine(serverId, $"[Discovery Error] Failed to publish server presence. Verify discovery API configuration.");
-                    }
-                });
-            }
+                            else
+                            {
+                                LogServerLine(serverId, $"[Discovery Error] Failed to publish server presence. Verify discovery API configuration.");
+                            }
+                        }
+                        catch {}
+                    });
+                }
 
-            foreach (var proc in activeProcesses)
+                foreach (var proc in activeProcesses)
+                {
+                    if (proc != result.Process && !proc.HasExited)
+                    {
+                        try { proc.Kill(true); } catch {}
+                    }
+                }
+            }
+            else
             {
-                if (proc != result.Process && !proc.HasExited)
+                LogServerLine(serverId, "[Tunnel Error] Parallel tunnel initialization timed out. No provider resolved a connection within 12s.");
+                foreach (var proc in activeProcesses)
                 {
                     try { proc.Kill(true); } catch {}
                 }
             }
         }
-        else
+        catch (Exception ex)
         {
-            LogServerLine(serverId, "[Tunnel Error] Parallel tunnel initialization timed out. No provider resolved a connection within 12s.");
-            foreach (var proc in activeProcesses)
-            {
-                try { proc.Kill(true); } catch {}
-            }
+            LogServerLine(serverId, $"[Tunnel Error] Exception starting tunnel: {ex.Message}");
         }
     }
 
@@ -15711,10 +15871,116 @@ if __name__ == '__main__':
         };
     }
 
+    private bool IsLiquidGlassPreset() =>
+        string.Equals(_settings.SelectedPreset, "Liquid Glass", StringComparison.OrdinalIgnoreCase);
+
     private Border CreateGlassPanel(Control child, Thickness? padding = null, Thickness? margin = null)
     {
         var style = _settings.Style;
-        
+        var cr = new CornerRadius(double.IsNaN(style.CardCornerRadius) ? 24 : style.CardCornerRadius);
+        var pad = padding ?? new Thickness(22);
+        var mar = margin ?? new Thickness(0);
+
+        if (IsLiquidGlassPreset())
+        {
+            // ══ TRUE LIQUID GLASS ═══════════════════════════════════════════
+            // The trick to liquid vs glass: almost ZERO base opacity (see through
+            // completely), but VERY INTENSE chromatic fringing at edges and a
+            // bright wet specular caustic spot — exactly what liquid looks like
+            // when light hits it.
+
+            // Layer 1 ── ultra-thin translucent liquid body
+            // Near-zero fill so the caustic wallpaper bleeds through fully
+            var liquidBody = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint   = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(28, 200, 240, 255), 0.00),  // ice blue tint
+                    new GradientStop(Color.FromArgb( 8, 160, 220, 255), 0.40),  // near invisible centre
+                    new GradientStop(Color.FromArgb(22, 180, 255, 240), 0.75),  // subtle teal bottom-right
+                    new GradientStop(Color.FromArgb(14, 100, 180, 255), 1.00)
+                }
+            };
+
+            // Layer 2 ── diagonal iridescent sweep (caustic light band)
+            var causticSweep = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0.2, RelativeUnit.Relative),
+                EndPoint   = new RelativePoint(1, 0.8, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(  0, 255, 255, 255), 0.00),
+                    new GradientStop(Color.FromArgb( 30, 100, 220, 255), 0.25),  // electric blue band
+                    new GradientStop(Color.FromArgb( 50, 80,  255, 200), 0.45),  // cyan-teal flash
+                    new GradientStop(Color.FromArgb( 18, 200, 100, 255), 0.65),  // brief violet
+                    new GradientStop(Color.FromArgb(  0, 255, 255, 255), 1.00)
+                }
+            };
+
+            // Layer 3 ── top-left wet caustic hotspot (water droplet specular)
+            var wetSpot = new RadialGradientBrush
+            {
+                Center        = new RelativePoint(0.18, 0.14, RelativeUnit.Relative),
+                GradientOrigin = new RelativePoint(0.18, 0.14, RelativeUnit.Relative),
+                RadiusX       = new RelativeScalar(0.55, RelativeUnit.Relative),
+                RadiusY       = new RelativeScalar(0.45, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(115, 255, 255, 255), 0.00),  // bright wet centre
+                    new GradientStop(Color.FromArgb( 55, 180, 240, 255), 0.30),  // ice blue halo
+                    new GradientStop(Color.FromArgb(  0, 100, 200, 255), 1.00)   // fade out
+                }
+            };
+
+            // Full-spectrum iridescent border — 9-stop chromatic fringe
+            // Simulates light refracting through a liquid edge (like a soap bubble rim)
+            var irisBorder = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint   = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(255, 255, 255, 255), 0.00),  // bright white
+                    new GradientStop(Color.FromArgb(220,  80, 210, 255), 0.12),  // electric violet
+                    new GradientStop(Color.FromArgb(210,   0, 160, 255), 0.25),  // deep blue
+                    new GradientStop(Color.FromArgb(230,   0, 220, 200), 0.38),  // cyan-teal
+                    new GradientStop(Color.FromArgb(220,   0, 255, 140), 0.50),  // aqua-green
+                    new GradientStop(Color.FromArgb(210,   0, 200, 255), 0.62),  // back to blue
+                    new GradientStop(Color.FromArgb(230, 120, 100, 255), 0.75),  // lilac
+                    new GradientStop(Color.FromArgb(210, 200, 200, 255), 0.88),  // silver
+                    new GradientStop(Color.FromArgb(255, 255, 255, 255), 1.00)   // bright white
+                }
+            };
+
+            // Stack all three liquid layers
+            var liquidLayers = new Grid
+            {
+                Children =
+                {
+                    new Border { Background = liquidBody,  CornerRadius = cr, IsHitTestVisible = false },
+                    new Border { Background = causticSweep,CornerRadius = cr, IsHitTestVisible = false },
+                    new Border { Background = wetSpot,     CornerRadius = cr, IsHitTestVisible = false },
+                    new Border { Padding = pad, Child = child, CornerRadius = cr }
+                }
+            };
+
+            var glassPanel = new Border
+            {
+                Background      = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)), // fully transparent outer shell
+                BorderBrush     = irisBorder,
+                BorderThickness = new Thickness(1.5),
+                CornerRadius    = cr,
+                Margin          = mar,
+                Child           = liquidLayers,
+                // Deep aqua-tinted wet shadow — water always has a blue-green shadow
+                BoxShadow = BoxShadows.Parse("0 10 32 0 #46003C78, inset 0 2 12 -2 #5A00C8FF")
+            };
+            return glassPanel;
+        }
+
+        // ── Standard glass panel (non-Liquid Glass preset) ──────────────
         IBrush bgBrush;
         if (!string.IsNullOrWhiteSpace(style.CardBackground) && Color.TryParse(style.CardBackground, out var customBgColor))
         {
@@ -15749,9 +16015,9 @@ if __name__ == '__main__':
             Background = bgBrush,
             BorderBrush = borderBrush,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(double.IsNaN(style.CardCornerRadius) ? 24 : style.CardCornerRadius),
-            Padding = padding ?? new Thickness(22),
-            Margin = margin ?? new Thickness(0),
+            CornerRadius = cr,
+            Padding = pad,
+            Margin = mar,
             Child = child
         };
         return panel;
@@ -16109,13 +16375,7 @@ if __name__ == '__main__':
                 return;
             }
 
-            bool isOnline = await CheckInternetConnectivityAsync();
-            if (!isOnline)
-            {
-                LauncherLog.Warn($"[ModInstaller] Offline mode: '{slug}' is missing, but no internet is available to download it.");
-                return;
-            }
-            LauncherLog.Info($"[ModInstaller] Offline mode is active, but '{slug}' is missing and we have internet. Proceeding with installation.");
+            LauncherLog.Info($"[ModInstaller] Offline mode is active but '{slug}' is missing. Attempting to download.");
         }
 
         try
@@ -17213,7 +17473,7 @@ if __name__ == '__main__':
         try
         {
             var preset = _settings.SelectedPreset;
-            LayoutStyle presetStyle = null;
+            LayoutStyle? presetStyle = null;
 
             if (string.Equals(preset, "Liquid Glass", StringComparison.OrdinalIgnoreCase))
             {
@@ -17254,132 +17514,167 @@ if __name__ == '__main__':
 
     private LayoutStyle GetLiquidGlassStyle()
     {
+        // Resolve bundled wallpaper path at runtime so it works self-contained
+        var wallpaperPath = Path.Combine(
+            Path.GetDirectoryName(Environment.ProcessPath ?? string.Empty) ?? string.Empty,
+            "assets", "theme_liquid_glass.png");
+        if (!File.Exists(wallpaperPath))
+            wallpaperPath = Path.Combine(AppContext.BaseDirectory, "assets", "theme_liquid_glass.png");
+
         return new LayoutStyle
         {
             BorderStyle = "rounded",
             CornerRadius = 24,
-            WindowBackground = "#00000000",
-            WindowBorderColor = "#35FFFFFF",
+            // No solid WindowBackground — let the wallpaper show through
+            WindowBackground = null,
+            BackgroundImagePath = File.Exists(wallpaperPath) ? wallpaperPath : null,
+            BackgroundOverlayOpacity = 0.18,    // very subtle dark veil so content stays readable
+            WindowBorderColor = "#55FFFFFF",
             WindowBorderThickness = 1.2,
             WindowMargin = 12,
             NavPosition = "sidebar",
             SidebarSide = "left",
-            SidebarBackground = "#0AFFFFFF",
-            SidebarBorderColor = "#15FFFFFF",
+            // Sidebar: frosted, blue-shifted glass
+            SidebarBackground = "#12AACCFF",
+            SidebarBorderColor = "#30FFFFFF",
             SidebarWidth = 230,
             AccentColor = "#FF0A84FF",
-            CardBackground = "#15FFFFFF",
-            CardCornerRadius = 18,
-            CardBorderColor = "#25FFFFFF",
+            // Cards: near-transparent so the wallpaper caustics bleed through
+            CardBackground = "#18DDEEFF",
+            CardCornerRadius = 22,
+            CardBorderColor = "#40FFFFFF",
             CardPadding = 20,
-            ButtonBackground = "#FF0A84FF",
+            ButtonBackground = "#CC0A84FF",
             ButtonForeground = "#FFFFFF",
-            ButtonCornerRadius = 12,
+            ButtonCornerRadius = 14,
             ButtonHoverBackground = "#FF3080FF",
-            FieldBackground = "#10FFFFFF",
-            FieldBorderColor = "#15FFFFFF",
-            FieldRadius = 10,
+            FieldBackground = "#14FFFFFF",
+            FieldBorderColor = "#30FFFFFF",
+            FieldRadius = 12,
             FieldPadding = 12,
             ProgressBarForeground = "#FF0A84FF",
-            ProgressBarBackground = "#15FFFFFF",
-            ProgressBarRadius = 6,
-            ItemCardBackground = "#0AFFFFFF",
-            ItemCardRadius = 12,
-            OverlayColor = "#B005080E",
-            AccountsOverlayBackground = "#B014161F",
-            AccountsOverlayCornerRadius = 20,
-            AccountsOverlayBorderColor = "#25FFFFFF",
-            AccountsOverlayBorderThickness = 1,
+            ProgressBarBackground = "#20FFFFFF",
+            ProgressBarRadius = 8,
+            ItemCardBackground = "#10DDEEFF",
+            ItemCardRadius = 14,
+            // Overlays: deep dark glass
+            OverlayColor = "#CC050810",
+            AccountsOverlayBackground = "#D014181F",
+            AccountsOverlayCornerRadius = 24,
+            AccountsOverlayBorderColor = "#40FFFFFF",
+            AccountsOverlayBorderThickness = 1.2,
             PlayButtonGlobal = true,
-            BackgroundOpacity = 0.4
+            BackgroundOpacity = 1.0,
+            // Text: bright white for contrast on glass
+            PrimaryForeground = "#FFFFFF",
+            SecondaryForeground = "#C8E8FF"
         };
     }
 
     private LayoutStyle GetMountainsStyle()
     {
+        var wallpaperPath = Path.Combine(
+            Path.GetDirectoryName(Environment.ProcessPath ?? string.Empty) ?? string.Empty,
+            "assets", "theme_mountains.png");
+        if (!File.Exists(wallpaperPath))
+            wallpaperPath = Path.Combine(AppContext.BaseDirectory, "assets", "theme_mountains.png");
+
         return new LayoutStyle
         {
             BorderStyle = "rounded",
             CornerRadius = 16,
-            WindowBackground = "#0C0E14",
-            WindowBorderColor = "#30FF9F0A",
+            // No solid background — show the mountain wallpaper
+            WindowBackground = null,
+            BackgroundImagePath = File.Exists(wallpaperPath) ? wallpaperPath : null,
+            BackgroundOverlayOpacity = 0.55,    // semi-dark veil for readability
+            WindowBorderColor = "#40FF9F0A",
             WindowBorderThickness = 1,
             WindowMargin = 12,
             NavPosition = "sidebar",
             SidebarSide = "left",
-            SidebarBackground = "#0C0D12",
-            SidebarBorderColor = "#151720",
+            SidebarBackground = "#CC0B0E16",   // deep dark translucent slate
+            SidebarBorderColor = "#30FF9F0A",  // amber border glow
             SidebarWidth = 230,
-            AccentColor = "#FF9F0A",
-            CardBackground = "#121824",
-            CardCornerRadius = 12,
-            CardBorderColor = "#1F2A38",
+            AccentColor = "#FF9F0A",           // golden amber
+            CardBackground = "#C0101420",       // very dark navy, semi-opaque
+            CardCornerRadius = 14,
+            CardBorderColor = "#40FF9F0A",
             CardPadding = 20,
             ButtonBackground = "#FF9F0A",
-            ButtonForeground = "#000000",
-            ButtonCornerRadius = 8,
+            ButtonForeground = "#0B0E14",
+            ButtonCornerRadius = 10,
             ButtonHoverBackground = "#FFB340",
-            FieldBackground = "#1E293B",
-            FieldBorderColor = "#334155",
-            FieldRadius = 6,
+            FieldBackground = "#CC141A28",
+            FieldBorderColor = "#50334155",
+            FieldRadius = 8,
             FieldPadding = 12,
             ProgressBarForeground = "#FF9F0A",
-            ProgressBarBackground = "#1E293B",
-            ProgressBarRadius = 4,
-            ItemCardBackground = "#1E293B",
-            ItemCardRadius = 8,
-            OverlayColor = "#E00B0E14",
-            AccountsOverlayBackground = "#1E293B",
-            AccountsOverlayCornerRadius = 16,
-            AccountsOverlayBorderColor = "#334155",
+            ProgressBarBackground = "#40334155",
+            ProgressBarRadius = 6,
+            ItemCardBackground = "#B0141A28",
+            ItemCardRadius = 10,
+            OverlayColor = "#E50A0D18",
+            AccountsOverlayBackground = "#E0101522",
+            AccountsOverlayCornerRadius = 18,
+            AccountsOverlayBorderColor = "#40FF9F0A",
             AccountsOverlayBorderThickness = 1,
             PlayButtonGlobal = true,
-            BackgroundOpacity = 0.7
+            BackgroundOpacity = 1.0,
+            PrimaryForeground = "#F5E6C8",     // warm parchment white
+            SecondaryForeground = "#A89070"    // muted amber-grey
         };
     }
 
     private LayoutStyle GetClearBlueSkyStyle()
     {
+        var wallpaperPath = Path.Combine(
+            Path.GetDirectoryName(Environment.ProcessPath ?? string.Empty) ?? string.Empty,
+            "assets", "theme_clear_blue_sky.png");
+        if (!File.Exists(wallpaperPath))
+            wallpaperPath = Path.Combine(AppContext.BaseDirectory, "assets", "theme_clear_blue_sky.png");
+
         return new LayoutStyle
         {
             BorderStyle = "rounded",
             CornerRadius = 24,
-            WindowBackground = "#F0F9FF",
-            WindowBorderColor = "#300284C7",
+            WindowBackground = null,
+            BackgroundImagePath = File.Exists(wallpaperPath) ? wallpaperPath : null,
+            BackgroundOverlayOpacity = 0.15,    // light sky veil
+            WindowBorderColor = "#500284C7",
             WindowBorderThickness = 1.2,
             WindowMargin = 12,
             NavPosition = "sidebar",
             SidebarSide = "left",
-            SidebarBackground = "#E0F2FE",
-            SidebarBorderColor = "#BCE2FD",
+            SidebarBackground = "#DDE8F2FE",   // very light sky blue, slightly opaque
+            SidebarBorderColor = "#80BCE2FD",
             SidebarWidth = 230,
             AccentColor = "#0EA5E9",
-            CardBackground = "#D5FFFFFF",
-            CardCornerRadius = 18,
-            CardBorderColor = "#200284C7",
+            CardBackground = "#CCEAF5FF",       // pale sky semi-opaque
+            CardCornerRadius = 20,
+            CardBorderColor = "#600284C7",
             CardPadding = 20,
             ButtonBackground = "#0EA5E9",
             ButtonForeground = "#FFFFFF",
-            ButtonCornerRadius = 12,
+            ButtonCornerRadius = 14,
             ButtonHoverBackground = "#38BDF8",
-            FieldBackground = "#A0FFFFFF",
-            FieldBorderColor = "#3038BDF8",
-            FieldRadius = 10,
+            FieldBackground = "#B8EBF8FF",
+            FieldBorderColor = "#5038BDF8",
+            FieldRadius = 12,
             FieldPadding = 12,
             ProgressBarForeground = "#0EA5E9",
-            ProgressBarBackground = "#E0F2FE",
-            ProgressBarRadius = 6,
-            ItemCardBackground = "#E8F4FD",
-            ItemCardRadius = 12,
-            OverlayColor = "#D0F8FAFC",
-            AccountsOverlayBackground = "#FFFFFF",
-            AccountsOverlayCornerRadius = 20,
-            AccountsOverlayBorderColor = "#300284C7",
+            ProgressBarBackground = "#80E0F2FE",
+            ProgressBarRadius = 8,
+            ItemCardBackground = "#C0D8F0FC",
+            ItemCardRadius = 14,
+            OverlayColor = "#C8F8FAFC",
+            AccountsOverlayBackground = "#F2FAFF",
+            AccountsOverlayCornerRadius = 22,
+            AccountsOverlayBorderColor = "#500284C7",
             AccountsOverlayBorderThickness = 1,
             PlayButtonGlobal = true,
-            BackgroundOpacity = 0.95,
+            BackgroundOpacity = 1.0,
             PrimaryForeground = "#0F172A",
-            SecondaryForeground = "#475569"
+            SecondaryForeground = "#1E4E72"
         };
     }
 

@@ -21,7 +21,7 @@ build_and_package() {
     local deb_arch=$3
 
     echo "Building for $arch..."
-    dotnet publish OfflineMinecraftLauncher.csproj -c Release -r "$dotnet_arch" --self-contained true -p:PublishSingleFile=true -o "$PUBLISH_DIR/$arch"
+    dotnet publish OfflineMinecraftLauncher.csproj -c Release -r "$dotnet_arch" --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -o "$PUBLISH_DIR/$arch"
     
     if [ $? -ne 0 ]; then
         echo "Build failed for $arch"

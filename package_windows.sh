@@ -20,6 +20,7 @@ echo "Publishing self-contained Windows (win-x64) executable (no trimming for ma
 dotnet publish OfflineMinecraftLauncher.csproj -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true \
   -p:PublishTrimmed=false \
+  -p:PublishReadyToRun=true \
   -p:DebuggerSupport=false \
   -p:EnableUnsafeBinaryFormatterSerialization=false \
   -p:EnableUnsafeUTF7Encoding=false \

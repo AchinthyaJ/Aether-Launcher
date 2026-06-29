@@ -1,6 +1,8 @@
 using System;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Animation;
+using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Layout;
@@ -12,14 +14,11 @@ namespace OfflineMinecraftLauncher;
 
 public class SplashWindow : Window
 {
-    private readonly ProgressBar _progressBar;
-    private readonly TextBlock _statusText;
-
     public SplashWindow()
     {
         Title = "Aether Launcher";
         Width = 480;
-        Height = 320;
+        Height = 300;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         SystemDecorations = SystemDecorations.None;
         Background = Brushes.Transparent;
@@ -30,42 +29,13 @@ public class SplashWindow : Window
             WindowTransparencyLevel.Transparent
         };
 
-        _progressBar = new ProgressBar
-        {
-            Width = 360,
-            Height = 6,
-            Minimum = 0,
-            Maximum = 100,
-            Value = 0,
-            CornerRadius = new CornerRadius(3),
-            Background = new SolidColorBrush(Color.Parse("#1A1F2C")),
-            Foreground = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Color.Parse("#00F2FE"), 0),
-                    new GradientStop(Color.Parse("#6E5BFF"), 1)
-                }
-            },
-            Margin = new Thickness(0, 40, 0, 12),
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-
-        _statusText = new TextBlock
-        {
-            Text = "Starting Aether Launcher...",
-            FontSize = 12.5,
-            Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            FontWeight = FontWeight.Medium
-        };
+        // Start fully transparent — animation runs in Opened
+        Opacity = 0;
 
         var titleText = new TextBlock
         {
             Text = "A E T H E R",
-            FontSize = 38,
+            FontSize = 42,
             FontWeight = FontWeight.Black,
             Foreground = new LinearGradientBrush
             {
@@ -78,7 +48,7 @@ public class SplashWindow : Window
                 }
             },
             HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 10, 0, 2)
+            Margin = new Thickness(0, 0, 0, 6)
         };
 
         var subtitleText = new TextBlock
@@ -95,7 +65,8 @@ public class SplashWindow : Window
         {
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
-            Children = { titleText, subtitleText, _progressBar, _statusText }
+            Spacing = 0,
+            Children = { titleText, subtitleText }
         };
 
         Content = new Border
@@ -118,75 +89,70 @@ public class SplashWindow : Window
             Child = content
         };
 
-        _ = StartLoadingSequenceAsync();
-    }
-
-    private async Task StartLoadingSequenceAsync()
-    {
-        var steps = new (string text, int targetValue)[]
+        // All sequencing happens here — after the window is actually on screen
+        Opened += async (_, _) =>
         {
-            ("Initializing game directories...", 15),
-            ("Loading user configurations...", 35),
-            ("Starting local skin server...", 60),
-            ("Caching launcher assets...", 85),
-            ("Opening workspace...", 100)
-        };
-
-        foreach (var step in steps)
-        {
-            int current = (int)_progressBar.Value;
-            int diff = step.targetValue - current;
-
-            Dispatcher.UIThread.Post(() => _statusText.Text = step.text);
-
-            if (step.targetValue == 60)
+            // Kick off skin server in background immediately
+            _ = Task.Run(async () =>
             {
-                _ = Task.Run(async () =>
+                try { await AppRuntime.SkinServer.StartAsync(); }
+                catch (Exception ex) { LauncherLog.Error("Failed to initialize node skin server.", ex); }
+            });
+
+            // Allow one layout/render pass before animating
+            await Task.Delay(30);
+
+            // ── Fade IN (200ms) ──────────────────────────────────────────────
+            Transitions = new Transitions
+            {
+                new DoubleTransition
                 {
-                    try
-                    {
-                        await AppRuntime.SkinServer.StartAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        LauncherLog.Error("Failed to initialize node skin server.", ex);
-                    }
-                });
-            }
+                    Property = Window.OpacityProperty,
+                    Duration = TimeSpan.FromMilliseconds(200),
+                    Easing = new CubicEaseOut()
+                }
+            };
+            Opacity = 1.0;
 
-            for (int i = 0; i <= diff; i++)
+            // Stay visible for ~650ms (fade-in takes 200ms of this slot)
+            await Task.Delay(650);
+
+            // ── Fade OUT (150ms, quick) ──────────────────────────────────────
+            Transitions = new Transitions
             {
-                Dispatcher.UIThread.Post(() => _progressBar.Value = current + i);
-                await Task.Delay(12);
-            }
+                new DoubleTransition
+                {
+                    Property = Window.OpacityProperty,
+                    Duration = TimeSpan.FromMilliseconds(150),
+                    Easing = new CubicEaseIn()
+                }
+            };
+            Opacity = 0.0;
 
-            await Task.Delay(250);
-        }
+            await Task.Delay(160); // wait for fade-out to complete
 
-        await Task.Delay(200);
-
-        Dispatcher.UIThread.Post(() =>
-        {
-            bool needsOnboarding = true;
-            try
+            // ── Navigate ────────────────────────────────────────────────────
+            Dispatcher.UIThread.Post(() =>
             {
-                var initialPath = new MinecraftPath();
-                initialPath.CreateDirs();
-                var store = new UserSettingsStore(initialPath.BasePath);
-                var settings = store.Load();
-                needsOnboarding = settings.IsFirstRun || settings.Accounts.Count == 0;
-            }
-            catch {}
+                bool needsOnboarding = true;
+                try
+                {
+                    var initialPath = new MinecraftPath();
+                    initialPath.CreateDirs();
+                    var store = new UserSettingsStore(initialPath.BasePath);
+                    var settings = store.Load();
+                    needsOnboarding = settings.IsFirstRun || settings.Accounts.Count == 0;
+                }
+                catch { }
 
-            var nextWindow = needsOnboarding ? (Window)new FirstRunAccountWindow() : new MainWindow();
-            
-            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            {
-                desktop.MainWindow = nextWindow;
-            }
+                var nextWindow = needsOnboarding ? (Window)new FirstRunAccountWindow() : new MainWindow();
 
-            nextWindow.Show();
-            Close();
-        });
+                if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                    desktop.MainWindow = nextWindow;
+
+                nextWindow.Show();
+                Close();
+            });
+        };
     }
 }

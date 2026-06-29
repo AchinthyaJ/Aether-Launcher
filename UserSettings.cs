@@ -201,11 +201,11 @@ internal sealed class UserSettings
     public string CustomCapePath { get; set; } = string.Empty;
     public string CustomCapeSourcePath { get; set; } = string.Empty;
     public bool EnableFancyMenu { get; set; } = false;
-    public bool OfflineMode { get; set; } = true;
+    public bool OfflineMode { get; set; } = false;
     public string ClientLayout { get; set; } = string.Empty; // Legacy — kept for migration only
     public string ThemeVariant { get; set; } = "dark";
     public string AccentColor { get; set; } = "#6E5BFF";
-    public string? SelectedPreset { get; set; } = "None";
+    public string? SelectedPreset { get; set; } = "Mountains";
     public LayoutStyle Style { get; set; } = new();
     public List<string> SectionOrder { get; set; } = ["Hero", "Stats", "Actions"];
     public string LastSelectedProfilePath { get; set; } = string.Empty;

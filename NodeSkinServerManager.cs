@@ -131,9 +131,11 @@ internal sealed class NodeSkinServerManager : IDisposable
             return;
         }
 
+        var nodeExe = ResolveNodeExecutable();
+
         var startInfo = new ProcessStartInfo
         {
-            FileName = "node",
+            FileName = nodeExe,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -172,6 +174,128 @@ internal sealed class NodeSkinServerManager : IDisposable
         }
 
         LauncherLog.Warn("Node skin server did not become healthy in time.");
+    }
+
+    /// <summary>
+    /// Resolves the Node.js executable path.
+    /// Priority: (1) bundled node.exe next to the launcher, (2) found via where/which, (3) common Windows install paths, (4) bare "node" fallback.
+    /// </summary>
+    private static string ResolveNodeExecutable()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            // 1. Bundled node.exe in the app directory
+            var bundled = Path.Combine(AppContext.BaseDirectory, "node.exe");
+            if (File.Exists(bundled))
+            {
+                LauncherLog.Info($"[NodeServer] Using bundled node.exe: {bundled}");
+                return bundled;
+            }
+
+            // 2. Bundled inside node-skin-server\node.exe
+            var bundledInServer = Path.Combine(AppContext.BaseDirectory, "node-skin-server", "node.exe");
+            if (File.Exists(bundledInServer))
+            {
+                LauncherLog.Info($"[NodeServer] Using bundled node.exe (server dir): {bundledInServer}");
+                return bundledInServer;
+            }
+
+            // 3. Use 'where.exe' to search PATH
+            try
+            {
+                using var whereProc = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "where.exe",
+                    Arguments = "node",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true
+                });
+                if (whereProc != null)
+                {
+                    var result = whereProc.StandardOutput.ReadLine()?.Trim();
+                    whereProc.WaitForExit();
+                    if (!string.IsNullOrEmpty(result) && File.Exists(result))
+                    {
+                        LauncherLog.Info($"[NodeServer] Found node.exe via where.exe: {result}");
+                        return result;
+                    }
+                }
+            }
+            catch { /* where.exe not found or node not on PATH */ }
+
+            // 4. Common Windows install locations
+            var candidates = new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "nodejs", "node.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "Roaming", "nvm", "current", "node.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nvm", "current", "node.exe"),
+                @"C:\Program Files\nodejs\node.exe",
+                @"C:\Program Files (x86)\nodejs\node.exe"
+            };
+            foreach (var candidate in candidates)
+            {
+                if (File.Exists(candidate))
+                {
+                    LauncherLog.Info($"[NodeServer] Found node.exe at known location: {candidate}");
+                    return candidate;
+                }
+            }
+
+            LauncherLog.Warn("[NodeServer] node.exe not found in bundled dir, PATH, or common locations. Falling back to 'node'. Please install Node.js.");
+            return "node.exe";
+        }
+        else
+        {
+            // Linux/macOS: try bundled, then 'node', then 'nodejs' (Debian/Ubuntu uses 'nodejs')
+            var bundled = Path.Combine(AppContext.BaseDirectory, "node-skin-server", "node");
+            if (File.Exists(bundled))
+                return bundled;
+
+            try
+            {
+                using var which = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "which",
+                    Arguments = "node",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true
+                });
+                if (which != null)
+                {
+                    var result = which.StandardOutput.ReadLine()?.Trim();
+                    which.WaitForExit();
+                    if (!string.IsNullOrEmpty(result) && File.Exists(result))
+                        return result;
+                }
+            }
+            catch { }
+
+            // Fallback to nodejs (Debian/Ubuntu)
+            try
+            {
+                using var which2 = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "which",
+                    Arguments = "nodejs",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true
+                });
+                if (which2 != null)
+                {
+                    var result = which2.StandardOutput.ReadLine()?.Trim();
+                    which2.WaitForExit();
+                    if (!string.IsNullOrEmpty(result) && File.Exists(result))
+                        return result;
+                }
+            }
+            catch { }
+
+            return "node";
+        }
     }
 
     public void Dispose()
