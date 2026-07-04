@@ -1,4 +1,4 @@
-# AetherLauncher
+# Fugo Launcher
 
 A fast, modern Minecraft launcher built for **performance** and **zero-friction modding**.
 
@@ -19,7 +19,7 @@ A fast, modern Minecraft launcher built for **performance** and **zero-friction 
 
 ---
 
-## 💡 Why Aether Launcher?
+## 💡 Why Fugo Launcher?
 
 * Faster setup than traditional launchers
 * No confusing menus or bloated UI
@@ -47,8 +47,8 @@ A fast, modern Minecraft launcher built for **performance** and **zero-friction 
 * Download the binary or install the `.deb`
 
 ```bash
-chmod +x death-client-linux
-./death-client-linux
+chmod +x fugo-client-linux
+./fugo-client-linux
 ```
 
 ### Windows MSI
@@ -91,7 +91,7 @@ Contributions, issues, and suggestions are welcome.
 
 ## ⚠️ Disclaimer
 
-Aether Launcher is an independent project and is not affiliated with Mojang or Microsoft.
+Fugo Launcher is an independent project and is not affiliated with Mojang or Microsoft.
 
 ---
 

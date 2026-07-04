@@ -47,9 +47,9 @@ public class ModItem : System.ComponentModel.INotifyPropertyChanged
         set
         {
             if (_isEnabled == value) return;
-            if (!value && (FullPath.Contains("fabric-api", StringComparison.OrdinalIgnoreCase) || FullPath.Contains("aether-client", StringComparison.OrdinalIgnoreCase)))
+            if (!value && (FullPath.Contains("fabric-api", StringComparison.OrdinalIgnoreCase) || FullPath.Contains("fugo-client", StringComparison.OrdinalIgnoreCase) || FullPath.Contains("aether-client", StringComparison.OrdinalIgnoreCase)))
             {
-                // Prevent disabling fabric-api or aether-client
+                // Prevent disabling fabric-api, fugo-client or aether-client
                 PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsEnabled)));
                 return;
             }
@@ -92,16 +92,20 @@ public sealed class MainWindow : Window
     private readonly UserSettingsStore _settingsStore;
     private readonly ModrinthClient _modrinthClient = new();
     private readonly CurseForgeClient _curseForgeClient = new();
+    private static readonly Dictionary<string, Bitmap> _iconCache = new();
+    private static readonly HttpClient _imageClient = new();
     private readonly ObservableCollection<string> _versionItems = [];
     private readonly ObservableCollection<LauncherProfile> _profileItems = [];
     private readonly ObservableCollection<ModItem> _modItems = [];
     private readonly ObservableCollection<ModrinthProject> _searchResults = [];
+    private readonly List<ModrinthProject> _rawSearchResults = [];
     private static readonly string[] ProjectTypeOptions = ["Mod", "Modpack"];
     private static readonly string[] LoaderOptions = ["Any", "Vanilla", "Fabric", "Quilt", "Forge", "NeoForge"];
     private static readonly string[] ProfileLoaderOptions = ["Vanilla", "Fabric", "Quilt", "Forge", "NeoForge"];
-    private static readonly string[] ProfilePresetOptions = ["Aether Client (Fabric) (Coming Soon)", "Vanilla Minecraft", "Custom Modded"];
+    private static readonly string[] ProfilePresetOptions = ["Fugo Client (Fabric) (Coming Soon)", "Vanilla Minecraft", "Custom Modded"];
     private static readonly string[] VersionCategoryOptions = ["Versions", "Snapshots", "Other sources"];
     private static readonly string[] SourceOptions = ["Modrinth", "CurseForge"];
+    private static readonly string[] SortOptions = ["Relevance", "Downloads", "Followers", "Newest", "Alphabetical"];
 
     // Local server hosting state fields
     public class LocalServerMetadata
@@ -290,10 +294,11 @@ public sealed class MainWindow : Window
     private TextBox modrinthSearchInput = null!;
     private ComboBox modrinthProjectTypeCombo = null!;
     private ComboBox modrinthLoaderCombo = null!;
-    private ComboBox modrinthSourceCombo = null!;
     private Button modrinthSearchButton = null!;
     private TextBox modrinthVersionInput = null!;
     private ListBox modrinthResultsListBox = null!;
+    private Border modrinthDetailsPane = null!;
+    private ComboBox modrinthSortCombo = null!;
     private readonly ObservableCollection<WorldItem> _worldItems = [];
     private readonly ObservableCollection<ResourcePackItem> _resourcePackItems = [];
     private ToggleSwitch? _offlineModeToggle;
@@ -308,6 +313,11 @@ public sealed class MainWindow : Window
     private TextBlock modrinthDetailsBox = null!;
     private TextBlock modrinthResultsSummary = null!;
     private Button installSelectedButton = null!;
+    private Avalonia.Controls.Image modrinthDetailsIcon = null!;
+    private TextBlock modrinthDetailsTitle = null!;
+    private TextBlock modrinthDetailsMeta = null!;
+    private TextBlock modrinthDetailsDesc = null!;
+    private Border modrinthDetailsIconFallback = null!;
     private Button importMrpackButton = null!;
     private ListBox profileListBox = null!;
     private TextBlock profileInspectorTitle = null!;
@@ -381,10 +391,37 @@ public sealed class MainWindow : Window
     private Control? _featuredServersControl;
     public MainWindow()
     {
+        try
+        {
+            var brainDir = "/home/inchara/.gemini/antigravity/brain/91205767-5516-432b-a881-dcfc8e4070b0";
+            var sourceAssetsDir = "/home/inchara/Project Aether/Aether Launcher/assets";
+            if (System.IO.Directory.Exists(sourceAssetsDir) && System.IO.Directory.Exists(brainDir))
+            {
+                foreach (var f in System.IO.Directory.GetFiles(brainDir, "instance_default_cover_*.png"))
+                {
+                    var baseName = System.IO.Path.GetFileNameWithoutExtension(f);
+                    string newName = baseName + ".png";
+                    if (baseName.StartsWith("instance_default_cover_1")) newName = "instance_default_cover_1.png";
+                    else if (baseName.StartsWith("instance_default_cover_2")) newName = "instance_default_cover_2.png";
+                    else if (baseName.StartsWith("instance_default_cover_3")) newName = "instance_default_cover_3.png";
+                    else if (baseName.StartsWith("instance_default_cover_4")) newName = "instance_default_cover_4.png";
+                    var dest = System.IO.Path.Combine(sourceAssetsDir, newName);
+                    if (!System.IO.File.Exists(dest)) System.IO.File.Copy(f, dest, true);
+                    
+                    var buildAssets = System.IO.Path.Combine(System.AppContext.BaseDirectory, "assets");
+                    System.IO.Directory.CreateDirectory(buildAssets);
+                    var buildDest = System.IO.Path.Combine(buildAssets, newName);
+                    if (!System.IO.File.Exists(buildDest)) System.IO.File.Copy(f, buildDest, true);
+                }
+            }
+        }
+        catch { }
+
         var initialPath = new MinecraftPath();
         initialPath.CreateDirs();
         _settingsStore = new UserSettingsStore(initialPath.BasePath);
         _settings = _settingsStore.Load();
+        _settings.OfflineMode = false;
 
         // Reset corrupt layout styles (e.g. from an old AXAML import containing invalid/oversized dimensions)
         if (_settings.Style != null && (_settings.Style.SidebarPadding > 100 || _settings.Style.ButtonPadding > 100 || _settings.Style.SidebarWidth < 40))
@@ -475,6 +512,7 @@ public sealed class MainWindow : Window
         // and saved when the user selected it, so _settings.Style already reflects it.
         // Calling it on startup would overwrite any per-setting customizations the user made.
         Content = BuildRoot();
+        StartInternetCheckTimer();
 
         // Use adaptive timer: performance mode = 30fps (33ms), normal = 60fps (16ms)
         // 60fps is visually smooth for rotation and animations
@@ -913,8 +951,8 @@ public sealed class MainWindow : Window
 
     private void ConfigureWindowChrome()
     {
-        Title = "Aether Launcher";
-        Name = "aether-launcher";
+        Title = "Fugo Launcher";
+        Name = "fugo-launcher";
         Width = 1344;
         Height = 714;
         MinWidth = 1100;
@@ -1111,7 +1149,7 @@ public sealed class MainWindow : Window
         // 4. Default Bundled Resource
         try 
         {
-            var asset = AssetLoader.Open(new Uri("avares://AetherLauncher/assets/launcher_background.png"));
+            var asset = AssetLoader.Open(new Uri("avares://FugoLauncher/assets/launcher_background.png"));
             if (asset != null)
             {
                 return new ImageBrush(new Bitmap(asset)) 
@@ -1180,7 +1218,7 @@ public sealed class MainWindow : Window
                     },
                     new TextBlock
                     {
-                        Text = style.TitleText ?? "AETHER LAUNCHER",
+                        Text = style.TitleText ?? "FUGO LAUNCHER",
                         Foreground = Brushes.White,
                         FontSize = 18,
                         FontWeight = FontWeight.Black,
@@ -1312,7 +1350,7 @@ public sealed class MainWindow : Window
                 },
                 new TextBlock
                 {
-                    Text = "AETHER LAUNCHER",
+                    Text = "FUGO LAUNCHER",
                     Foreground = Brushes.White,
                     FontSize = 18,
                     FontWeight = FontWeight.Black,
@@ -1429,13 +1467,13 @@ public sealed class MainWindow : Window
         profileLoaderCombo ??= CreateComboBox(ProfileLoaderOptions);
 
         profilePresetCombo ??= CreateComboBox(ProfilePresetOptions);
-        profilePresetCombo.SelectedItem = "Aether Client (Fabric) (Coming Soon)";
+        profilePresetCombo.SelectedItem = "Fugo Client (Fabric) (Coming Soon)";
         profilePresetCombo.SelectionChanged += (s, e) =>
         {
             var selectedPreset = profilePresetCombo.SelectedItem?.ToString();
-            if (selectedPreset == "Aether Client (Fabric) (Coming Soon)" || selectedPreset == "Aether Client (Fabric)")
+            if (selectedPreset == "Fugo Client (Fabric) (Coming Soon)" || selectedPreset == "Fugo Client (Fabric)")
             {
-                profileNameInput.Text = "Aether Client";
+                profileNameInput.Text = "Fugo Client";
                 profileLoaderCombo.SelectedIndex = 1; // Fabric is Index 1 in ProfileLoaderOptions
                 var targetVer = _versionItems.FirstOrDefault(v => v.Contains("1.21.1")) 
                              ?? _versionItems.FirstOrDefault(v => v.Contains("1.21"))
@@ -1537,28 +1575,42 @@ public sealed class MainWindow : Window
 
         statusLabel ??= CreateStatusTextBlock();
         installDetailsLabel ??= CreateMutedTextBlock();
-        pbFiles ??= new ProgressBar { Height = 4, CornerRadius = new CornerRadius(2), Minimum = 0, Maximum = 100 };
-        pbProgress ??= new ProgressBar { Height = 4, CornerRadius = new CornerRadius(2), Minimum = 0, Maximum = 100 };
+        pbFiles ??= new ProgressBar { Height = 10, CornerRadius = new CornerRadius(8), Minimum = 0, Maximum = 100 };
+        pbProgress ??= new ProgressBar { Height = 10, CornerRadius = new CornerRadius(8), Minimum = 0, Maximum = 100 };
 
-        modrinthSearchInput ??= CreateTextBox();
+        if (modrinthSearchInput is null)
+        {
+            modrinthSearchInput = CreateTextBox();
+            modrinthSearchInput.MinWidth = 180;
+        }
         modrinthProjectTypeCombo ??= CreateComboBox(ProjectTypeOptions);
         modrinthLoaderCombo ??= CreateComboBox(LoaderOptions);
-        modrinthSourceCombo ??= CreateComboBox(SourceOptions);
+        
+        if (modrinthSortCombo is null)
+        {
+            modrinthSortCombo = CreateComboBox(SortOptions);
+            modrinthSortCombo.SelectionChanged += (s, e) => ApplySortAndBind();
+        }
 
         if (modrinthSearchButton is null)
         {
-            modrinthSearchButton = CreatePrimaryButton("Search", "#6E5BFF", Colors.White);
+            modrinthSearchButton = CreatePrimaryButton("Search", _settings.AccentColor, Colors.White);
             modrinthSearchButton.Click += async (_, _) => await SearchModrinthAsync();
         }
 
         modrinthVersionInput ??= CreateTextBox();
         modrinthResultsListBox ??= new ListBox { ItemsSource = _searchResults };
         modrinthResultsListBox.SelectionChanged -= ModrinthResultsListBox_SelectionChanged;
-        modrinthResultsListBox.SelectionChanged += ModrinthResultsListBox_SelectionChanged;
 
         modrinthDetailsBox ??= CreateMutedTextBlock();
         modrinthDetailsBox.TextWrapping = TextWrapping.Wrap;
         modrinthResultsSummary ??= CreateMutedTextBlock();
+
+        modrinthDetailsIcon ??= new Avalonia.Controls.Image { Width = 80, Height = 80, Margin = new Thickness(0, 0, 0, 12) };
+        modrinthDetailsTitle ??= new TextBlock { FontSize = 18, FontWeight = FontWeight.Bold, Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 2) };
+        modrinthDetailsMeta ??= new TextBlock { FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#7FA5C4")), TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 16) };
+        modrinthDetailsDesc ??= new TextBlock { FontSize = 13, Foreground = new SolidColorBrush(Color.Parse("#D1D5DB")), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+        modrinthDetailsIconFallback ??= new Border { Width = 80, Height = 80, CornerRadius = new CornerRadius(16), Background = new SolidColorBrush(Color.Parse("#253245")), Child = new TextBlock { Text = "?", FontSize = 36, FontWeight = FontWeight.Black, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
 
         if (installSelectedButton is null)
         {
@@ -1612,13 +1664,19 @@ public sealed class MainWindow : Window
         _quickModSearchButton.Click -= QuickModSearchButton_Click;
         _quickModSearchButton.Click += QuickModSearchButton_Click;
 
-        _playOverlay ??= new Border();
+              _playOverlay ??= new Border();
         _playOverlayIcon ??= new TextBlock();
         _playOverlayLabel ??= new TextBlock();
 
         _quickModResults.ItemsSource = _quickSearchResults;
-        
-        // Use a more robust detachment and re-attachment for the play button
+
+        var playGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+
         var playStack = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -1632,6 +1690,34 @@ public sealed class MainWindow : Window
         if (label != null) playStack.Children.Add(label);
         
         var accentColor = Color.Parse(_settings.AccentColor);
+        
+        var reinstallPart = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 16, 0)
+        };
+        
+        reinstallPart.Children.Add(new Border
+        {
+            Width = 1,
+            Height = 22,
+            Background = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
+            Margin = new Thickness(12, 0, 12, 0)
+        });
+        
+        reinstallPart.Children.Add(new TextBlock
+        {
+            Text = "⋮",
+            FontSize = 20,
+            Foreground = new SolidColorBrush(accentColor),
+            FontWeight = FontWeight.Bold,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        
+        playGrid.Children.Add(playStack);
+        playGrid.Children.Add(reinstallPart.With(column: 1));
+        
         _playOverlay.Background = new SolidColorBrush(Color.FromArgb(50, accentColor.R, accentColor.G, accentColor.B));
         _playOverlay.BorderBrush = new SolidColorBrush(accentColor);
         _playOverlay.BorderThickness = new Thickness(1.5);
@@ -1653,8 +1739,8 @@ public sealed class MainWindow : Window
         _playOverlayLabel.FontWeight = FontWeight.Bold;
         _playOverlayLabel.Margin = new Thickness(10, 0, 0, 0);
         _playOverlayLabel.Text = "PLAY";
-
-        _playOverlay.Child = playStack;
+ 
+        _playOverlay.Child = playGrid;
         _playOverlay.PointerPressed -= PlayOverlay_PointerPressed;
         _playOverlay.PointerPressed += PlayOverlay_PointerPressed;
         _playOverlay.Cursor = new Cursor(StandardCursorType.Hand);
@@ -2304,18 +2390,18 @@ public sealed class MainWindow : Window
         };
 
         var breakpointCard = BuildServerCard(
-            bgAsset: "avares://AetherLauncher/assets/launcher_background.png",
-            logoAsset: "avares://AetherLauncher/assets/breakpoint-logo.png",
+            bgAsset: "avares://FugoLauncher/assets/launcher_background.png",
+            logoAsset: "avares://FugoLauncher/assets/breakpoint-logo.png",
             serverName: "BreakPoint MC",
             tagLine: "⭐ FEATURED",
-            description: "Cracked Server. Optimised for Aether.",
+            description: "Cracked Server. Optimised for Fugo.",
             ip: "breakpoint.mcsrv.net",
             accentHex: "#7E6AFF",
             isFeatured: true
         );
 
         var hypixelCard = BuildServerCard(
-            bgAsset: "avares://AetherLauncher/assets/hypixel_card_bg.png",
+            bgAsset: "avares://FugoLauncher/assets/hypixel_card_bg.png",
             serverName: "Hypixel",
             tagLine: "MINI-GAMES",
             description: "The world's largest server.",
@@ -2325,7 +2411,7 @@ public sealed class MainWindow : Window
         );
 
         var donutCard = BuildServerCard(
-            bgAsset: "avares://AetherLauncher/assets/donut_smp_card_bg.png",
+            bgAsset: "avares://FugoLauncher/assets/donut_smp_card_bg.png",
             serverName: "Donut SMP",
             tagLine: "SURVIVAL",
             description: "Community survival SMP.",
@@ -2598,6 +2684,12 @@ public sealed class MainWindow : Window
         profileListBox = null!;
         modrinthResultsListBox = null!;
         modrinthDetailsBox = null!;
+        modrinthDetailsTitle = null!;
+        modrinthDetailsMeta = null!;
+        modrinthDetailsDesc = null!;
+        modrinthDetailsIconFallback = null!;
+        modrinthDetailsIcon = null!;
+        modrinthDetailsPane = null!;
         modrinthResultsSummary = null!;
         installSelectedButton = null!;
         importMrpackButton = null!;
@@ -2608,9 +2700,9 @@ public sealed class MainWindow : Window
         modrinthSearchInput = null!;
         modrinthProjectTypeCombo = null!;
         modrinthLoaderCombo = null!;
-        modrinthSourceCombo = null!;
         modrinthSearchButton = null!;
         modrinthVersionInput = null!;
+        modrinthSortCombo = null!;
 
         // Reset animation state so cards re-animate on next layout rebuild
         _homeCardsAnimated = false;
@@ -2724,6 +2816,18 @@ public sealed class MainWindow : Window
         _playOverlayLabel.FontWeight = FontWeight.Bold;
         _playOverlayLabel.Opacity = 1;
         _playOverlayLabel.Margin = new Thickness(10, 0, 0, 0);
+
+        // Update the 3-dots reinstall button color in case accent color changed
+        if (_playOverlay.Child is Grid playGrid && playGrid.Children.Count >= 2)
+        {
+            if (playGrid.Children[1] is StackPanel reinstallPart && reinstallPart.Children.Count >= 2)
+            {
+                if (reinstallPart.Children[1] is TextBlock threeDotsTb)
+                {
+                    threeDotsTb.Foreground = new SolidColorBrush(accent_deck);
+                }
+            }
+        }
 
         ApplyHoverMotion(_playOverlay);
 
@@ -2859,7 +2963,7 @@ public sealed class MainWindow : Window
                             {
                                 new TextBlock
                                 {
-                                    Text = "Aether Client",
+                                    Text = "Fugo Client",
                                     FontSize = 18,
                                     FontWeight = FontWeight.Bold,
                                     Foreground = _settings.ThemeVariant == "light" ? Brushes.Black : Brushes.White
@@ -2884,7 +2988,7 @@ public sealed class MainWindow : Window
                         },
                         new TextBlock
                         {
-                            Text = "Coming soon — optimised for Aether.",
+                            Text = "Coming soon — optimised for Fugo.",
                             FontSize = 12,
                             Foreground = _settings.ThemeVariant == "light" ? new SolidColorBrush(Color.Parse("#4A5568")) : new SolidColorBrush(Color.Parse("#A0A8B8"))
                         },
@@ -2965,14 +3069,51 @@ public sealed class MainWindow : Window
         _homeStatusBar = new Border
         {
             Height = 110,
-            Background = new SolidColorBrush(Color.Parse("#0D111C")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#2A3143")),
-            BorderThickness = new Thickness(0, 1, 0, 0),
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(200, 10, 16, 28), 0.0), // translucent night sky base
+                    new GradientStop(Color.FromArgb(240, 5, 8, 14), 1.0)
+                }
+            },
+            BorderBrush = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(30, 255, 255, 255), 0.0),
+                    new GradientStop(Color.FromArgb(160, 127, 229, 255), 0.5), // glowing Fugo-blue edge
+                    new GradientStop(Color.FromArgb(30, 255, 255, 255), 1.0)
+                }
+            },
+            BorderThickness = new Thickness(0, 1.5, 0, 0),
             Padding = new Thickness(32, 20),
             IsVisible = false,
+            Opacity = 0,
+            Margin = new Thickness(0, 0, 0, -110),
+            BoxShadow = BoxShadows.Parse("0 -8 30 0 #1E7FE5FF"), // upward Fugo sky glow
+            Transitions = new Transitions
+            {
+                new DoubleTransition
+                {
+                    Property = Border.OpacityProperty,
+                    Duration = TimeSpan.FromMilliseconds(400),
+                    Easing = new CubicEaseOut()
+                },
+                new ThicknessTransition
+                {
+                    Property = Border.MarginProperty,
+                    Duration = TimeSpan.FromMilliseconds(450),
+                    Easing = new CubicEaseOut()
+                }
+            },
             Child = new StackPanel
             {
-                Spacing = 16,
+                Spacing = 12,
                 Children =
                 {
                     new StackPanel
@@ -2982,31 +3123,65 @@ public sealed class MainWindow : Window
                             statusLabel.With(tb => {
                                 tb.FontSize = 15;
                                 tb.FontWeight = FontWeight.Black;
-                                tb.Foreground = Brushes.White;
+                                tb.Foreground = new LinearGradientBrush
+                                {
+                                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                                    EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+                                    GradientStops =
+                                    {
+                                        new GradientStop(Color.Parse("#FFFFFF"), 0.0),
+                                        new GradientStop(Color.Parse("#BCEEFF"), 1.0)
+                                    }
+                                };
                             }),
                             installDetailsLabel.With(tb => {
                                 tb.FontSize = 12;
-                                tb.Foreground = new SolidColorBrush(Color.Parse("#8E98AC"));
+                                tb.Foreground = new SolidColorBrush(Color.Parse("#7FA5C4"));
                                 tb.Margin = new Thickness(0, 4, 0, 0);
                             })
                         }
                     },
-                    new StackPanel
+                    new Border
                     {
-                        Spacing = 8,
-                        Children =
+                        CornerRadius = new CornerRadius(double.IsNaN(_settings.Style.ProgressBarRadius) ? 8 : _settings.Style.ProgressBarRadius),
+                        Background = Brushes.Transparent,
+                        BoxShadow = new BoxShadows(new BoxShadow
                         {
-                            pbFiles.With(pb => {
-                                pb.Height = 6;
-                                pb.CornerRadius = new CornerRadius(3);
-                            }),
-                            pbProgress.With(pb => {
-                                pb.Height = 14;
-                                pb.CornerRadius = new CornerRadius(7);
-                                pb.Background = new SolidColorBrush(Color.Parse("#1A1F2E"));
-                                pb.Foreground = new SolidColorBrush(Color.Parse(_settings.AccentColor));
-                            })
-                        }
+                            Blur = 16,
+                            Color = Color.FromArgb(60, Color.Parse(_settings.AccentColor).R, Color.Parse(_settings.AccentColor).G, Color.Parse(_settings.AccentColor).B),
+                            OffsetX = 0,
+                            OffsetY = 0
+                        }),
+                        Child = pbProgress.With(pb => {
+                            pb.Height = double.IsNaN(_settings.Style.ProgressBarHeight) ? 10 : _settings.Style.ProgressBarHeight;
+                            pb.CornerRadius = new CornerRadius(double.IsNaN(_settings.Style.ProgressBarRadius) ? 8 : _settings.Style.ProgressBarRadius);
+                            pb.Background = new SolidColorBrush(
+                                !string.IsNullOrWhiteSpace(_settings.Style.ProgressBarBackground)
+                                    ? Color.Parse(_settings.Style.ProgressBarBackground)
+                                    : Color.FromArgb(25, 255, 255, 255)
+                            );
+                            var accentColorVal = Color.Parse(_settings.AccentColor);
+                            pb.Foreground = new LinearGradientBrush
+                            {
+                                StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
+                                EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
+                                GradientStops =
+                                {
+                                    new GradientStop(Color.Parse("#7FE5FF"), 0.0),
+                                    new GradientStop(Color.Parse("#FFFFFF"), 0.5),
+                                    new GradientStop(accentColorVal, 1.0)
+                                }
+                            };
+                            pb.Transitions = new Transitions
+                            {
+                                new DoubleTransition
+                                {
+                                    Property = ProgressBar.ValueProperty,
+                                    Duration = TimeSpan.FromMilliseconds(300),
+                                    Easing = new CubicEaseOut()
+                                }
+                            };
+                        })
                     }
                 }
             }
@@ -3052,105 +3227,111 @@ public sealed class MainWindow : Window
 
     private Control BuildModrinthDeck()
     {
-        // ── Search & Filter Row ───────────────────────────────────────────
-        
+        // ── Search & Filter Row Styling ────────────────────────────────────
+        var accentColorVal = Color.Parse(_settings.AccentColor);
+        var fieldBg = new SolidColorBrush(Color.Parse(!string.IsNullOrWhiteSpace(_settings.Style.FieldBackground) ? _settings.Style.FieldBackground : "#1A1F2E"));
+        var fieldBorder = new SolidColorBrush(Color.Parse(!string.IsNullOrWhiteSpace(_settings.Style.FieldBorderColor) ? _settings.Style.FieldBorderColor : "#2A3143"));
+        var fieldRadius = new CornerRadius(double.IsNaN(_settings.Style.FieldRadius) ? 16 : _settings.Style.FieldRadius);
+
         modrinthSearchInput.Watermark = "🔍 Search for mods...";
-        modrinthSearchInput.CornerRadius = new CornerRadius(16);
-        modrinthSearchInput.Background = new SolidColorBrush(Color.Parse("#1A1F2E"));
-        modrinthSearchInput.BorderBrush = new SolidColorBrush(Color.Parse("#2A3143"));
+        modrinthSearchInput.CornerRadius = fieldRadius;
+        modrinthSearchInput.Background = fieldBg;
+        modrinthSearchInput.BorderBrush = fieldBorder;
         modrinthSearchInput.BorderThickness = new Thickness(1);
         modrinthSearchInput.Height = 42;
         modrinthSearchInput.VerticalContentAlignment = VerticalAlignment.Center;
         
-        // Ensure pressing Enter searches
         modrinthSearchInput.KeyDown += async (_, e) => {
             if (e.Key == Avalonia.Input.Key.Enter) await SearchModrinthAsync();
         };
 
-        // Style the dropdowns to fit
-        modrinthLoaderCombo.CornerRadius = new CornerRadius(16);
+        modrinthLoaderCombo.CornerRadius = fieldRadius;
         modrinthLoaderCombo.Height = 42;
         modrinthLoaderCombo.Background = Brushes.Transparent;
-        modrinthLoaderCombo.BorderBrush = new SolidColorBrush(Color.Parse("#2A3143"));
+        modrinthLoaderCombo.BorderBrush = fieldBorder;
 
-        modrinthVersionInput.CornerRadius = new CornerRadius(16);
+        modrinthVersionInput.CornerRadius = fieldRadius;
         modrinthVersionInput.Height = 42;
         modrinthVersionInput.Background = Brushes.Transparent;
-        modrinthVersionInput.BorderBrush = new SolidColorBrush(Color.Parse("#2A3143"));
+        modrinthVersionInput.BorderBrush = fieldBorder;
         modrinthVersionInput.MinHeight = 42;
         
-        modrinthProjectTypeCombo.CornerRadius = new CornerRadius(16);
+        modrinthProjectTypeCombo.CornerRadius = fieldRadius;
         modrinthProjectTypeCombo.Height = 42;
         modrinthProjectTypeCombo.Background = Brushes.Transparent;
-        modrinthProjectTypeCombo.BorderBrush = new SolidColorBrush(Color.Parse("#2A3143"));
+        modrinthProjectTypeCombo.BorderBrush = fieldBorder;
 
-        modrinthSourceCombo.CornerRadius = new CornerRadius(16);
-        modrinthSourceCombo.Height = 42;
-        modrinthSourceCombo.Background = Brushes.Transparent;
-        modrinthSourceCombo.BorderBrush = new SolidColorBrush(Color.Parse("#2A3143"));
-
-        modrinthSearchButton.CornerRadius = new CornerRadius(16);
+        modrinthSearchButton.CornerRadius = fieldRadius;
         modrinthSearchButton.Height = 42;
         SetButtonText(modrinthSearchButton, "🔍 Search");
+        
+        var accentTargetColor = Color.FromArgb(160, accentColorVal.R, accentColorVal.G, accentColorVal.B);
         modrinthSearchButton.Background = new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
             EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
             GradientStops =
             {
-                new GradientStop(Color.Parse("#6E5BFF"), 0),
-                new GradientStop(Color.Parse("#A855F7"), 1)
+                new GradientStop(accentColorVal, 0),
+                new GradientStop(accentTargetColor, 1)
             }
         };
         modrinthSearchButton.BorderThickness = new Thickness(0);
         modrinthSearchButton.Padding = new Thickness(16, 0);
 
+        modrinthSortCombo.CornerRadius = fieldRadius;
+        modrinthSortCombo.Height = 42;
+        modrinthSortCombo.Background = Brushes.Transparent;
+        modrinthSortCombo.BorderBrush = fieldBorder;
+
         var filterRow = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto,Auto"),
             ColumnSpacing = 12,
-            Margin = new Thickness(12, 0, 12, 24) // Match image padding
+            Margin = new Thickness(4, 0, 4, 16)
         };
 
         filterRow.Children.Add(modrinthSearchInput.With(column: 0));
-
-        var sourceText = new TextBlock { Text = "Source", Foreground = new SolidColorBrush(Color.Parse("#A0A8B8")), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,4,0) };
-        var sourcePanel = new StackPanel { Orientation = Orientation.Horizontal, Children = { sourceText, modrinthSourceCombo } };
-        filterRow.Children.Add(sourcePanel.With(column: 1));
         
         var loaderText = new TextBlock { Text = "Loader", Foreground = new SolidColorBrush(Color.Parse("#A0A8B8")), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,4,0) };
         var loaderPanel = new StackPanel { Orientation = Orientation.Horizontal, Children = { loaderText, modrinthLoaderCombo } };
-        filterRow.Children.Add(loaderPanel.With(column: 2));
+        filterRow.Children.Add(loaderPanel.With(column: 1));
 
         var versionText = new TextBlock { Text = "Version", Foreground = new SolidColorBrush(Color.Parse("#A0A8B8")), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,4,0) };
         var versionPanel = new StackPanel { Orientation = Orientation.Horizontal, Children = { versionText, modrinthVersionInput } };
-        filterRow.Children.Add(versionPanel.With(column: 3));
+        filterRow.Children.Add(versionPanel.With(column: 2));
 
-        filterRow.Children.Add(modrinthProjectTypeCombo.With(column: 4));
-        
+        filterRow.Children.Add(modrinthProjectTypeCombo.With(column: 3));
+
+        var sortText = new TextBlock { Text = "Sort", Foreground = new SolidColorBrush(Color.Parse("#A0A8B8")), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,4,0) };
+        var sortPanel = new StackPanel { Orientation = Orientation.Horizontal, Children = { sortText, modrinthSortCombo } };
+        filterRow.Children.Add(sortPanel.With(column: 4));
+
         filterRow.Children.Add(modrinthSearchButton.With(column: 5));
         
         // ── Card Item Template ────────────────────────────────────────────
-
         modrinthResultsListBox.Background = Brushes.Transparent;
         modrinthResultsListBox.ItemsPanel = new FuncTemplate<Panel?>(() => new Avalonia.Controls.Primitives.UniformGrid { Columns = 2 });
         modrinthResultsListBox.ItemsSource = _searchResults;
-        modrinthResultsListBox.Margin = new Thickness(4, 0);
+        modrinthResultsListBox.Margin = new Thickness(0);
 
-        modrinthResultsListBox.ItemTemplate = new FuncDataTemplate<ModrinthProject>((project, _) =>
+        modrinthResultsListBox.ItemTemplate = new FuncDataTemplate<ModrinthProject>((project, nameScope) =>
         {
             bool isInstalled = _selectedProfile?.InstalledModIds.Contains(project?.ProjectId ?? "") ?? false;
+            
             var installBtn = new Button
             {
-                Content = isInstalled ? "Installed" : "Install",
+                Content = isInstalled ? "✓" : "↓",
                 IsEnabled = !isInstalled,
-                Background = Brushes.Transparent,
-                Foreground = Brushes.White,
-                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(16),
-                Padding = new Thickness(20, 8),
-                FontSize = 13,
+                Background = isInstalled 
+                    ? new SolidColorBrush(Color.FromArgb(30, 255, 255, 255))
+                    : new SolidColorBrush(accentColorVal),
+                Foreground = isInstalled 
+                    ? new SolidColorBrush(Color.Parse("#A0A8B8"))
+                    : (Color.Parse(_settings.Style.ButtonForeground ?? "#FFFFFF") == Colors.Black ? Brushes.Black : Brushes.White),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(12, 6),
+                FontSize = 12,
                 FontWeight = FontWeight.Bold,
                 VerticalAlignment = VerticalAlignment.Center
             };
@@ -3169,41 +3350,56 @@ public sealed class MainWindow : Window
                          dls >= 1_000 ? $"{dls / 1_000.0:0.0}K+" :
                          dls.ToString();
 
-            return new Border
+            var mockIconBorder = new Border
             {
-                Background = new SolidColorBrush(Color.FromArgb(50, 22, 28, 42)),
+                Width = 48,
+                Height = 48,
+                CornerRadius = new CornerRadius(10),
+                Background = new SolidColorBrush(Color.Parse("#253245")),
+                Child = new TextBlock
+                {
+                    Text = (project?.Title ?? "?").Substring(0, 1).ToUpperInvariant(),
+                    FontSize = 20,
+                    FontWeight = FontWeight.Black,
+                    Foreground = Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            };
+
+            var modIcon = new Avalonia.Controls.Image
+            {
+                Width = 48,
+                Height = 48,
+                IsVisible = false
+            };
+
+            _ = LoadModIconAsync(project?.IconUrl, project?.Title ?? "?", modIcon, mockIconBorder);
+
+            var cardBorder = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(40, 22, 28, 42)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(16),
-                Margin = new Thickness(8),
-                Padding = new Thickness(16),
+                Margin = new Thickness(6),
+                Padding = new Thickness(12),
                 Child = new Grid
                 {
                     ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-                    ColumnSpacing = 16,
+                    ColumnSpacing = 12,
                     Children =
                     {
-                        // Mock icon if none exists
-                        new Border
+                        new Grid
                         {
-                            Width = 52,
-                            Height = 52,
-                            CornerRadius = new CornerRadius(12),
-                            Background = new SolidColorBrush(Color.Parse("#253245")),
-                            Child = new TextBlock
-                            {
-                                Text = (project?.Title ?? "?").Substring(0, 1).ToUpperInvariant(),
-                                FontSize = 24,
-                                FontWeight = FontWeight.Black,
-                                Foreground = Brushes.White,
-                                HorizontalAlignment = HorizontalAlignment.Center,
-                                VerticalAlignment = VerticalAlignment.Center
-                            }
+                            Width = 48,
+                            Height = 48,
+                            Children = { mockIconBorder, modIcon }
                         }.With(column: 0),
 
                         new StackPanel
                         {
-                            Spacing = 4,
+                            Spacing = 2,
                             VerticalAlignment = VerticalAlignment.Center,
                             Children =
                             {
@@ -3212,28 +3408,26 @@ public sealed class MainWindow : Window
                                     Text = project?.Title ?? "Unknown",
                                     Foreground = Brushes.White,
                                     FontWeight = FontWeight.Bold,
-                                    FontSize = 16,
-                                    TextTrimming = TextTrimming.CharacterEllipsis // Avoid grid explosion
+                                    FontSize = 14,
+                                    TextTrimming = TextTrimming.CharacterEllipsis
                                 },
                                 new TextBlock
                                 {
                                     Text = project?.Description ?? "",
-                                    Foreground = new SolidColorBrush(Color.Parse("#A0A8B8")),
-                                    FontSize = 14,
-                                    TextWrapping = TextWrapping.Wrap,
-                                    MaxLines = 2,
-                                    TextTrimming = TextTrimming.WordEllipsis
+                                    Foreground = new SolidColorBrush(Color.Parse("#9CA3AF")),
+                                    FontSize = 12,
+                                    TextWrapping = TextWrapping.NoWrap,
+                                    TextTrimming = TextTrimming.CharacterEllipsis
                                 },
                                 new StackPanel
                                 {
                                     Orientation = Orientation.Horizontal,
-                                    Spacing = 6,
-                                    Margin = new Thickness(0, 4, 0, 0),
+                                    Spacing = 8,
+                                    Margin = new Thickness(0, 2, 0, 0),
                                     Children =
                                     {
-                                        new TextBlock { Text = "◆", Foreground = new SolidColorBrush(Color.Parse("#6E5BFF")), FontSize = 12 },
-                                        new TextBlock { Text = dlText, Foreground = new SolidColorBrush(Color.Parse("#A0A8B8")), FontSize = 12 },
-                                        new TextBlock { Text = "♡", Foreground = new SolidColorBrush(Color.Parse("#A0A8B8")), FontSize = 12 }
+                                        new TextBlock { Text = "◆", Foreground = new SolidColorBrush(accentColorVal), FontSize = 10 },
+                                        new TextBlock { Text = $"{dlText} dls", Foreground = new SolidColorBrush(Color.Parse("#9CA3AF")), FontSize = 10 }
                                     }
                                 }
                             }
@@ -3243,26 +3437,142 @@ public sealed class MainWindow : Window
                     }
                 }
             };
+
+            cardBorder.Transitions = new Transitions
+            {
+                new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) },
+                new BrushTransition { Property = Border.BackgroundProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) },
+                new BrushTransition { Property = Border.BorderBrushProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) },
+                new BoxShadowsTransition { Property = Border.BoxShadowProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) }
+            };
+            cardBorder.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            
+            cardBorder.PointerEntered += (s, e) =>
+            {
+                cardBorder.Background = new SolidColorBrush(Color.FromArgb(70, 30, 40, 60));
+                cardBorder.BorderBrush = new SolidColorBrush(accentColorVal);
+                cardBorder.RenderTransform = TransformOperations.Parse("scale(1.03)");
+                cardBorder.BoxShadow = new BoxShadows(new BoxShadow
+                {
+                    Blur = 10,
+                    Color = Color.FromArgb(40, accentColorVal.R, accentColorVal.G, accentColorVal.B),
+                    OffsetX = 0,
+                    OffsetY = 0
+                });
+            };
+            cardBorder.PointerExited += (s, e) =>
+            {
+                cardBorder.Background = new SolidColorBrush(Color.FromArgb(40, 22, 28, 42));
+                cardBorder.BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
+                cardBorder.RenderTransform = TransformOperations.Parse("scale(1.0)");
+                cardBorder.BoxShadow = new BoxShadows();
+            };
+            ToolTip.SetTip(cardBorder, "Double-click to view details");
+            cardBorder.DoubleTapped += (s, e) =>
+            {
+                modrinthResultsListBox.SelectedItem = project;
+                UpdateSelectedProjectDetails();
+            };
+
+            return cardBorder;
         });
 
         var resultsScroll = new ScrollViewer
         {
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = modrinthResultsListBox,
-            MaxHeight = 650 // Fit well into window
+            MaxHeight = 580
         };
 
-        var mainContent = new StackPanel
+        var layoutGrid = new Grid
         {
-            Spacing = 8,
-            Children =
+            ColumnDefinitions = new ColumnDefinitions("*, Auto"),
+            ColumnSpacing = 16,
+            Margin = new Thickness(4, 0, 4, 0)
+        };
+
+        var leftCol = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            RowSpacing = 8
+        };
+        leftCol.Children.Add(filterRow.With(row: 0));
+        leftCol.Children.Add(resultsScroll.With(row: 1));
+        
+        layoutGrid.Children.Add(leftCol.With(column: 0));
+
+        // Re-initialize details buttons/dimensions
+        installSelectedButton.CornerRadius = new CornerRadius(14);
+        installSelectedButton.Height = 44;
+        installSelectedButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+        var closeDetailsBtn = new Button
+        {
+            Content = "✕",
+            Width = 32,
+            Height = 32,
+            Padding = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            CornerRadius = new CornerRadius(16),
+            Background = new SolidColorBrush(Color.FromArgb(30, 255,255,255)),
+            Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 0, -10, 0),
+            ZIndex = 10,
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        closeDetailsBtn.Click += (_, _) => {
+            modrinthDetailsPane.IsVisible = false;
+            modrinthResultsListBox.SelectedItem = null;
+        };
+
+        modrinthDetailsPane = new Border
+        {
+            IsVisible = false,
+            Width = 360,
+            Background = new SolidColorBrush(Color.FromArgb(45, 12, 17, 30)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(20),
+            Padding = new Thickness(20),
+            Height = 638,
+            Child = new Grid
             {
-                filterRow,
-                resultsScroll
+                RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto"),
+                Children =
+                {
+                    closeDetailsBtn.With(row: 0),
+                    new Grid
+                    {
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 10, 0, 12),
+                        Children =
+                        {
+                            modrinthDetailsIconFallback,
+                            modrinthDetailsIcon
+                        }
+                    }.With(row: 0),
+                    
+                    modrinthDetailsTitle.With(row: 1),
+                    modrinthDetailsMeta.With(row: 2),
+                    
+                    new ScrollViewer
+                    {
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        Margin = new Thickness(0, 10, 0, 16),
+                        Content = modrinthDetailsDesc
+                    }.With(row: 3),
+                    
+                    installSelectedButton.With(row: 4)
+                }
             }
         };
+
+        layoutGrid.Children.Add(modrinthDetailsPane.With(column: 1));
         
-        return CreateSectionScroller(mainContent);
+        return CreateSectionScroller(layoutGrid);
     }
 
     private Control BuildProfilesDeck()
@@ -3466,15 +3776,15 @@ public sealed class MainWindow : Window
             }
 
             // Normal Instance Card
-            bool isAether = profile.Name == "Aether Client" || profile.Name.Contains("Aether", StringComparison.OrdinalIgnoreCase);
+            bool isFugo = profile.Name == "Fugo Client" || profile.Name.Contains("Fugo", StringComparison.OrdinalIgnoreCase);
 
             var card = new Border
             {
                 Width = 230,
                 Height = 280,
                 CornerRadius = new CornerRadius(14),
-                BorderThickness = isAether ? new Thickness(2) : new Thickness(1),
-                BorderBrush = isAether
+                BorderThickness = isFugo ? new Thickness(2) : new Thickness(1),
+                BorderBrush = isFugo
                     ? new LinearGradientBrush
                       {
                           StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
@@ -3526,7 +3836,7 @@ public sealed class MainWindow : Window
                         Stretch = Stretch.UniformToFill
                     };
                 }
-                else if (profile.Name == "Aether Client" || profile.Name.Contains("Aether", StringComparison.OrdinalIgnoreCase))
+                else if (profile.Name == "Fugo Client" || profile.Name.Contains("Fugo", StringComparison.OrdinalIgnoreCase))
                 {
                     // Center the launcher logo over a gorgeous cosmic royal purple gradient!
                     topPreview.Background = new LinearGradientBrush
@@ -3554,11 +3864,46 @@ public sealed class MainWindow : Window
                 }
                 else
                 {
-                    // Fallback to our breathtaking default castle artwork compiled into assets
-                    coverBrush = new ImageBrush(new Bitmap(AssetLoader.Open(new Uri("avares://AetherLauncher/assets/instance_default_cover.png"))))
-                    {
-                        Stretch = Stretch.UniformToFill
+                    // Fallback to user-provided Default_covers
+                    string[] defaultCovers = {
+                        "instance_default_cover.png",
+                        "Pasted image.png",
+                        "Pasted image (2).png",
+                        "Pasted image (3).png",
+                        "Pasted image (4).png",
+                        "Pasted image (5).png",
+                        "Pasted image (6).png",
+                        "Pasted image (7).png",
+                        "Pasted image (8).png",
+                        "Pasted image (9).png",
+                        "Pasted image (10).png",
+                        "Pasted image (11).png",
+                        "Pasted image (12).png",
+                        "Pasted image (13).png"
                     };
+
+                    int hash = Math.Abs(profile.InstanceDirectory.GetHashCode());
+                    string selectedCover = defaultCovers[hash % defaultCovers.Length];
+
+                    try
+                    {
+                        var uriStr = "avares://FugoLauncher/assets/Default_covers/" + selectedCover.Replace(" ", "%20");
+                        coverBrush = new ImageBrush(new Bitmap(AssetLoader.Open(new Uri(uriStr)))) { Stretch = Stretch.UniformToFill };
+                    }
+                    catch
+                    {
+                        // Safe fallback gradient if everything fails
+                        coverBrush = new LinearGradientBrush
+                        {
+                            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                            GradientStops =
+                            {
+                                new GradientStop(Color.Parse("#8E2DE2"), 0.0),
+                                new GradientStop(Color.Parse("#4A00E0"), 1.0)
+                            }
+                        };
+                    }
                 }
             }
             catch
@@ -3619,59 +3964,18 @@ public sealed class MainWindow : Window
             };
             cardGrid.Children.Add(overlay.With(row: 0));
 
-            // Flat Block Loader Icon Overlay
-            Control badgeChild;
-            if (profile.Name == "Aether Client" || profile.Name.Contains("Aether", StringComparison.OrdinalIgnoreCase))
-            {
-                badgeChild = new Image
-                {
-                    Source = new Bitmap(AssetLoader.Open(new Uri(GetTaskbarIconUri()))),
-                    Width = 20,
-                    Height = 20,
-                    Stretch = Stretch.Uniform,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-            }
-            else
-            {
-                badgeChild = new TextBlock
-                {
-                    Text = profile.LoaderDisplay.Contains("Fabric", StringComparison.OrdinalIgnoreCase) ? "🪶" :
-                           profile.LoaderDisplay.Contains("Forge", StringComparison.OrdinalIgnoreCase) ? "🔥" : "🌱",
-                    FontSize = 16,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-            }
-
-            var blockIcon = new Border
-            {
-                Width = 32,
-                Height = 32,
-                CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Color.FromArgb(160, 20, 29, 45)),
-                BorderBrush = new SolidColorBrush(Color.Parse("#2A3654")),
-                BorderThickness = new Thickness(1),
-                HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(12),
-                Child = badgeChild
-            };
-            cardGrid.Children.Add(blockIcon.With(row: 0));
-
             // "•••" Context Menu Button
             var menuBtn = new Button
             {
-                Width = 28,
-                Height = 24,
-                CornerRadius = new CornerRadius(6),
-                Background = new SolidColorBrush(Color.FromArgb(80, 0, 0, 0)),
+                Width = 32,
+                Height = 28,
+                CornerRadius = new CornerRadius(8),
+                Background = new SolidColorBrush(Color.FromArgb(180, 0, 0, 0)),
                 BorderThickness = new Thickness(0),
                 Content = new TextBlock
                 {
                     Text = "•••",
-                    FontSize = 10,
+                    FontSize = 14,
                     FontWeight = FontWeight.Bold,
                     Foreground = Brushes.White,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -3720,7 +4024,7 @@ public sealed class MainWindow : Window
             contextMenu.Items.Add(editItem);
             contextMenu.Items.Add(openFolderItem);
 
-            if (!isAether)
+            if (!isFugo)
             {
                 var changeCoverItem = new MenuItem { Header = "🖼 Change Cover" };
                 changeCoverItem.Click += async (_, _) =>
@@ -3801,8 +4105,9 @@ public sealed class MainWindow : Window
             {
                 Width = 34,
                 Height = 34,
+                Padding = new Thickness(0), // Reset padding so it doesn't squish the icon into a white rectangle!
                 CornerRadius = new CornerRadius(17),
-                Background = isAether ? new SolidColorBrush(Color.Parse("#D4AF37")) : new SolidColorBrush(Color.Parse("#2E7D32")),
+                Background = new SolidColorBrush(Color.Parse(_settings?.AccentColor ?? "#6E5BFF")),
                 BorderThickness = new Thickness(0),
                 Content = new TextBlock
                 {
@@ -3816,7 +4121,8 @@ public sealed class MainWindow : Window
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Bottom,
                 Margin = new Thickness(12),
-                Focusable = false
+                Focusable = false,
+                IsVisible = !isFugo // Hide play button for Fugo Client entirely
             };
 
             playBtn.Click += async (_, _) =>
@@ -3829,11 +4135,13 @@ public sealed class MainWindow : Window
 
             playBtn.PointerEntered += (_, _) =>
             {
-                playBtn.Background = isAether ? new SolidColorBrush(Color.Parse("#FFE066")) : new SolidColorBrush(Color.Parse("#388E3C"));
+                var currentAccent = _settings?.AccentColor ?? "#6E5BFF";
+                playBtn.Background = new SolidColorBrush(Color.FromArgb(200, Color.Parse(currentAccent).R, Color.Parse(currentAccent).G, Color.Parse(currentAccent).B));
             };
             playBtn.PointerExited += (_, _) =>
             {
-                playBtn.Background = isAether ? new SolidColorBrush(Color.Parse("#D4AF37")) : new SolidColorBrush(Color.Parse("#2E7D32"));
+                var currentAccent = _settings?.AccentColor ?? "#6E5BFF";
+                playBtn.Background = new SolidColorBrush(Color.Parse(currentAccent));
             };
 
             var detailsGrid = new Grid
@@ -3866,7 +4174,7 @@ public sealed class MainWindow : Window
             };
             nameStack.Children.Add(nameBlock);
 
-            if (isAether)
+            if (isFugo)
             {
                 nameStack.Children.Add(new Border
                 {
@@ -3914,11 +4222,13 @@ public sealed class MainWindow : Window
 
             cardGrid.Children.Add(detailsGrid.With(row: 1));
 
+            card.Tag = isFugo; // Tag for UpdateInstanceCardSelection to know if it's golden
+            
             // Dynamic card hover animation
             card.PointerEntered += (_, _) =>
             {
                 card.RenderTransform = TransformOperations.Parse("scale(1.025)");
-                if (isAether)
+                if (isFugo)
                 {
                     card.BorderBrush = new LinearGradientBrush
                     {
@@ -3934,29 +4244,48 @@ public sealed class MainWindow : Window
                 }
                 else
                 {
-                    card.BorderBrush = new SolidColorBrush(Color.Parse("#38D6C4"));
+                    if (!string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal))
+                    {
+                        card.BorderBrush = new SolidColorBrush(Color.Parse("#38D6C4"));
+                    }
                 }
                 card.Background = new SolidColorBrush(Color.FromArgb(200, 16, 22, 38));
             };
             card.PointerExited += (_, _) =>
             {
+                var currentAccent = _settings?.AccentColor ?? "#6E5BFF";
                 card.RenderTransform = TransformOperations.Parse("scale(1.0)");
-                if (isAether)
+                if (isFugo)
                 {
-                    card.BorderBrush = new LinearGradientBrush
+                    if (string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal))
                     {
-                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                        GradientStops =
+                        card.BorderBrush = new LinearGradientBrush
                         {
-                            new GradientStop(Color.Parse("#D4AF37"), 0.0),
-                            new GradientStop(Color.Parse("#AA7C11"), 1.0)
-                        }
-                    };
+                            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                            GradientStops = { new GradientStop(Color.Parse("#FFE066"), 0.0), new GradientStop(Color.Parse("#FFB330"), 0.5), new GradientStop(Color.Parse("#FFE066"), 1.0) }
+                        };
+                    }
+                    else
+                    {
+                        card.BorderBrush = new LinearGradientBrush
+                        {
+                            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                            GradientStops = { new GradientStop(Color.Parse("#D4AF37"), 0.0), new GradientStop(Color.Parse("#AA7C11"), 1.0) }
+                        };
+                    }
                 }
                 else
                 {
-                    card.BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
+                    if (string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal))
+                    {
+                        card.BorderBrush = new SolidColorBrush(Color.Parse(currentAccent));
+                    }
+                    else
+                    {
+                        card.BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
+                    }
                 }
                 card.Background = new SolidColorBrush(Color.FromArgb(160, 10, 14, 26));
             };
@@ -4492,11 +4821,14 @@ public sealed class MainWindow : Window
         {
             if (modItem == null) return new Border();
 
+            var accentColorVal = Color.Parse(_settings.AccentColor);
+
             var enableToggle = new ToggleSwitch
             {
                 OnContent = "ON",
                 OffContent = "OFF",
-                Margin = new Thickness(0, 0, 16, 0)
+                Margin = new Thickness(0, 0, 16, 0),
+                CornerRadius = new CornerRadius(8)
             };
             enableToggle[!ToggleSwitch.IsCheckedProperty] = new Avalonia.Data.Binding(nameof(ModItem.IsEnabled));
 
@@ -4505,18 +4837,34 @@ public sealed class MainWindow : Window
                 Content = "🗑",
                 Foreground = Brushes.Tomato,
                 Background = Brushes.Transparent,
-                FontSize = 16,
-                Padding = new Thickness(6),
-                CornerRadius = new CornerRadius(6)
+                FontSize = 14,
+                Padding = new Thickness(8),
+                CornerRadius = new CornerRadius(8),
+                Transitions = new Transitions
+                {
+                    new BrushTransition { Property = TemplatedControl.BackgroundProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) },
+                    new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Easing = new BackEaseOut(), Duration = TimeSpan.FromMilliseconds(250) }
+                }
+            };
+            deleteBtn.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            deleteBtn.PointerEntered += (s, e) =>
+            {
+                deleteBtn.Background = new SolidColorBrush(Color.FromArgb(30, 255, 99, 71)); // subtle tomato glow
+                deleteBtn.RenderTransform = TransformOperations.Parse("scale(1.15)");
+            };
+            deleteBtn.PointerExited += (s, e) =>
+            {
+                deleteBtn.Background = Brushes.Transparent;
+                deleteBtn.RenderTransform = TransformOperations.Parse("scale(1.0)");
             };
             deleteBtn.Click += async (_, _) =>
             {
                 try
                 {
                     var lowerName = modItem.FileName.ToLowerInvariant();
-                    if (lowerName.Contains("fabric-api") || lowerName.Contains("aether-client"))
+                    if (lowerName.Contains("fabric-api") || lowerName.Contains("fugo-client") || lowerName.Contains("aether-client"))
                     {
-                        await DialogService.ShowInfoAsync(this, "Protected Mod", "This mod is required by Aether Client and cannot be removed.");
+                        await DialogService.ShowInfoAsync(this, "Protected Mod", "This mod is required by Fugo Client and cannot be removed.");
                         return;
                     }
 
@@ -4534,14 +4882,14 @@ public sealed class MainWindow : Window
             var nameBlock = new TextBlock { FontSize = 13, FontWeight = FontWeight.Bold, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 2), TextTrimming = TextTrimming.CharacterEllipsis };
             nameBlock[!TextBlock.TextProperty] = new Avalonia.Data.Binding(nameof(ModItem.FileName));
 
-            return new Border
+            var cardBorder = new Border
             {
-                Background = new SolidColorBrush(Color.FromArgb(70, 0, 0, 0)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+                Background = new SolidColorBrush(Color.FromArgb(45, 12, 17, 30)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(10, 8),
-                Margin = new Thickness(0, 0, 0, 6),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(12, 10),
+                Margin = new Thickness(0, 0, 0, 8),
                 Child = new Grid
                 {
                     ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
@@ -4553,7 +4901,7 @@ public sealed class MainWindow : Window
                             Children =
                             {
                                 nameBlock,
-                                new TextBlock { FontSize = 10, Foreground = Brushes.Gray }.With(tb => tb[!TextBlock.TextProperty] = new Avalonia.Data.Binding(nameof(ModItem.FileSize)))
+                                new TextBlock { FontSize = 10, Foreground = new SolidColorBrush(Color.Parse("#7FA5C4")) }.With(tb => tb[!TextBlock.TextProperty] = new Avalonia.Data.Binding(nameof(ModItem.FileSize)))
                             }
                         }.With(column: 0),
                         enableToggle.With(column: 1),
@@ -4561,6 +4909,38 @@ public sealed class MainWindow : Window
                     }
                 }
             };
+
+            cardBorder.Transitions = new Transitions
+            {
+                new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) },
+                new BrushTransition { Property = Border.BackgroundProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) },
+                new BrushTransition { Property = Border.BorderBrushProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) },
+                new BoxShadowsTransition { Property = Border.BoxShadowProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) }
+            };
+            cardBorder.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+
+            cardBorder.PointerEntered += (s, e) =>
+            {
+                cardBorder.Background = new SolidColorBrush(Color.FromArgb(75, 20, 28, 48));
+                cardBorder.BorderBrush = new SolidColorBrush(accentColorVal);
+                cardBorder.RenderTransform = TransformOperations.Parse("scale(1.02)");
+                cardBorder.BoxShadow = new BoxShadows(new BoxShadow
+                {
+                    Blur = 8,
+                    Color = Color.FromArgb(30, accentColorVal.R, accentColorVal.G, accentColorVal.B),
+                    OffsetX = 0,
+                    OffsetY = 0
+                });
+            };
+            cardBorder.PointerExited += (s, e) =>
+            {
+                cardBorder.Background = new SolidColorBrush(Color.FromArgb(45, 12, 17, 30));
+                cardBorder.BorderBrush = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255));
+                cardBorder.RenderTransform = TransformOperations.Parse("scale(1.0)");
+                cardBorder.BoxShadow = new BoxShadows();
+            };
+
+            return cardBorder;
         });
 
         _modsEmptyState = CreateEmptyState("No Mods Installed", "Drag & drop .jar mod files here, or search mods in the Modrinth tab.");
@@ -4764,21 +5144,6 @@ public sealed class MainWindow : Window
         windowHeightInput.TextChanged += (_, _) => {
             if (int.TryParse(windowHeightInput.Text, out var val)) { _settings.WindowHeight = val; _settingsStore.Save(_settings); }
         };
-
-        var offlineModeToggle = new ToggleSwitch
-        {
-            Content = "No internet mode",
-            IsChecked = _settings.OfflineMode,
-            Foreground = Brushes.White,
-            FontWeight = FontWeight.SemiBold
-        };
-        _offlineModeToggle = offlineModeToggle;
-        offlineModeToggle.IsCheckedChanged += (_, _) =>
-        {
-            _settings.OfflineMode = offlineModeToggle.IsChecked ?? false;
-            _settingsStore.Save(_settings);
-        };
-
         var performanceModeToggle = new ToggleSwitch
         {
             Content = "Performance Mode (disables animations, simplifies theme gradients)",
@@ -4856,9 +5221,6 @@ public sealed class MainWindow : Window
                         new StackPanel { Spacing = 8, Children = { CreatePanelEyebrow("Window Height"), windowHeightInput } }.With(column: 1)
                     }
                 },
-                new Separator { Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)) },
-                offlineModeToggle,
-                new Separator { Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)) },
                 performanceModeToggle,
                 new Separator { Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)) },
                 new StackPanel { Spacing = 8, Children = { CreatePanelEyebrow("When Minecraft is Launched"), behaviorComboBox } },
@@ -5623,7 +5985,7 @@ public sealed class MainWindow : Window
                 }
                 catch (Exception ex)
                 {
-                    LauncherLog.Info($"[Aether Launcher] Offline version list failed: {ex}");
+                    LauncherLog.Info($"[Fugo Launcher] Offline version list failed: {ex}");
                 }
             }
 
@@ -5738,8 +6100,8 @@ public sealed class MainWindow : Window
                     await InstallModIfMissingAsync("konkrete", _selectedProfile, modsDir, token);
                 }
 
-                // Aether Client preset integration (main .jar and fabric api)
-                if (_selectedProfile.Name == "Aether Client" || (_selectedProfile.Loader == "fabric" && _selectedProfile.Name.Contains("Aether", StringComparison.OrdinalIgnoreCase)))
+                // Fugo Client preset integration (main .jar and fabric api)
+                if (_selectedProfile.Name == "Fugo Client" || (_selectedProfile.Loader == "fabric" && (_selectedProfile.Name.Contains("Fugo", StringComparison.OrdinalIgnoreCase) || _selectedProfile.Name.Contains("Aether", StringComparison.OrdinalIgnoreCase))))
                 {
                     string localJarSource = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "death-client", "aether-client-1.0.0.jar");
                     if (!File.Exists(localJarSource))
@@ -5749,13 +6111,20 @@ public sealed class MainWindow : Window
 
                     if (File.Exists(localJarSource))
                     {
-                        string destJar = Path.Combine(modsDir, "aether-client-1.0.0.jar");
+                        // Clean up old aether-client jar if present to avoid duplicates
+                        string oldDestJar = Path.Combine(modsDir, "aether-client-1.0.0.jar");
+                        if (File.Exists(oldDestJar))
+                        {
+                            try { File.Delete(oldDestJar); } catch {}
+                        }
+
+                        string destJar = Path.Combine(modsDir, "fugo-client-1.0.0.jar");
                         File.Copy(localJarSource, destJar, true);
-                        LauncherLog.Info($"[Launch] Successfully copied Aether Client jar to {destJar}");
+                        LauncherLog.Info($"[Launch] Successfully copied Fugo Client jar to {destJar}");
                     }
                     else
                     {
-                        LauncherLog.Warn($"[Launch] Aether Client jar source not found at: {localJarSource}");
+                        LauncherLog.Warn($"[Launch] Fugo Client jar source not found at: {localJarSource}");
                     }
 
                     // Install Fabric API (cannot be removed)
@@ -5766,10 +6135,11 @@ public sealed class MainWindow : Window
             }
             else
             {
-                if (_settings.OfflineMode)
+                if (_settings.OfflineMode || IsVersionLocallyInstalled(launcherPath.BasePath, versionToLaunch))
                 {
-                    EnsureLocalVersionChain(launcherPath.BasePath, versionToLaunch);
-                    LauncherLog.Info($"[Launch] Offline mode: version '{versionToLaunch}' is fully cached locally. Bypassing online vanilla download.");
+                    if (_settings.OfflineMode)
+                        EnsureLocalVersionChain(launcherPath.BasePath, versionToLaunch);
+                    LauncherLog.Info($"[Launch] Version '{versionToLaunch}' is already installed locally. Bypassing online vanilla download.");
                 }
                 else
                 {
@@ -5831,7 +6201,7 @@ public sealed class MainWindow : Window
 
             EnsureDeathClientThemeResourcePack(effectiveGamePath, targetGameVer);
 
-            // Auto-upload the user's selected skin to the Aether Worker if one is set
+            // Auto-upload the user's selected skin to the Fugo Worker if one is set
             // This ensures multiplayer skin visibility even if the user never manually uploaded
             var activeSkinPath = _settings.CustomSkinPath;
             if (string.IsNullOrWhiteSpace(activeSkinPath) || !File.Exists(activeSkinPath))
@@ -5862,7 +6232,7 @@ public sealed class MainWindow : Window
             {
                 try
                 {
-                    LauncherLog.Info($"[Launch] Auto-uploading skin to Aether service: {activeSkinPath}");
+                    LauncherLog.Info($"[Launch] Auto-uploading skin to Fugo service: {activeSkinPath}");
                     string detectedModel = "classic";
                     try
                     {
@@ -5904,7 +6274,7 @@ public sealed class MainWindow : Window
                 }
             }
 
-            // Auto-upload cape to Aether service (if present)
+            // Auto-upload cape to Fugo service (if present)
             var activeCapePath = _settings.CustomCapePath;
             if (string.IsNullOrEmpty(activeCapePath) || !File.Exists(activeCapePath))
                 activeCapePath = null;
@@ -5970,7 +6340,7 @@ public sealed class MainWindow : Window
             {
                 try
                 {
-                    LauncherLog.Info($"[Launch] Auto-uploading cape to Aether service (animated={isCapeAnimated}): {capePathToUpload}");
+                    LauncherLog.Info($"[Launch] Auto-uploading cape to Fugo service (animated={isCapeAnimated}): {capePathToUpload}");
                     var capeResult = await SkinClient.UploadCapeAsync(activeUsername, capePathToUpload);
                     if (capeResult.Success)
                     {
@@ -6051,7 +6421,7 @@ public sealed class MainWindow : Window
                 LauncherLog.Warn($"[Launch] Failed to write state.json (non-fatal): {ex.Message}");
             }
 
-            // Write death-client Fabric mod config with skin URL from the Aether skin service
+            // Write death-client Fabric mod config with skin URL from the Fugo skin service
             try
             {
                 var launchService = new LaunchService();
@@ -6085,13 +6455,13 @@ public sealed class MainWindow : Window
                     {
                         new
                         {
-                            name = "Aether OptiFine Cape Service",
+                            name = "Fugo OptiFine Cape Service",
                             type = "OptiFineAPI",
                             root = apiRoot + "/"
                         },
                         new
                         {
-                            name = "Aether Skin Service",
+                            name = "Fugo Skin Service",
                             type = "CustomSkinAPI",
                             root = apiRoot + "/csl/"
                         },
@@ -6135,22 +6505,29 @@ public sealed class MainWindow : Window
             }
 
             bool hasAuthlib = false;
-            // Inject authlib-injector so the client skin request is redirected to the Aether skin service
-            try
+            // Inject authlib-injector so the client skin request is redirected to the Fugo skin service
+            if (await AppRuntime.SkinServer.CheckHealthAsync(token))
             {
-                await SkinClient.EnsureAuthlibInjectorAsync();
-                var authlibArg = SkinClient.BuildAuthlibInjectorArg();
-                if (authlibArg != null)
+                try
                 {
-                    jvmArgsList.Add(new MArgument(authlibArg));
-                    jvmArgsList.Add(new MArgument("-Dauthlibinjector.ignoredPackages=net.gudenau.lib.unsafe,user11681.reflect,net.devtech.grossfabrichacks"));
-                    hasAuthlib = true;
-                    LauncherLog.Info($"[Launch] Injected authlib-injector javaagent into client JVM arguments: {authlibArg}");
+                    await SkinClient.EnsureAuthlibInjectorAsync();
+                    var authlibArg = SkinClient.BuildAuthlibInjectorArg();
+                    if (authlibArg != null)
+                    {
+                        jvmArgsList.Add(new MArgument(authlibArg));
+                        jvmArgsList.Add(new MArgument("-Dauthlibinjector.ignoredPackages=net.gudenau.lib.unsafe,user11681.reflect,net.devtech.grossfabrichacks"));
+                        hasAuthlib = true;
+                        LauncherLog.Info($"[Launch] Injected authlib-injector javaagent into client JVM arguments: {authlibArg}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LauncherLog.Error("Failed to inject authlib-injector into client launch", ex);
                 }
             }
-            catch (Exception ex)
+            else
             {
-                LauncherLog.Error("Failed to inject authlib-injector into client launch", ex);
+                LauncherLog.Warn("[Launch] Skin server is not running or unhealthy. Skipping authlib-injector injection to prevent client startup crash.");
             }
 
             if (!hasAuthlib && (string.IsNullOrWhiteSpace(session.AccessToken) || session.AccessToken == "access_token" || session.UserType == "legacy"))
@@ -6225,9 +6602,8 @@ public sealed class MainWindow : Window
                         process.WaitForExit();
                         if (process.ExitCode != 0)
                         {
-                            LauncherLog.Error($"[Launch] Minecraft process exited with non-zero exit code {process.ExitCode}. Marking profile '{_selectedProfile.Name}' for reinstall.");
+                            LauncherLog.Error($"[Launch] Minecraft process exited with non-zero exit code {process.ExitCode}.");
                             _selectedProfile.LastLaunchCrashed = true;
-                            _selectedProfile.IsInstalled = false;
                             _profileStore.Save(_selectedProfile);
                         }
                         else
@@ -6252,9 +6628,8 @@ public sealed class MainWindow : Window
                         process.WaitForExit();
                         if (process.ExitCode != 0)
                         {
-                            LauncherLog.Error($"[Launch] Minecraft process exited with non-zero exit code {process.ExitCode}. Marking profile '{_selectedProfile.Name}' for reinstall.");
+                            LauncherLog.Error($"[Launch] Minecraft process exited with non-zero exit code {process.ExitCode}.");
                             _selectedProfile.LastLaunchCrashed = true;
-                            _selectedProfile.IsInstalled = false;
                             _profileStore.Save(_selectedProfile);
                         }
                         else
@@ -6279,9 +6654,8 @@ public sealed class MainWindow : Window
                             process.WaitForExit();
                             if (process.ExitCode != 0)
                             {
-                                LauncherLog.Error($"[Launch] Minecraft process exited with non-zero exit code {process.ExitCode}. Marking profile '{_selectedProfile.Name}' for reinstall.");
+                                LauncherLog.Error($"[Launch] Minecraft process exited with non-zero exit code {process.ExitCode}.");
                                 _selectedProfile.LastLaunchCrashed = true;
-                                _selectedProfile.IsInstalled = false;
                                 _profileStore.Save(_selectedProfile);
                             }
                             else
@@ -6431,25 +6805,45 @@ public sealed class MainWindow : Window
         }
     }
 
+    private bool IsVersionLocallyInstalled(string basePath, string versionId)
+    {
+        try
+        {
+            var versionDir = Path.Combine(basePath, "versions", versionId);
+            var versionJson = Path.Combine(versionDir, $"{versionId}.json");
+            if (!File.Exists(versionJson)) return false;
+
+            var parentId = GetParentVersionId(versionJson);
+            if (!string.IsNullOrWhiteSpace(parentId))
+            {
+                return IsVersionLocallyInstalled(basePath, parentId);
+            }
+            else
+            {
+                var versionJar = Path.Combine(versionDir, $"{versionId}.jar");
+                return File.Exists(versionJar);
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async Task EnsureProfileReadyAsync(LauncherProfile profile, MinecraftLauncher launcher, CancellationToken cancellationToken)
     {
+        // If the profile is marked installed, we never try to reinstall files automatically!
+        if (profile.IsInstalled)
+        {
+            LauncherLog.Info($"[Launch] Profile '{profile.Name}' is marked installed. Skipping installation checks entirely.");
+            return;
+        }
+
         if (_settings.OfflineMode)
         {
             EnsureLocalVersionChain(launcher.MinecraftPath.BasePath, profile.VersionId);
             LauncherLog.Info($"[Launch] Offline mode: version '{profile.VersionId}' is fully cached locally. Bypassing online profile check.");
             return;
-        }
-
-        // If the profile is marked installed, we only install every 5 launches.
-        // BUT if it crashed on the last launch, we install regardless.
-        if (profile.IsInstalled && !profile.LastLaunchCrashed)
-        {
-            if (profile.LaunchCountSinceLastInstall % 5 != 0)
-            {
-                LauncherLog.Info($"[Launch] Profile '{profile.Name}' is marked installed. Launch count since last install: {profile.LaunchCountSinceLastInstall}. Skipping installation checks.");
-                return;
-            }
-            LauncherLog.Info($"[Launch] Profile '{profile.Name}' is installed but hit the 5th launch threshold. Running installation check.");
         }
 
         if (profile.Loader == "fabric")
@@ -7573,6 +7967,11 @@ public sealed class MainWindow : Window
             pbFiles.Value = Math.Min(args.ProgressedTasks, pbFiles.Maximum);
             statusLabel.Text = $"Installing {args.Name}";
             installDetailsLabel.Text = $"{args.ProgressedTasks} / {args.TotalTasks} files";
+
+            if (pbFiles.Maximum > 0)
+            {
+                pbProgress.Value = Math.Min(100, (double)pbFiles.Value * 100.0 / pbFiles.Maximum);
+            }
         });
     }
 
@@ -7581,17 +7980,62 @@ public sealed class MainWindow : Window
         Dispatcher.UIThread.Post(() =>
         {
             pbProgress.Maximum = 100;
-            pbProgress.Value = args.TotalBytes <= 0
-                ? 0
-                : Math.Min(100, args.ProgressedBytes * 100d / args.TotalBytes);
+            double currentFileFraction = args.TotalBytes <= 0
+                ? 0.0
+                : (double)args.ProgressedBytes / args.TotalBytes;
+
+            if (pbFiles.Maximum > 0)
+            {
+                double overallProgress = ((pbFiles.Value + currentFileFraction) / pbFiles.Maximum) * 100.0;
+                pbProgress.Value = Math.Min(100, overallProgress);
+            }
+            else
+            {
+                pbProgress.Value = args.TotalBytes <= 0
+                    ? 0
+                    : Math.Min(100, args.ProgressedBytes * 100d / args.TotalBytes);
+            }
         });
     }
 
     private void RefreshProfiles(LauncherProfile? selectProfile = null)
     {
         var existingProfiles = _profileStore.LoadProfiles();
-        var hasAether = existingProfiles.Any(p => p.Name == "Aether Client");
-        if (!hasAether)
+
+        var resetFlagPath = Path.Combine(_profileStore.GetInstancesRoot(), ".wallpapers_reset");
+        if (!File.Exists(resetFlagPath))
+        {
+            try
+            {
+                foreach (var profile in existingProfiles)
+                {
+                    string png = Path.Combine(profile.InstanceDirectory, "cover.png");
+                    string jpg = Path.Combine(profile.InstanceDirectory, "cover.jpg");
+                    if (File.Exists(png)) File.Delete(png);
+                    if (File.Exists(jpg)) File.Delete(jpg);
+                }
+                File.WriteAllText(resetFlagPath, "done");
+            }
+            catch { }
+        }
+
+        // Migrate existing Aether Client profile to Fugo Client if it exists
+        var oldAetherProfile = existingProfiles.FirstOrDefault(p => p.Name == "Aether Client");
+        if (oldAetherProfile != null)
+        {
+            try
+            {
+                oldAetherProfile.Name = "Fugo Client";
+                _profileStore.Save(oldAetherProfile);
+            }
+            catch (Exception ex)
+            {
+                LauncherLog.Warn($"[RefreshProfiles] Failed to migrate Aether Client profile to Fugo Client: {ex.Message}");
+            }
+        }
+
+        var hasFugo = existingProfiles.Any(p => p.Name == "Fugo Client" || p.Name == "Aether Client");
+        if (!hasFugo)
         {
             try
             {
@@ -7599,13 +8043,13 @@ public sealed class MainWindow : Window
                            ?? _versionItems.FirstOrDefault(v => v.Contains("1.21"))
                            ?? "1.21.1";
                 var loaderVer = "0.18.4";
-                _profileStore.CreateProfile("Aether Client", gameVer, "fabric", loaderVer);
+                _profileStore.CreateProfile("Fugo Client", gameVer, "fabric", loaderVer);
                 _settings.EnableFancyMenu = true;
                 _settingsStore.Save(_settings);
             }
             catch (Exception ex)
             {
-                LauncherLog.Warn($"[RefreshProfiles] Failed to auto-create Aether Client profile: {ex.Message}");
+                LauncherLog.Warn($"[RefreshProfiles] Failed to auto-create Fugo Client profile: {ex.Message}");
             }
         }
 
@@ -7644,6 +8088,14 @@ public sealed class MainWindow : Window
         var selected = profileListBox.SelectedItem as LauncherProfile;
         if (selected == null) return;
 
+        if (selected.Name == "Fugo Client" || selected.Name.Contains("Fugo", StringComparison.OrdinalIgnoreCase) || selected.Name == "Aether Client" || selected.Name.Contains("Aether", StringComparison.OrdinalIgnoreCase))
+        {
+            _handlingProfileSelection = true;
+            profileListBox.SelectedItem = _selectedProfile;
+            _handlingProfileSelection = false;
+            return;
+        }
+
         if (selected.Name == "__add_new_placeholder__")
         {
             // Restore selection to the previously selected profile without re-entering this handler
@@ -7659,8 +8111,8 @@ public sealed class MainWindow : Window
                 profilePresetSection.IsVisible = true;
             if (profilePresetCombo != null)
             {
-                profilePresetCombo.SelectedItem = "Aether Client (Fabric) (Coming Soon)";
-                profileNameInput.Text = "Aether Client";
+                profilePresetCombo.SelectedItem = "Fugo Client (Fabric) (Coming Soon)";
+                profileNameInput.Text = "Fugo Client";
                 profileLoaderCombo.SelectedIndex = 1;
                 var targetVer = _versionItems.FirstOrDefault(v => v.Contains("1.21.1"))
                              ?? _versionItems.FirstOrDefault(v => v.Contains("1.21"))
@@ -7696,20 +8148,51 @@ public sealed class MainWindow : Window
 
     private void UpdateInstanceCardSelection()
     {
+        var currentAccent = _settings?.AccentColor ?? "#6E5BFF";
         foreach (var (dir, card) in _instanceCardBorders)
         {
             var isSelected = string.Equals(dir, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal);
-            if (isSelected)
+            bool isFugo = card.Tag is bool b && b;
+
+            if (isFugo)
             {
-                card.BorderBrush = new SolidColorBrush(Color.Parse("#6E5BFF"));
-                card.BorderThickness = new Thickness(2);
-                card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, 110, 91, 255), OffsetX = 0, OffsetY = 0 });
+                if (isSelected)
+                {
+                    card.BorderBrush = new LinearGradientBrush
+                    {
+                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                        GradientStops = { new GradientStop(Color.Parse("#FFE066"), 0.0), new GradientStop(Color.Parse("#FFB330"), 0.5), new GradientStop(Color.Parse("#FFE066"), 1.0) }
+                    };
+                    card.BorderThickness = new Thickness(2);
+                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, 255, 224, 102), OffsetX = 0, OffsetY = 0 });
+                }
+                else
+                {
+                    card.BorderBrush = new LinearGradientBrush
+                    {
+                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                        GradientStops = { new GradientStop(Color.Parse("#D4AF37"), 0.0), new GradientStop(Color.Parse("#AA7C11"), 1.0) }
+                    };
+                    card.BorderThickness = new Thickness(1);
+                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 0, Color = Colors.Transparent, OffsetX = 0, OffsetY = 0 });
+                }
             }
             else
             {
-                card.BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
-                card.BorderThickness = new Thickness(1);
-                card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 0, Color = Colors.Transparent, OffsetX = 0, OffsetY = 0 });
+                if (isSelected)
+                {
+                    card.BorderBrush = new SolidColorBrush(Color.Parse(currentAccent));
+                    card.BorderThickness = new Thickness(2);
+                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, Color.Parse(currentAccent).R, Color.Parse(currentAccent).G, Color.Parse(currentAccent).B), OffsetX = 0, OffsetY = 0 });
+                }
+                else
+                {
+                    card.BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
+                    card.BorderThickness = new Thickness(1);
+                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 0, Color = Colors.Transparent, OffsetX = 0, OffsetY = 0 });
+                }
             }
         }
     }
@@ -8070,7 +8553,23 @@ public sealed class MainWindow : Window
         activeProfileBadge.Text = "ACTIVE";
         activeContextLabel.Text = string.Empty;
         installModeLabel.Text = _selectedProfile.Name;
-        btnStart.Content = "▶ Play";
+        
+        if (_selectedProfile.Name == "Fugo Client" || _selectedProfile.Name.Contains("Fugo", StringComparison.OrdinalIgnoreCase) || _selectedProfile.Name == "Aether Client" || _selectedProfile.Name.Contains("Aether", StringComparison.OrdinalIgnoreCase))
+        {
+            btnStart.Content = "Coming Soon";
+            btnStart.IsEnabled = false;
+        }
+        else if (_selectedProfile.LaunchCountSinceLastInstall == 0)
+        {
+            btnStart.Content = "Install";
+            btnStart.IsEnabled = true;
+        }
+        else
+        {
+            btnStart.Content = "▶ Play";
+            btnStart.IsEnabled = true;
+        }
+
         profileInspectorTitle.Text = _selectedProfile.Name;
         profileInspectorMeta.Text = $"{_selectedProfile.LoaderDisplay} · Updated {_selectedProfile.UpdatedUtc.ToLocalTime():g}";
         profileInspectorPath.Text = _selectedProfile.InstanceDirectory;
@@ -8122,7 +8621,7 @@ public sealed class MainWindow : Window
 
         try
         {
-            if (profilePresetCombo != null && (profilePresetCombo.SelectedItem?.ToString() == "Aether Client (Fabric) (Coming Soon)" || profilePresetCombo.SelectedItem?.ToString() == "Aether Client (Fabric)"))
+            if (profilePresetCombo != null && (profilePresetCombo.SelectedItem?.ToString() == "Fugo Client (Fabric) (Coming Soon)" || profilePresetCombo.SelectedItem?.ToString() == "Fugo Client (Fabric)" || profilePresetCombo.SelectedItem?.ToString() == "Aether Client (Fabric) (Coming Soon)" || profilePresetCombo.SelectedItem?.ToString() == "Aether Client (Fabric)"))
             {
                 _settings.EnableFancyMenu = true;
                 _settingsStore.Save(_settings);
@@ -8483,7 +8982,7 @@ public sealed class MainWindow : Window
             var projectType = modrinthProjectTypeCombo.SelectedItem?.ToString()?.ToLowerInvariant() ?? "mod";
             var gameVersion = string.IsNullOrWhiteSpace(modrinthVersionInput.Text) ? null : modrinthVersionInput.Text.Trim();
             var loader = NormalizeLoaderFilter();
-            var source = modrinthSourceCombo.SelectedItem?.ToString() ?? "Modrinth";
+            var source = "Modrinth";
             
             Task<IReadOnlyList<ModrinthProject>>? modrinthTask = null;
             Task<IReadOnlyList<ModrinthProject>>? curseForgeTask = null;
@@ -8532,16 +9031,39 @@ public sealed class MainWindow : Window
 
     private void BindSearchResults(IReadOnlyList<ModrinthProject> results)
     {
+        _rawSearchResults.Clear();
+        _rawSearchResults.AddRange(results);
+
+        ApplySortAndBind();
+    }
+
+    private void ApplySortAndBind()
+    {
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
+            var selectedSort = modrinthSortCombo?.SelectedItem?.ToString() ?? "Relevance";
+            List<ModrinthProject> sorted;
+            if (selectedSort == "Downloads")
+                sorted = [.. _rawSearchResults.OrderByDescending(p => p.Downloads)];
+            else if (selectedSort == "Followers")
+                sorted = [.. _rawSearchResults.OrderByDescending(p => p.Follows)];
+            else if (selectedSort == "Newest")
+                sorted = [.. _rawSearchResults.OrderByDescending(p => p.LatestVersion ?? "")];
+            else if (selectedSort == "Alphabetical")
+                sorted = [.. _rawSearchResults.OrderBy(p => p.Title)];
+            else
+                sorted = [.. _rawSearchResults];
+
             _searchResults.Clear();
-            foreach (var result in results)
+            foreach (var result in sorted)
                 _searchResults.Add(result);
 
-        modrinthResultsSummary.Text = results.Count == 0
-            ? "No matching projects were found for the current filters."
-            : $"Found {results.Count} result{(results.Count == 1 ? string.Empty : "s")} for {modrinthProjectTypeCombo.SelectedItem?.ToString()?.ToLowerInvariant() ?? "projects"}";
-        modrinthResultsListBox.SelectedItem = _searchResults.FirstOrDefault();
+            modrinthResultsSummary.Text = sorted.Count == 0
+                ? "No matching projects were found for the current filters."
+                : $"Found {sorted.Count} result{(sorted.Count == 1 ? string.Empty : "s")} for {modrinthProjectTypeCombo.SelectedItem?.ToString()?.ToLowerInvariant() ?? "projects"}";
+            
+            modrinthResultsListBox.SelectedItem = null;
+            UpdateSelectedProjectDetails();
             if (_searchResults.Count == 0)
             {
                 modrinthDetailsBox.Text = "No matching projects found. Check your filters (e.g. Version/Loader).";
@@ -13134,7 +13656,7 @@ public sealed class MainWindow : Window
                     var installerJarPath = Path.Combine(serverDir, "installer.jar");
                     LogServerLine(serverId, $"[System] Downloading {loaderLower} installer from: {serverUrl}...");
                     using var client = new System.Net.Http.HttpClient();
-                    client.DefaultRequestHeaders.Add("User-Agent", "AetherLauncher");
+                    client.DefaultRequestHeaders.Add("User-Agent", "FugoLauncher");
                     var data = await client.GetByteArrayAsync(serverUrl);
                     await File.WriteAllBytesAsync(installerJarPath, data);
                     LogServerLine(serverId, $"[System] Installer downloaded! Running {loaderLower} server installer...");
@@ -13196,7 +13718,7 @@ public sealed class MainWindow : Window
                     // Standard download for Fabric, Quilt, Paper, Spigot, Purpur, Vanilla
                     LogServerLine(serverId, $"[System] Downloading from: {serverUrl}...");
                     using var client = new System.Net.Http.HttpClient();
-                    client.DefaultRequestHeaders.Add("User-Agent", "AetherLauncher");
+                    client.DefaultRequestHeaders.Add("User-Agent", "FugoLauncher");
                     var data = await client.GetByteArrayAsync(serverUrl);
                     await File.WriteAllBytesAsync(serverJarPath, data);
                     LogServerLine(serverId, $"[System] Download complete! Saved to server.jar");
@@ -13469,7 +13991,7 @@ def greet_player(client, username):
     cmd_title = f'title {username} title {{""text"":""Welcome, {username}!"",""color"":""light_purple"",""bold"":true}}'
     client.send_command(cmd_title)
     
-    cmd_subtitle = f'title {username} subtitle {{""text"":""Aether Server Mode Active"",""color"":""aqua"",""italic"":true}}'
+    cmd_subtitle = f'title {username} subtitle {{""text"":""Fugo Server Mode Active"",""color"":""aqua"",""italic"":true}}'
     client.send_command(cmd_subtitle)
 
 def trigger_shutdown(client):
@@ -13613,7 +14135,7 @@ if __name__ == '__main__':
                 LogServerLine(serverId, $"[UPnP] Attempting automatic router port forwarding for port {numericPort}...");
                 try
                 {
-                    var success = await UPnP.ForwardPortAsync(numericPort, $"Aether Server {server.Name}");
+                    var success = await UPnP.ForwardPortAsync(numericPort, $"Fugo Server {server.Name}");
                     if (success)
                     {
                         LogServerLine(serverId, $"[UPnP] Port {numericPort} successfully forwarded! Players can join using your public IP.");
@@ -13635,7 +14157,7 @@ if __name__ == '__main__':
 
             var proc = new Process();
             proc.StartInfo.FileName = javaPath;
-            // Inject authlib-injector so ALL players' skins are resolved via Aether edge service
+            // Inject authlib-injector so ALL players' skins are resolved via Fugo edge service
             // Bug 5c: Must ensure the jar is downloaded before trying to build the arg
             await SkinClient.EnsureAuthlibInjectorAsync(msg =>
                 LogServerLine(serverId, $"[Skin] {msg}"));
@@ -14706,7 +15228,7 @@ if __name__ == '__main__':
             try
             {
                 using var client = new System.Net.Http.HttpClient();
-                client.DefaultRequestHeaders.Add("User-Agent", "AetherLauncher");
+                client.DefaultRequestHeaders.Add("User-Agent", "FugoLauncher");
                 // Resolve latest build from PaperMC API
                 var buildsJson = await client.GetStringAsync($"https://api.papermc.io/v2/projects/paper/versions/{versionName}/builds");
                 using var doc = JsonDocument.Parse(buildsJson);
@@ -14729,7 +15251,7 @@ if __name__ == '__main__':
             try
             {
                 using var client = new System.Net.Http.HttpClient();
-                client.DefaultRequestHeaders.Add("User-Agent", "AetherLauncher");
+                client.DefaultRequestHeaders.Add("User-Agent", "FugoLauncher");
                 // Use GetBukkit API for Spigot
                 return $"https://download.getbukkit.org/spigot/spigot-{versionName}.jar";
             }
@@ -14743,7 +15265,7 @@ if __name__ == '__main__':
         try
         {
             using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
-            client.DefaultRequestHeaders.Add("User-Agent", "AetherLauncher");
+            client.DefaultRequestHeaders.Add("User-Agent", "FugoLauncher");
             var apiUrl = $"https://serverjars.com/api/fetchJar/{loader}/{versionName}";
             var responseString = await client.GetStringAsync(apiUrl);
             using var doc = JsonDocument.Parse(responseString);
@@ -14888,10 +15410,14 @@ if __name__ == '__main__':
     {
         if (modrinthResultsListBox.SelectedItem is not ModrinthProject project)
         {
-            modrinthDetailsBox.Text = "Search to browse mods and modpacks.";
+            if (modrinthDetailsPane != null)
+                modrinthDetailsPane.IsVisible = false;
             installSelectedButton.IsEnabled = false;
             return;
         }
+
+        if (modrinthDetailsPane != null)
+            modrinthDetailsPane.IsVisible = true;
 
         bool isInstalled = _selectedProfile?.InstalledModIds.Contains(project.ProjectId) ?? false;
         installSelectedButton.IsEnabled = !isInstalled;
@@ -14903,6 +15429,7 @@ if __name__ == '__main__':
         {
             SetButtonText(installSelectedButton, project.ProjectType == "modpack" ? "↓ Pack" : "↓ Mod");
         }
+        
         modrinthResultsSummary.Text = $"Selected {project.Title} by {project.Author}.";
         modrinthDetailsBox.Text =
             $"{project.Title}\n" +
@@ -14912,6 +15439,81 @@ if __name__ == '__main__':
             $"Followers: {project.Follows:N0}\n" +
             $"Categories: {string.Join(", ", project.Categories)}\n\n" +
             $"{project.Description}";
+
+        modrinthDetailsTitle.Text = project.Title;
+        modrinthDetailsMeta.Text = $"by {project.Author}  •  {project.Downloads:N0} downloads  •  {project.Follows:N0} follows";
+        modrinthDetailsDesc.Text = $"{project.Description}\n\nCategories:\n{string.Join(", ", project.Categories)}";
+        
+        if (modrinthDetailsIconFallback.Child is TextBlock ft)
+        {
+            ft.Text = project.Title.Substring(0, 1).ToUpperInvariant();
+        }
+        
+        _ = LoadModIconAsync(project.IconUrl, project.Title, modrinthDetailsIcon, modrinthDetailsIconFallback);
+    }
+
+    private async Task LoadModIconAsync(string? iconUrl, string projectTitle, Avalonia.Controls.Image targetImage, Border fallbackBorder)
+    {
+        if (string.IsNullOrWhiteSpace(iconUrl))
+        {
+            fallbackBorder.IsVisible = true;
+            targetImage.IsVisible = false;
+            return;
+        }
+
+        lock (_iconCache)
+        {
+            if (_iconCache.TryGetValue(iconUrl, out var cached))
+            {
+                targetImage.Source = cached;
+                targetImage.IsVisible = true;
+                fallbackBorder.IsVisible = false;
+                return;
+            }
+        }
+
+        try
+        {
+            var cacheDir = Path.Combine(_profileStore.GetInstancesRoot(), "..", "cache", "icons");
+            Directory.CreateDirectory(cacheDir);
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(iconUrl)));
+            var cachedFilePath = Path.Combine(cacheDir, $"{hash}.png");
+
+            byte[]? data = null;
+            if (File.Exists(cachedFilePath))
+            {
+                data = await File.ReadAllBytesAsync(cachedFilePath);
+            }
+            else
+            {
+                data = await _imageClient.GetByteArrayAsync(iconUrl);
+                await File.WriteAllBytesAsync(cachedFilePath, data);
+            }
+
+            if (data != null && data.Length > 0)
+            {
+                using var ms = new System.IO.MemoryStream(data);
+                var bmp = new Bitmap(ms);
+                lock (_iconCache)
+                {
+                    _iconCache[iconUrl] = bmp;
+                }
+                Dispatcher.UIThread.Post(() =>
+                {
+                    targetImage.Source = bmp;
+                    targetImage.IsVisible = true;
+                    fallbackBorder.IsVisible = false;
+                });
+            }
+        }
+        catch
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                fallbackBorder.IsVisible = true;
+                targetImage.IsVisible = false;
+            });
+        }
     }
 
     private void RefreshSearchList()
@@ -15215,16 +15817,26 @@ if __name__ == '__main__':
         {
             statusLabel.Text = $"Downloading {Path.GetFileName(fileName)}";
             double percent = 0;
+            double currentFileFraction = 0.0;
             if (progress.TotalBytes is long totalBytes && totalBytes > 0)
             {
                 percent = progress.BytesRead * 100d / totalBytes;
-                pbProgress.Value = Math.Min(100, percent);
+                currentFileFraction = (double)progress.BytesRead / totalBytes;
                 installDetailsLabel.Text = $"{FormatBytes(progress.BytesRead)} / {FormatBytes(totalBytes)}";
             }
             else
             {
-                pbProgress.Value = 0;
                 installDetailsLabel.Text = $"{FormatBytes(progress.BytesRead)} downloaded";
+            }
+
+            if (pbFiles.Maximum > 0)
+            {
+                double overallProgress = ((pbFiles.Value + currentFileFraction) / pbFiles.Maximum) * 100.0;
+                pbProgress.Value = Math.Min(100, overallProgress);
+            }
+            else
+            {
+                pbProgress.Value = Math.Min(100, percent);
             }
 
             if (targetButton != null)
@@ -15250,7 +15862,12 @@ if __name__ == '__main__':
             _playOverlay.IsEnabled = false;
             _playOverlay.Opacity = 0.5;
             statusLabel.Text = "Minecraft is running...";
-            if (_homeStatusBar != null) _homeStatusBar.IsVisible = true;
+            if (_homeStatusBar != null)
+            {
+                _homeStatusBar.IsVisible = true;
+                _homeStatusBar.Opacity = 1;
+                _homeStatusBar.Margin = new Thickness(0);
+            }
             pbProgress.Value = 0;
             if (installSelectedButton != null) SetButtonProgress(installSelectedButton, 0, false);
             if (btnStart != null) SetButtonProgress(btnStart, 0, false);
@@ -15265,7 +15882,19 @@ if __name__ == '__main__':
         }
         else
         {
-            btnStart.Content = "▶ Play";
+            if (_selectedProfile != null && (_selectedProfile.Name == "Fugo Client" || _selectedProfile.Name.Contains("Fugo", StringComparison.OrdinalIgnoreCase) || _selectedProfile.Name == "Aether Client" || _selectedProfile.Name.Contains("Aether", StringComparison.OrdinalIgnoreCase)))
+            {
+                btnStart.Content = "Coming Soon";
+                btnStart.IsEnabled = false;
+            }
+            else if (_selectedProfile != null && _selectedProfile.LaunchCountSinceLastInstall == 0)
+            {
+                btnStart.Content = "Install";
+            }
+            else
+            {
+                btnStart.Content = "▶ Play";
+            }
         }
         downloadVersionButton.IsEnabled = !isBusy && _selectedProfile is null;
         createProfileButton.IsEnabled = !isBusy;
@@ -15277,7 +15906,35 @@ if __name__ == '__main__':
         _playOverlay.IsEnabled = !isBusy;
         _playOverlay.Opacity = isBusy ? 0.5 : 1;
         statusLabel.Text = statusText;
-        if (_homeStatusBar != null) _homeStatusBar.IsVisible = isBusy;
+        
+        if (_homeStatusBar != null)
+        {
+            if (isBusy)
+            {
+                _homeStatusBar.IsVisible = true;
+                _homeStatusBar.Opacity = 1;
+                _homeStatusBar.Margin = new Thickness(0);
+            }
+            else
+            {
+                // Smoothly fade and slide out (say goodbye)
+                _homeStatusBar.Opacity = 0;
+                _homeStatusBar.Margin = new Thickness(0, 0, 0, -110);
+                
+                var currentStatusBar = _homeStatusBar;
+                Task.Delay(500).ContinueWith(_ =>
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (currentStatusBar.Opacity == 0)
+                        {
+                            currentStatusBar.IsVisible = false;
+                        }
+                    });
+                });
+            }
+        }
+
         if (!isBusy)
         {
             pbProgress.Value = 0;
@@ -15695,7 +16352,16 @@ if __name__ == '__main__':
             IsVisible = false,
             Background = Brushes.Transparent,
             Foreground = new SolidColorBrush(Color.FromArgb(128, btnFg.R, btnFg.G, btnFg.B)),
-            CornerRadius = new CornerRadius(2)
+            CornerRadius = new CornerRadius(2),
+            Transitions = new Transitions
+            {
+                new DoubleTransition
+                {
+                    Property = ProgressBar.ValueProperty,
+                    Duration = TimeSpan.FromMilliseconds(200),
+                    Easing = new CubicEaseOut()
+                }
+            }
         };
 
         var contentGrid = new Grid
@@ -16519,7 +17185,7 @@ if __name__ == '__main__':
                 WriteTextEntry(
                     archive,
                     "pack.mcmeta",
-                    "{\"pack\":{\"pack_format\":1,\"description\":\"Aether Launcher UI theme for home, multiplayer, and singleplayer menus\"}}");
+                    "{\"pack\":{\"pack_format\":1,\"description\":\"Fugo Launcher UI theme for home, multiplayer, and singleplayer menus\"}}");
 
                 AddExistingFileToArchive(archive, ResolveThemeLogoPath(), "pack.png");
                 AddExistingFileToArchive(archive, ResolveBundledThemeAsset("death_client_title_logo.png"), "assets/minecraft/textures/gui/title/minecraft.png");
@@ -16547,7 +17213,7 @@ if __name__ == '__main__':
                 WriteTextEntry(
                     archive,
                     "assets/minecraft/texts/splashes.txt",
-                    "Aether Launcher: Redefining Play\nUnrivaled Performance, Unmatched Style\nQueue up and dominate\nPeak precision, crafted for champions\nCleanest UI, fastest launch\nOffline mode, but never basic\nJoin the Reborn Movement");
+                    "Fugo Launcher: Redefining Play\nUnrivaled Performance, Unmatched Style\nQueue up and dominate\nPeak precision, crafted for champions\nCleanest UI, fastest launch\nOffline mode, but never basic\nJoin the Reborn Movement");
 
                 AddSkinAndCapeEntries(archive);
             }
@@ -17352,7 +18018,7 @@ if __name__ == '__main__':
                 var exePath = Environment.ProcessPath;
                 if (!string.IsNullOrEmpty(exePath))
                 {
-                    var psCommand = $"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{Path.Combine(desktopPath, "Aether Launcher.lnk")}'); $s.TargetPath='{exePath}'; $s.Save()";
+                    var psCommand = $"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{Path.Combine(desktopPath, "Fugo Launcher.lnk")}'); $s.TargetPath='{exePath}'; $s.Save()";
                     Process.Start(new ProcessStartInfo 
                     { 
                         FileName = "powershell", 
@@ -17378,7 +18044,45 @@ if __name__ == '__main__':
         if (!e.GetCurrentPoint(_playOverlay).Properties.IsLeftButtonPressed || !_playOverlay.IsEnabled)
             return;
 
-        await LaunchAsync();
+        var clickPos = e.GetPosition(_playOverlay);
+        var width = _playOverlay.Bounds.Width;
+        if (width <= 0) width = 220; // fallback
+
+        if (clickPos.X >= width - 46)
+        {
+            // Clicked reinstall (3 dots)
+            var targetName = _selectedProfile?.Name ?? cbVersion.SelectedItem?.ToString()?.Trim() ?? "this version";
+            var confirm = await DialogService.ShowConfirmAsync(
+                this, 
+                "Reinstall Game Files", 
+                $"Are you sure you want to reinstall {targetName}? All local libraries and game files will be re-downloaded.");
+            if (!confirm)
+                return;
+
+            if (_selectedProfile != null)
+            {
+                _selectedProfile.IsInstalled = false;
+                _profileStore.Save(_selectedProfile);
+            }
+            else
+            {
+                var versionToLaunch = cbVersion.SelectedItem?.ToString()?.Trim();
+                if (!string.IsNullOrWhiteSpace(versionToLaunch))
+                {
+                    var versionDir = Path.Combine(_defaultMinecraftPath.BasePath, "versions", versionToLaunch);
+                    if (Directory.Exists(versionDir))
+                    {
+                        try { Directory.Delete(versionDir, true); } catch (Exception ex) { LauncherLog.Error("Failed to clean vanilla version directory for reinstall", ex); }
+                    }
+                }
+            }
+
+            await LaunchAsync();
+        }
+        else
+        {
+            await LaunchAsync();
+        }
     }
 
     public async void CreateProfileButton_Click() => await CreateProfileAsync();
@@ -17446,8 +18150,8 @@ if __name__ == '__main__':
             isLight = _settings.ThemeVariant == "light";
         }
         return isLight 
-            ? "avares://AetherLauncher/assets/deathclient-taskbar-light.png" 
-            : "avares://AetherLauncher/assets/deathclient-taskbar.png";
+            ? "avares://FugoLauncher/assets/deathclient-taskbar-light.png" 
+            : "avares://FugoLauncher/assets/deathclient-taskbar.png";
     }
 
     private void UpdateWindowIcon()
@@ -17671,14 +18375,62 @@ if __name__ == '__main__':
             AccountsOverlayCornerRadius = 22,
             AccountsOverlayBorderColor = "#500284C7",
             AccountsOverlayBorderThickness = 1,
-            PlayButtonGlobal = true,
             BackgroundOpacity = 1.0,
             PrimaryForeground = "#0F172A",
             SecondaryForeground = "#1E4E72"
         };
     }
 
+    private void StartInternetCheckTimer()
+    {
+        _ = Task.Run(async () =>
+        {
+            using var client = new System.Net.Http.HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows / Fugo Launcher)");
 
+            while (true)
+            {
+                bool online = false;
+                try
+                {
+                    var response = await client.GetAsync("https://1.1.1.1");
+                    online = response.IsSuccessStatusCode;
+                }
+                catch
+                {
+                    try
+                    {
+                        var response = await client.GetAsync("https://www.google.com");
+                        online = response.IsSuccessStatusCode;
+                    }
+                    catch
+                    {
+                        online = false;
+                    }
+                }
+
+                bool prevMode = _settings.OfflineMode;
+                bool newOffline = !online;
+                if (prevMode != newOffline)
+                {
+                    _settings.OfflineMode = newOffline;
+                    LauncherLog.Info($"[InternetMonitor] Status changed. Online: {online}. New offline state: {newOffline}");
+
+                    // Rebuild UI on the UI thread to dynamically show/hide warnings and enable search
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        var currentSec = _activeSection;
+                        InvalidateUiCache();
+                        Content = BuildRoot();
+                        SetActiveSection(currentSec);
+                    });
+                }
+
+                await Task.Delay(15000);
+            }
+        });
+    }
 }
 
 internal static class AvaloniaControlExtensions

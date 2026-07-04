@@ -269,8 +269,8 @@ const server = http.createServer((req, res) => {
     const handleLocalMetadata = () => {
       const localMetadata = {
         meta: {
-          serverName: "Aether Skin Service (Local Fallback)",
-          implementationName: "aether-skin-service",
+          serverName: "Fugo Skin Service (Local Fallback)",
+          implementationName: "fugo-skin-service",
           implementationVersion: "1.0.0"
         },
         skinDomains: [
@@ -307,8 +307,8 @@ const server = http.createServer((req, res) => {
           console.warn("[Proxy] Failed to parse/modify ALI metadata, using local fallback:", err.message);
           const localMetadata = {
             meta: {
-              serverName: "Aether Skin Service (Local Fallback)",
-              implementationName: "aether-skin-service",
+              serverName: "Fugo Skin Service (Local Fallback)",
+              implementationName: "fugo-skin-service",
               implementationVersion: "1.0.0"
             },
             skinDomains: [

@@ -16,7 +16,7 @@ public class LaunchService
 {
     /// <summary>
     /// Writes the death-client Fabric mod config with the correct skin URL
-    /// fetched from the Aether Worker skin service via SkinClient.
+    /// fetched from the Fugo Worker skin service via SkinClient.
     /// Should be called before launching the Minecraft process.
     /// </summary>
     public async Task<string> PrepareInstanceProfileAsync(
@@ -106,7 +106,7 @@ public class LaunchService
             }
         }
 
-        // Fetch the player's skin profile from the Aether Worker skin service
+        // Fetch the player's skin profile from the Fugo Worker skin service
         string skinUrl = resolvedSkinUrl ?? string.Empty;
         string skinModel = resolvedSkinModel ?? "classic";
         

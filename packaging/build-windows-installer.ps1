@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $publishDir = Join-Path $root "dist\publish\win-x64"
 $installerDir = Join-Path $root "dist\installer"
-$wxsFile = Join-Path $PSScriptRoot "AetherLauncher.wxs"
+$wxsFile = Join-Path $PSScriptRoot "FugoLauncher.wxs"
 $projectFile = Join-Path $root "OfflineMinecraftLauncher.csproj"
 
 Push-Location $root
@@ -29,7 +29,7 @@ finally {
 
 New-Item -ItemType Directory -Force -Path $installerDir | Out-Null
 
-$msiPath = Join-Path $installerDir "AetherLauncher-Setup.msi"
+$msiPath = Join-Path $installerDir "FugoLauncher-Setup.msi"
 
 $wixArgs = @(
     "tool", "run", "wix", "--", "build",

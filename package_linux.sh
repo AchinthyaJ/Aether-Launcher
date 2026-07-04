@@ -2,9 +2,9 @@
 
 # Configuration
 VERSION="1.0.4"
-APP_NAME="aether-launcher"
-DISPLAY_NAME="Aether Launcher"
-MAINTAINER="Aether Launcher Team"
+APP_NAME="fugo-launcher"
+DISPLAY_NAME="Fugo Launcher"
+MAINTAINER="Fugo Launcher Team"
 DESCRIPTION="A fast, modern Minecraft launcher built with Avalonia."
 
 # Directories
@@ -36,11 +36,13 @@ build_and_package() {
     mkdir -p "$pkg_dir/DEBIAN"
 
     # Copy binary
-    cp "$PUBLISH_DIR/$arch/AetherLauncher" "$pkg_dir/usr/local/bin/${APP_NAME}"
+    cp "$PUBLISH_DIR/$arch/FugoLauncher" "$pkg_dir/usr/local/bin/${APP_NAME}"
     chmod +x "$pkg_dir/usr/local/bin/${APP_NAME}"
 
     # Copy icon
-    if [ -f "assets/aether-logo.png" ]; then
+    if [ -f "assets/fugo-logo.png" ]; then
+        cp "assets/fugo-logo.png" "$pkg_dir/usr/share/pixmaps/${APP_NAME}.png"
+    elif [ -f "assets/aether-logo.png" ]; then
         cp "assets/aether-logo.png" "$pkg_dir/usr/share/pixmaps/${APP_NAME}.png"
     fi
 
@@ -55,7 +57,7 @@ Exec=${APP_NAME}
 Icon=${APP_NAME}
 Terminal=false
 Categories=Game;
-StartupWMClass=AetherLauncher
+StartupWMClass=FugoLauncher
 EOT
     chmod 644 "$pkg_dir/usr/share/applications/${APP_NAME}.desktop"
 

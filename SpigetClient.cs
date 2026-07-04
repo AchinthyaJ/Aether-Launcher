@@ -17,7 +17,7 @@ internal sealed class SpigetClient : IDisposable
         {
             BaseAddress = new Uri("https://api.spiget.org/v2/")
         };
-        _httpClient.DefaultRequestHeaders.Add("User-Agent", "AetherLauncher/1.0");
+        _httpClient.DefaultRequestHeaders.Add("User-Agent", "FugoLauncher/1.0");
     }
 
     public async Task<IReadOnlyList<ModrinthProject>> SearchResourcesAsync(string query, CancellationToken cancellationToken)

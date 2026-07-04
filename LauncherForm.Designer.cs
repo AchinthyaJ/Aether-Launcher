@@ -161,7 +161,7 @@ namespace OfflineMinecraftLauncher
             titleLabel.Name = "titleLabel";
             titleLabel.Size = new Size(244, 41);
             titleLabel.TabIndex = 0;
-            titleLabel.Text = "Aether Launcher";
+            titleLabel.Text = "Fugo Launcher";
             // 
             // contentLayout
             // 
@@ -846,7 +846,7 @@ namespace OfflineMinecraftLauncher
             MinimumSize = new Size(1260, 780);
             Name = "LauncherForm";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "Aether Launcher";
+            Text = "Fugo Launcher";
             Load += LauncherForm_Load;
             headerPanel.ResumeLayout(false);
             headerPanel.PerformLayout();

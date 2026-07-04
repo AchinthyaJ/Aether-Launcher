@@ -16,7 +16,7 @@ public class SplashWindow : Window
 {
     public SplashWindow()
     {
-        Title = "Aether Launcher";
+        Title = "Fugo Launcher";
         Width = 480;
         Height = 300;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -34,7 +34,7 @@ public class SplashWindow : Window
 
         var titleText = new TextBlock
         {
-            Text = "A E T H E R",
+            Text = "F U G O",
             FontSize = 42,
             FontWeight = FontWeight.Black,
             Foreground = new LinearGradientBrush

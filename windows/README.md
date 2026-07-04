@@ -1,6 +1,6 @@
 # Windows Platform Implementation
 
-This directory contains Windows-specific source code and build scripts for the Aether Launcher.
+This directory contains Windows-specific source code and build scripts for the Fugo Launcher.
 
 ## Structure
 
@@ -26,7 +26,7 @@ windows/
 ```
 
 ### Why a separate folder?
-The Linux version of Aether Launcher works well out of the box because Avalonia's rendering 
+The Linux version of Fugo Launcher works well out of the box because Avalonia's rendering 
 pipeline interacts cleanly with X11/Wayland compositors. On Windows, specific optimizations 
 are needed:
 

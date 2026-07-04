@@ -1,4 +1,4 @@
-# Aether Launcher — Windows Build Script
+# Fugo Launcher — Windows Build Script
 # Usage: .\build.ps1 [-Configuration Release|Debug] [-OutputDir <path>] [-CreateInstaller]
 
 param(
@@ -13,7 +13,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $ProjectFile = Join-Path $ProjectRoot "OfflineMinecraftLauncher.csproj"
 
 Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
-Write-Host "  Aether Launcher — Windows Build" -ForegroundColor White
+Write-Host "  Fugo Launcher — Windows Build" -ForegroundColor White
 Write-Host "  Configuration: $Configuration" -ForegroundColor Gray
 Write-Host "  Output: $OutputDir" -ForegroundColor Gray
 Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
@@ -76,7 +76,7 @@ if ($CreateInstaller) {
 }
 
 Write-Host "`n═══════════════════════════════════════════════════" -ForegroundColor Cyan
-$exePath = Join-Path $OutputDir "AetherLauncher.exe"
+$exePath = Join-Path $OutputDir "FugoLauncher.exe"
 if (Test-Path $exePath) {
     $size = [math]::Round((Get-Item $exePath).Length / 1MB, 2)
     Write-Host "  Build complete! ($size MB)" -ForegroundColor Green

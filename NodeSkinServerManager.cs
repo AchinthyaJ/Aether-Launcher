@@ -131,7 +131,7 @@ internal sealed class NodeSkinServerManager : IDisposable
             return;
         }
 
-        var nodeExe = ResolveNodeExecutable();
+        var nodeExe = await ResolveNodeExecutableAsync(cancellationToken);
 
         var startInfo = new ProcessStartInfo
         {
@@ -177,10 +177,10 @@ internal sealed class NodeSkinServerManager : IDisposable
     }
 
     /// <summary>
-    /// Resolves the Node.js executable path.
-    /// Priority: (1) bundled node.exe next to the launcher, (2) found via where/which, (3) common Windows install paths, (4) bare "node" fallback.
+    /// Resolves the Node.js executable path asynchronously.
+    /// Priority: (1) bundled node.exe next to the launcher, (2) found via where/which, (3) common Windows install paths, (4) downloaded portable node.exe, (5) bare "node" fallback.
     /// </summary>
-    private static string ResolveNodeExecutable()
+    private async Task<string> ResolveNodeExecutableAsync(CancellationToken cancellationToken)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -200,7 +200,15 @@ internal sealed class NodeSkinServerManager : IDisposable
                 return bundledInServer;
             }
 
-            // 3. Use 'where.exe' to search PATH
+            // 3. User profile data directory (always writable)
+            var dataDirNode = Path.Combine(_storageDirectory, "node.exe");
+            if (File.Exists(dataDirNode))
+            {
+                LauncherLog.Info($"[NodeServer] Using downloaded node.exe: {dataDirNode}");
+                return dataDirNode;
+            }
+
+            // 4. Use 'where.exe' to search PATH
             try
             {
                 using var whereProc = Process.Start(new ProcessStartInfo
@@ -224,7 +232,7 @@ internal sealed class NodeSkinServerManager : IDisposable
             }
             catch { /* where.exe not found or node not on PATH */ }
 
-            // 4. Common Windows install locations
+            // 5. Common Windows install locations
             var candidates = new[]
             {
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe"),
@@ -243,7 +251,35 @@ internal sealed class NodeSkinServerManager : IDisposable
                 }
             }
 
-            LauncherLog.Warn("[NodeServer] node.exe not found in bundled dir, PATH, or common locations. Falling back to 'node'. Please install Node.js.");
+            // 6. Automatically download portable Node.js binary
+            try
+            {
+                LauncherLog.Info("[NodeServer] node.exe not found. Downloading portable Node.js binary...");
+                var downloadUrl = System.Environment.Is64BitOperatingSystem
+                    ? "https://nodejs.org/dist/v20.11.1/win-x64/node.exe"
+                    : "https://nodejs.org/dist/v20.11.1/win-x86/node.exe";
+
+                Directory.CreateDirectory(_storageDirectory);
+                var tempPath = dataDirNode + ".tmp";
+
+                using (var response = await HttpClient.GetAsync(downloadUrl, cancellationToken))
+                {
+                    response.EnsureSuccessStatusCode();
+                    using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        await response.Content.CopyToAsync(fs, cancellationToken);
+                    }
+                }
+                File.Move(tempPath, dataDirNode, overwrite: true);
+                LauncherLog.Info($"[NodeServer] Successfully downloaded node.exe to: {dataDirNode}");
+                return dataDirNode;
+            }
+            catch (Exception ex)
+            {
+                LauncherLog.Error($"[NodeServer] Failed to download node.exe: {ex.Message}");
+            }
+
+            LauncherLog.Warn("[NodeServer] node.exe not found and download failed. Falling back to system 'node'.");
             return "node.exe";
         }
         else
@@ -296,6 +332,11 @@ internal sealed class NodeSkinServerManager : IDisposable
 
             return "node";
         }
+    }
+
+    public async Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default)
+    {
+        return await IsHealthyAsync(cancellationToken);
     }
 
     public void Dispose()

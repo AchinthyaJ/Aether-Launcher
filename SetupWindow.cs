@@ -10,7 +10,7 @@ public class SetupWindow : Window
 {
     public SetupWindow()
     {
-        Title = "Aether Launcher - Setup";
+        Title = "Fugo Launcher - Setup";
         Width = 450;
         Height = 220;
         Background = new SolidColorBrush(Color.Parse("#0D1117"));

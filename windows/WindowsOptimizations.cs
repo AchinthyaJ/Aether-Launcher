@@ -7,7 +7,7 @@ using Avalonia.Media.Imaging;
 namespace OfflineMinecraftLauncher.Platform.Windows;
 
 /// <summary>
-/// Windows-specific performance optimizations for the Aether Launcher.
+/// Windows-specific performance optimizations for the Fugo Launcher.
 /// These address Avalonia rendering quirks on Windows that don't exist on Linux.
 /// </summary>
 internal static class WindowsOptimizations

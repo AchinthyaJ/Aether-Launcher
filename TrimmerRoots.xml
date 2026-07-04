@@ -17,7 +17,7 @@
   <assembly fullname="CmlLib.Core" preserve="all" />
 
   <!-- Keep the launcher itself untrimmed -->
-  <assembly fullname="AetherLauncher" preserve="all" />
+  <assembly fullname="FugoLauncher" preserve="all" />
 
   <!-- Keep System.Text.Json for discovery client serialization -->
   <assembly fullname="System.Text.Json" preserve="all" />

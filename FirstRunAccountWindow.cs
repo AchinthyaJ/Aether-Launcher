@@ -48,7 +48,7 @@ public sealed class FirstRunAccountWindow : Window
 
     public FirstRunAccountWindow()
     {
-        Title = "Aether Launcher - Welcome";
+        Title = "Fugo Launcher - Welcome";
         Width = 840;
         Height = 540;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -239,7 +239,7 @@ public sealed class FirstRunAccountWindow : Window
             {
                 Width = 60,
                 Height = 60,
-                Source = new Bitmap(AssetLoader.Open(new Uri((Application.Current?.ActualThemeVariant == Avalonia.Styling.ThemeVariant.Light) ? "avares://AetherLauncher/assets/deathclient-taskbar-light.png" : "avares://AetherLauncher/assets/deathclient-taskbar.png"))),
+                Source = new Bitmap(AssetLoader.Open(new Uri((Application.Current?.ActualThemeVariant == Avalonia.Styling.ThemeVariant.Light) ? "avares://FugoLauncher/assets/deathclient-taskbar-light.png" : "avares://FugoLauncher/assets/deathclient-taskbar.png"))),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             }
@@ -248,7 +248,7 @@ public sealed class FirstRunAccountWindow : Window
 
         var brandTitle = new TextBlock
         {
-            Text = "AETHER CLIENT",
+            Text = "FUGO CLIENT",
             FontSize = 22,
             FontWeight = FontWeight.ExtraBold,
             Foreground = Brushes.White,

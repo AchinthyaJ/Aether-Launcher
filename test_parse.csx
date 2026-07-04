@@ -6,7 +6,7 @@ using System.Reflection;
 
 var xaml = File.ReadAllText("death-client/ui-layout-format.axaml.runtime");
 try {
-    var root = (Control)AvaloniaRuntimeXamlLoader.Load(xaml, Assembly.Load("AetherLauncher"));
+    var root = (Control)AvaloniaRuntimeXamlLoader.Load(xaml, Assembly.Load("FugoLauncher"));
     Console.WriteLine("Parsed OK");
 } catch (Exception e) {
     Console.WriteLine(e);

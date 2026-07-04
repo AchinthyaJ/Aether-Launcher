@@ -46,7 +46,7 @@ internal sealed class MinecraftAuthenticationService
     public MinecraftAuthenticationService()
     {
         _httpClient = new HttpClient();
-        _httpClient.DefaultRequestHeaders.Add("User-Agent", "AetherLauncher/1.0.0");
+        _httpClient.DefaultRequestHeaders.Add("User-Agent", "FugoLauncher/1.0.0");
     }
 
     public async Task<DeviceCodeSession> BeginDeviceLoginAsync(string clientId, CancellationToken cancellationToken)

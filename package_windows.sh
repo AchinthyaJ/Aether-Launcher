@@ -2,8 +2,8 @@
 
 # Configuration
 VERSION="1.0.4"
-APP_NAME="aether-launcher"
-DISPLAY_NAME="Aether Launcher"
+APP_NAME="fugo-launcher"
+DISPLAY_NAME="Fugo Launcher"
 
 # Directories
 DIST_DIR="dist"
@@ -54,7 +54,7 @@ if ! command -v makensis &> /dev/null; then
     echo "========================================================"
     echo " SUCCESS! Portable Windows build prepared!"
     echo " Location: ./$WINDOWS_BUILD_DIR/"
-    echo " Run './$WINDOWS_BUILD_DIR/AetherLauncher.exe' to launch."
+    echo " Run './$WINDOWS_BUILD_DIR/FugoLauncher.exe' to launch."
     echo "========================================================"
     exit 0
 fi

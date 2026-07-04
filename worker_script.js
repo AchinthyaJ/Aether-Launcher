@@ -1,5 +1,5 @@
 /**
- * Aether Launcher — Server Discovery + Skin Service Worker
+ * Fugo Launcher — Server Discovery + Skin Service Worker
  * Combines: server discovery/invite, Yggdrasil-compatible skin API,
  *           texture serving, and session relay for multiplayer skin visibility.
  *
@@ -205,13 +205,13 @@ async function aliMetadata(env) {
   }
 
   return jsonOk({
-    meta: { serverName: "Aether Skin Service", implementationName: "AetherWorker", implementationVersion: "1.0.0" },
+    meta: { serverName: "Fugo Skin Service", implementationName: "FugoWorker", implementationVersion: "1.0.0" },
     skinDomains: [WORKER_HOST],
     signaturePublickey,
     authserver: `${API_ROOT}/authserver`,
     sessionserver: `${API_ROOT}/sessionserver`,
     api: `${API_ROOT}/api`,
-    namespace: "urn:uuid:aether-skin-ns",
+    namespace: "urn:uuid:fugo-skin-ns",
   });
 }
 

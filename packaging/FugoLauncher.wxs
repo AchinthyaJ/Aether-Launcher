@@ -1,0 +1,37 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Fugo Launcher" Language="1033" Version="1.0.0" Manufacturer="Fugo Launcher Team" UpgradeCode="{E5B1E6F0-93A7-4E7E-9D0E-5C0D59A1B2F7}" InstallerVersion="500" Compressed="yes" Scope="perMachine">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="LauncherIcon" SourceFile="minecraft.ico" />
+    <Property Id="ARPPRODUCTICON" Value="LauncherIcon" />
+    <Property Id="ARPNOREPAIR" Value="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Fugo Launcher" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Fugo Launcher" />
+    </StandardDirectory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="LauncherExecutable" Guid="{8B5B3C3A-4B0D-4D0D-8A94-76C8E0D5B2D1}" Bitness="always64">
+        <File Id="LauncherExe" Source="dist\publish\win-x64\FugoLauncher.exe" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="StartMenuShortcutComponent" Guid="{E8E3FA5C-4A6D-45D4-B6A2-8EF4A28DA0B0}" Bitness="always64">
+        <Shortcut Id="StartMenuShortcut" Name="Fugo Launcher" Description="Launch Fugo Launcher" Target="[INSTALLFOLDER]FugoLauncher.exe" WorkingDirectory="INSTALLFOLDER" Icon="LauncherIcon" />
+        <RemoveFolder Id="RemoveProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\Fugo Launcher" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="MainFeature" Title="Fugo Launcher" Level="1">
+      <ComponentRef Id="LauncherExecutable" />
+      <ComponentRef Id="StartMenuShortcutComponent" />
+    </Feature>
+  </Package>
+</Wix>

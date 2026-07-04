@@ -1,6 +1,6 @@
-# Aether Launcher v2 — *The Zero-Wait Evolution* 🚀
+# Fugo Launcher v2 — *The Zero-Wait Evolution* 🚀
 
-Welcome to **Aether Launcher v2**! 
+Welcome to **Fugo Launcher v2**! 
 
 Traditional launchers have become slow, bloated, and overcomplicated, holding you back with endless splash screens, ads, and login loops. Version 2 represents a revolutionary leap forward — engineered strictly around our **"Zero-Wait" Philosophy**. We believe speed is a feature: from clicking launch to jumping into your game or spawning a multiplayer server, there is absolute zero friction.
 
@@ -15,7 +15,7 @@ Traditional launchers have become slow, bloated, and overcomplicated, holding yo
 
 ## 🌐 The Revolutionary Server System
 
-Hosting multiplayer games is traditionally a nightmare of port-forwarding, firewall rules, and laggy third-party server hosts. Aether Launcher v2 completely eliminates this:
+Hosting multiplayer games is traditionally a nightmare of port-forwarding, firewall rules, and laggy third-party server hosts. Fugo Launcher v2 completely eliminates this:
 * **One-Click Secure Tunnels**: A high-performance, race-based parallel SSH tunneling engine is fully integrated.
 * **Zero Router Configuration**: Bypasses local firewall barriers and UPnP router limitations automatically.
 * **Premium TCP Tunnel Routing**: Automatically establishes secure, direct, and raw high-speed TCP tunnels (powered by secure providers like Pinggy) for zero-latency gameplay.
@@ -28,7 +28,7 @@ Hosting multiplayer games is traditionally a nightmare of port-forwarding, firew
 Give your custom setups a premium, harmonized look:
 * **Custom Cover Art**: Upload any `.png`, `.jpg`, or `.jpeg` file directly from the instance context menu (`••• ➔ Change Cover`) to personalize your dashboard.
 * **Dynamic Template Fitting**: Automatically scales and formats images to match our responsive glassmorphic cards.
-* **Official Branding Protection**: Official **Aether Client** profiles retain their gorgeous, iconic royal cosmic purple gradient and visual assets.
+* **Official Branding Protection**: Official **Fugo Client** profiles retain their gorgeous, iconic royal cosmic purple gradient and visual assets.
 * **Dynamic Reset**: Instantly restore default artwork anytime with the integrated `"Reset Cover"` option.
 
 ### 🔑 Segmented Microsoft & Offline Authentication
@@ -55,6 +55,6 @@ We are just getting started. The following game-changing features are actively i
 
 ## ❤️ Feedback & Community
 
-Aether Launcher is built by players, for players. If something feels incredible, let us know; if something can be improved to get you in the game even faster, we're all ears. 
+Fugo Launcher is built by players, for players. If something feels incredible, let us know; if something can be improved to get you in the game even faster, we're all ears. 
 
 *Binaries are attached below directly in the assets section.*

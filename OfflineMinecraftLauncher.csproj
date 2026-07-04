@@ -6,11 +6,11 @@
   <Nullable>enable</Nullable>
   <ImplicitUsings>enable</ImplicitUsings>
   <ApplicationIcon>minecraft.ico</ApplicationIcon>
-  <AssemblyName>AetherLauncher</AssemblyName>
+  <AssemblyName>FugoLauncher</AssemblyName>
   <Version>1.0.4</Version>
-  <Product>Aether Launcher</Product>
-  <Authors>Aether Launcher Team</Authors>
-  <PackageId>AetherLauncher</PackageId>
+  <Product>Fugo Launcher</Product>
+  <Authors>Fugo Launcher Team</Authors>
+  <PackageId>FugoLauncher</PackageId>
 
   <PublishSingleFile>true</PublishSingleFile>
   <SelfContained>true</SelfContained>

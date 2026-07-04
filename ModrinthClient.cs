@@ -17,7 +17,7 @@ internal sealed class ModrinthClient : IDisposable
         {
             BaseAddress = new Uri("https://api.modrinth.com/v2/")
         };
-        _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("AetherLauncher", "1.0"));
+        _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("FugoLauncher", "1.0"));
     }
 
     public async Task<IReadOnlyList<ModrinthProject>> SearchProjectsAsync(string query, string projectType, string? gameVersion, string? loader, CancellationToken cancellationToken)

@@ -15,7 +15,7 @@ namespace OfflineMinecraftLauncher;
 
 /// <summary>
 /// Handles skin upload, profile lookup, UUID generation, and authlib-injector management
-/// for the Aether edge skin service (Cloudflare Worker).
+/// for the Fugo edge skin service (Cloudflare Worker).
 /// </summary>
 public static class SkinClient
 {
@@ -59,7 +59,7 @@ public static class SkinClient
     public record SkinUploadResult(bool Success, string? TextureHash, string? TextureUrl, string? Error);
 
     /// <summary>
-    /// Uploads a PNG skin to the Aether edge skin service.
+    /// Uploads a PNG skin to the Fugo edge skin service.
     /// Validates dimensions before uploading.
     /// </summary>
     public static async Task<SkinUploadResult> UploadSkinAsync(
@@ -125,7 +125,7 @@ public static class SkinClient
     public record CapeUploadResult(bool Success, string? TextureHash, string? TextureUrl, string? Error);
 
     /// <summary>
-    /// Uploads a PNG cape to the Aether edge skin service.
+    /// Uploads a PNG cape to the Fugo edge skin service.
     /// Validates dimensions before uploading.
     /// </summary>
     public static async Task<CapeUploadResult> UploadCapeAsync(

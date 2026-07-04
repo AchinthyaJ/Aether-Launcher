@@ -20,7 +20,7 @@ internal sealed class CurseForgeClient : IDisposable
             BaseAddress = new Uri("https://api.curseforge.com/v1/")
         };
         _httpClient.DefaultRequestHeaders.Add("x-api-key", ApiKey);
-        _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("AetherLauncher", "1.0"));
+        _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("FugoLauncher", "1.0"));
     }
 
     public async Task<IReadOnlyList<ModrinthProject>> SearchModsAsync(string query, string? gameVersion, string? loader, CancellationToken cancellationToken)
