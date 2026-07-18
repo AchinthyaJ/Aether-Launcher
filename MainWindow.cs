@@ -1149,7 +1149,7 @@ public sealed class MainWindow : Window
         // 4. Default Bundled Resource
         try 
         {
-            var asset = AssetLoader.Open(new Uri("avares://FugoLauncher/assets/launcher_background.png"));
+            var asset = AssetLoader.Open(new Uri("avares://FugoLauncher/assets/launcherbackground.png"));
             if (asset != null)
             {
                 return new ImageBrush(new Bitmap(asset)) 
@@ -2390,7 +2390,7 @@ public sealed class MainWindow : Window
         };
 
         var breakpointCard = BuildServerCard(
-            bgAsset: "avares://FugoLauncher/assets/launcher_background.png",
+            bgAsset: "avares://FugoLauncher/assets/launcherbackground.png",
             logoAsset: "avares://FugoLauncher/assets/breakpoint-logo.png",
             serverName: "BreakPoint MC",
             tagLine: "⭐ FEATURED",
