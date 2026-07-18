@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-VERSION="1.0.4"
+VERSION="3.1.0"
 APP_NAME="fugo-launcher"
 DISPLAY_NAME="Fugo Launcher"
 

@@ -44,7 +44,7 @@ public class SplashWindow : Window
                 GradientStops =
                 {
                     new GradientStop(Color.Parse("#00F2FE"), 0),
-                    new GradientStop(Color.Parse("#6E5BFF"), 1)
+                    new GradientStop(Color.Parse("#5972FF"), 1)
                 }
             },
             HorizontalAlignment = HorizontalAlignment.Center,

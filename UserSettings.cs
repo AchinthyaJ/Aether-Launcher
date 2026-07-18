@@ -60,7 +60,7 @@ internal sealed class LayoutStyle
     public double WindowMargin { get; set; } = 12;
 
     // ─── Sidebar ────────────────────────────────────────────────────────
-    public string NavPosition { get; set; } = "sidebar";
+    public string NavPosition { get; set; } = "top";
     public string SidebarSide { get; set; } = "left";
     public bool SidebarCollapsed { get; set; } = false;
     public string? SidebarBackground { get; set; }
@@ -204,8 +204,8 @@ internal sealed class UserSettings
     public bool OfflineMode { get; set; } = false;
     public string ClientLayout { get; set; } = string.Empty; // Legacy — kept for migration only
     public string ThemeVariant { get; set; } = "dark";
-    public string AccentColor { get; set; } = "#6E5BFF";
-    public string? SelectedPreset { get; set; } = "Mountains";
+    public string AccentColor { get; set; } = "#3B82F6";
+    public string? SelectedPreset { get; set; } = "None";
     public LayoutStyle Style { get; set; } = new();
     public List<string> SectionOrder { get; set; } = ["Hero", "Stats", "Actions"];
     public string LastSelectedProfilePath { get; set; } = string.Empty;

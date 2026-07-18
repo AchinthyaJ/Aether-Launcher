@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-VERSION="1.0.4"
+VERSION="3.1.0"
 APP_NAME="fugo-launcher"
 DISPLAY_NAME="Fugo Launcher"
 MAINTAINER="Fugo Launcher Team"
@@ -30,14 +30,18 @@ build_and_package() {
 
     echo "Packaging for $deb_arch..."
     local pkg_dir="$DEB_DIR/${APP_NAME}_${VERSION}_${deb_arch}"
+    mkdir -p "$pkg_dir/opt/fugo-launcher"
     mkdir -p "$pkg_dir/usr/local/bin"
     mkdir -p "$pkg_dir/usr/share/applications"
     mkdir -p "$pkg_dir/usr/share/pixmaps"
     mkdir -p "$pkg_dir/DEBIAN"
 
-    # Copy binary
-    cp "$PUBLISH_DIR/$arch/FugoLauncher" "$pkg_dir/usr/local/bin/${APP_NAME}"
-    chmod +x "$pkg_dir/usr/local/bin/${APP_NAME}"
+    # Copy all files and folders from the publish directory
+    cp -r "$PUBLISH_DIR/$arch/"* "$pkg_dir/opt/fugo-launcher/"
+    chmod +x "$pkg_dir/opt/fugo-launcher/FugoLauncher"
+
+    # Create symlink at /usr/local/bin/fugo-launcher pointing to /opt/fugo-launcher/FugoLauncher
+    ln -sf "/opt/fugo-launcher/FugoLauncher" "$pkg_dir/usr/local/bin/${APP_NAME}"
 
     # Copy icon
     if [ -f "assets/fugo-logo.png" ]; then

@@ -47,7 +47,7 @@ Section "Install"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\FugoLauncher" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\FugoLauncher" "DisplayIcon" '"$INSTDIR\FugoLauncher.exe"'
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\FugoLauncher" "Publisher" "Fugo Launcher Team"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\FugoLauncher" "DisplayVersion" "1.0.4"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\FugoLauncher" "DisplayVersion" "3.1.0"
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\FugoLauncher" "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\FugoLauncher" "NoRepair" 1
   

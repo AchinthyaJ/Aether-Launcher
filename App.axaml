@@ -18,7 +18,7 @@
         <Style Selector="Button">
             <Setter Property="Background" Value="#1A1F2C"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#4C6E5BFF"/>
+            <Setter Property="BorderBrush" Value="#4C3B82F6"/>
             <Setter Property="BorderThickness" Value="1.5"/>
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Padding" Value="14 10"/>
@@ -70,7 +70,7 @@
             <Setter Property="RenderTransform" Value="scale(1.07) rotate(1.5deg) translate(0px, -3px)"/>
         </Style>
         <Style Selector="Button:pointerover /template/ Border#ButtonBorder">
-            <Setter Property="BoxShadow" Value="0 8 20 0 #4C00F2FE, 0 2 8 0 #4C6E5BFF"/>
+            <Setter Property="BoxShadow" Value="0 8 20 0 #4C00F2FE, 0 2 8 0 #4C3B82F6"/>
             <Setter Property="BorderBrush" Value="#00F2FE"/>
         </Style>
 
@@ -110,8 +110,8 @@
             </Setter>
         </Style>
         <Style Selector="TextBox:pointerover /template/ Border">
-            <Setter Property="BorderBrush" Value="#6E5BFF"/>
-            <Setter Property="BoxShadow" Value="0 0 10 1 #336E5BFF"/>
+            <Setter Property="BorderBrush" Value="#3B82F6"/>
+            <Setter Property="BoxShadow" Value="0 0 10 1 #333B82F6"/>
         </Style>
         <Style Selector="TextBox:focus /template/ Border">
             <Setter Property="BorderBrush" Value="#00F2FE"/>
@@ -141,8 +141,8 @@
             </Setter>
         </Style>
         <Style Selector="ComboBox:pointerover /template/ Border">
-            <Setter Property="BorderBrush" Value="#6E5BFF"/>
-            <Setter Property="BoxShadow" Value="0 0 10 1 #336E5BFF"/>
+            <Setter Property="BorderBrush" Value="#3B82F6"/>
+            <Setter Property="BoxShadow" Value="0 0 10 1 #333B82F6"/>
         </Style>
         <Style Selector="ComboBox:dropdownopen /template/ Border">
             <Setter Property="BorderBrush" Value="#00F2FE"/>
@@ -177,8 +177,8 @@
         </Style>
         <Style Selector="ListBoxItem:pointerover /template/ Border">
             <Setter Property="Background" Value="#221E3F"/>
-            <Setter Property="BorderBrush" Value="#6E5BFF"/>
-            <Setter Property="BoxShadow" Value="0 4 12 0 #336E5BFF"/>
+            <Setter Property="BorderBrush" Value="#3B82F6"/>
+            <Setter Property="BoxShadow" Value="0 4 12 0 #333B82F6"/>
         </Style>
         <Style Selector="ListBoxItem:selected /template/ Border">
             <Setter Property="Background" Value="#2D2B55"/>

@@ -21,7 +21,7 @@ public class SetupWindow : Window
         Content = new Border
         {
             Padding = new Thickness(24),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(100, 110, 91, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(100, 59, 130, 246)),
             BorderThickness = new Thickness(1),
             Child = new StackPanel
             {

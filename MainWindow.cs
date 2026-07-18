@@ -615,7 +615,7 @@ public sealed class MainWindow : Window
                 Children =
                 {
                     new Border {
-                        Background = new SolidColorBrush(Color.FromArgb(8, 110, 91, 255)),
+                        Background = new SolidColorBrush(GetAccentColor(8)),
                         IsHitTestVisible = false,
                         ZIndex = 999
                     }.With(rowSpan: 2),
@@ -708,8 +708,8 @@ public sealed class MainWindow : Window
                                 RadiusY = new RelativeScalar(0.55, RelativeUnit.Relative),
                                 GradientStops =
                                 {
-                                    new GradientStop(Color.FromArgb(20, Color.Parse(_settings.AccentColor ?? "#6E5BFF").R, Color.Parse(_settings.AccentColor ?? "#6E5BFF").G, Color.Parse(_settings.AccentColor ?? "#6E5BFF").B), 0),
-                                    new GradientStop(Color.FromArgb(0, Color.Parse(_settings.AccentColor ?? "#6E5BFF").R, Color.Parse(_settings.AccentColor ?? "#6E5BFF").G, Color.Parse(_settings.AccentColor ?? "#6E5BFF").B), 1)
+                                    new GradientStop(Color.FromArgb(20, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B), 0),
+                                    new GradientStop(Color.FromArgb(0, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B), 1)
                                 }
                             },
                             [Canvas.LeftProperty] = -120d,
@@ -724,8 +724,8 @@ public sealed class MainWindow : Window
                             {
                                 GradientStops =
                                 {
-                                    new GradientStop(Color.FromArgb(15, Color.Parse(_settings.AccentColor ?? "#6E5BFF").R, Color.Parse(_settings.AccentColor ?? "#6E5BFF").G, Color.Parse(_settings.AccentColor ?? "#6E5BFF").B), 0),
-                                    new GradientStop(Color.FromArgb(0, Color.Parse(_settings.AccentColor ?? "#6E5BFF").R, Color.Parse(_settings.AccentColor ?? "#6E5BFF").G, Color.Parse(_settings.AccentColor ?? "#6E5BFF").B), 1)
+                                    new GradientStop(Color.FromArgb(15, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B), 0),
+                                    new GradientStop(Color.FromArgb(0, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B), 1)
                                 }
                             },
                             [Canvas.RightProperty] = -180d,
@@ -976,9 +976,9 @@ public sealed class MainWindow : Window
     {
         var style = _settings.Style;
 
-        var accentHex = !string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#6E5BFF";
+        var accentHex = !string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#8B5A2B";
         Color accentColor;
-        try { accentColor = Color.Parse(accentHex); } catch { accentColor = Color.Parse("#6E5BFF"); }
+        try { accentColor = Color.Parse(accentHex); } catch { accentColor = Color.Parse("#8B5A2B"); }
 
         var accentOverlay = new Panel
         {
@@ -1507,7 +1507,7 @@ public sealed class MainWindow : Window
 
         if (btnStart is null)
         {
-            btnStart = CreatePrimaryButton("▶ Play", "#6E5BFF", Colors.White);
+            btnStart = CreatePrimaryButton("▶ Play", _settings.AccentColor ?? "#8B5A2B", Colors.White);
             btnStart.Click += async (_, _) => 
             {
                 if (_launchCts != null)
@@ -2318,7 +2318,7 @@ public sealed class MainWindow : Window
 
             // Make it look premium
             var fg = !string.IsNullOrWhiteSpace(_settings.Style.NavButtonForeground) ? _settings.Style.NavButtonForeground : "#A4A8B1";
-            var accent = !string.IsNullOrWhiteSpace(_settings.Style.AccentColor) ? _settings.Style.AccentColor! : (!string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#6E5BFF");
+            var accent = !string.IsNullOrWhiteSpace(_settings.Style.AccentColor) ? _settings.Style.AccentColor! : (!string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#8B5A2B");
             
             accountsNavButton.Content = new StackPanel
             {
@@ -2997,7 +2997,7 @@ public sealed class MainWindow : Window
                             Text = "Fabric 1.21.11 · Performance & Menu Enhanced",
                             FontSize = 11,
                             FontWeight = FontWeight.Medium,
-                            Foreground = _settings.ThemeVariant == "light" ? new SolidColorBrush(Color.Parse("#6E5BFF")) : new SolidColorBrush(Color.Parse("#A394FF"))
+                            Foreground = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B"))
                         }
                     }
                 }.With(column: 0),
@@ -4107,7 +4107,7 @@ public sealed class MainWindow : Window
                 Height = 34,
                 Padding = new Thickness(0), // Reset padding so it doesn't squish the icon into a white rectangle!
                 CornerRadius = new CornerRadius(17),
-                Background = new SolidColorBrush(Color.Parse(_settings?.AccentColor ?? "#6E5BFF")),
+                Background = new SolidColorBrush(Color.Parse(_settings?.AccentColor ?? "#8B5A2B")),
                 BorderThickness = new Thickness(0),
                 Content = new TextBlock
                 {
@@ -4135,12 +4135,12 @@ public sealed class MainWindow : Window
 
             playBtn.PointerEntered += (_, _) =>
             {
-                var currentAccent = _settings?.AccentColor ?? "#6E5BFF";
+                var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
                 playBtn.Background = new SolidColorBrush(Color.FromArgb(200, Color.Parse(currentAccent).R, Color.Parse(currentAccent).G, Color.Parse(currentAccent).B));
             };
             playBtn.PointerExited += (_, _) =>
             {
-                var currentAccent = _settings?.AccentColor ?? "#6E5BFF";
+                var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
                 playBtn.Background = new SolidColorBrush(Color.Parse(currentAccent));
             };
 
@@ -4253,7 +4253,7 @@ public sealed class MainWindow : Window
             };
             card.PointerExited += (_, _) =>
             {
-                var currentAccent = _settings?.AccentColor ?? "#6E5BFF";
+                var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
                 card.RenderTransform = TransformOperations.Parse("scale(1.0)");
                 if (isFugo)
                 {
@@ -4296,9 +4296,11 @@ public sealed class MainWindow : Window
             // Apply initial selected state if this profile is the active one
             if (string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal))
             {
-                card.BorderBrush = new SolidColorBrush(Color.Parse("#6E5BFF"));
+                var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
+                Color accentColorParsed = Color.Parse(currentAccent);
+                card.BorderBrush = new SolidColorBrush(accentColorParsed);
                 card.BorderThickness = new Thickness(2);
-                card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, 110, 91, 255), OffsetX = 0, OffsetY = 0 });
+                card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, accentColorParsed.R, accentColorParsed.G, accentColorParsed.B), OffsetX = 0, OffsetY = 0 });
             }
 
             return card;
@@ -4467,7 +4469,7 @@ public sealed class MainWindow : Window
         worldsPane.AddHandler(DragDrop.DragEnterEvent, (sender, e) =>
         {
             if (sender is Control c) c.Opacity = 0.85;
-            if (worldsPane is Border wb) wb.BorderBrush = new SolidColorBrush(Color.Parse("#6E5BFF"));
+            if (worldsPane is Border wb) wb.BorderBrush = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B"));
         });
         worldsPane.AddHandler(DragDrop.DragLeaveEvent, (sender, e) =>
         {
@@ -5455,7 +5457,7 @@ public sealed class MainWindow : Window
 
         var hexInput = new TextBox
         {
-            Watermark = "#6E5BFF",
+            Watermark = "#8B5A2B",
             Text = _settings.AccentColor,
             Width = 140,
             Height = 32,
@@ -5472,7 +5474,7 @@ public sealed class MainWindow : Window
             BorderBrush = Brushes.White,
             BorderThickness = new Thickness(1),
             VerticalAlignment = VerticalAlignment.Center,
-            Background = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#6E5BFF"))
+            Background = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B"))
         };
 
         var hexApplyBtn = new Button
@@ -5534,7 +5536,7 @@ public sealed class MainWindow : Window
                     Spacing = 12,
                     Children =
                     {
-                        CreateColorPreset("#6E5BFF"),
+                        CreateColorPreset("#8B5A2B"),
                         CreateColorPreset("#FF5B5B"),
                         CreateColorPreset("#5BFF85"),
                         CreateColorPreset("#FFB85B"),
@@ -5609,7 +5611,7 @@ public sealed class MainWindow : Window
             {
                 new TextBlock { Text = "Automatically install FancyMenu and a custom layout in your Minecraft instances.", Foreground = new SolidColorBrush(Color.Parse("#B0BACF")), FontSize = 14, TextWrapping = TextWrapping.Wrap },
                 fancyMenuToggle,
-                new TextBlock { Text = "Note: This will download FancyMenu and Konkrete mods during launch.", Foreground = new SolidColorBrush(Color.Parse("#6E5BFF")), FontSize = 12, FontWeight = FontWeight.Bold }
+                new TextBlock { Text = "Note: This will download FancyMenu and Konkrete mods during launch.", Foreground = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B")), FontSize = 12, FontWeight = FontWeight.Bold }
             }
         }, "#1A2035");
 
@@ -5657,10 +5659,6 @@ public sealed class MainWindow : Window
     {
 
         var tasks = new List<Task>();
-        if (!_settings.OfflineMode)
-        {
-            tasks.Add(CheckForUpdatesAsync());
-        }
         
         tasks.Add(PerformFirstRunSetup());
         await Task.WhenAll(tasks);
@@ -7237,51 +7235,6 @@ public sealed class MainWindow : Window
         throw new Exception($"Java {requiredJavaVersion} executable not found.");
     }
 
-    private async Task CheckForUpdatesAsync()
-    {
-        if (_settings.OfflineMode) return;
-        try
-        {
-            using var client = new System.Net.Http.HttpClient();
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("DeathClient-Updater/1.0");
-            var currentVersion = new Version(1, 0, 0); 
-            
-            var response = await client.GetStringAsync("https://api.github.com/repos/AchinthyaJ/DeathClient/releases/latest");
-            using var doc = JsonDocument.Parse(response);
-            if (doc.RootElement.TryGetProperty("tag_name", out var tagElement))
-            {
-                var tag = tagElement.GetString();
-                if (!string.IsNullOrEmpty(tag) && tag.StartsWith("v"))
-                {
-                    if (Version.TryParse(tag.Substring(1), out var latestVersion))
-                    {
-                        if (latestVersion > currentVersion)
-                        {
-                            string? htmlUrl = null;
-                            if (doc.RootElement.TryGetProperty("html_url", out var urlElement))
-                            {
-                                htmlUrl = urlElement.GetString();
-                            }
-
-                            Dispatcher.UIThread.Post(async () =>
-                            {
-                                var download = await DialogService.ShowConfirmAsync(this, "Update Available", $"A new version ({tag}) is available. Would you like to download it?");
-                                if (download && !string.IsNullOrEmpty(htmlUrl))
-                                {
-                                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                                    {
-                                        FileName = htmlUrl,
-                                        UseShellExecute = true
-                                    });
-                                }
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        catch { }
-    }
 
     private System.Threading.CancellationTokenSource? _skinCancellation;
 
@@ -8148,7 +8101,7 @@ public sealed class MainWindow : Window
 
     private void UpdateInstanceCardSelection()
     {
-        var currentAccent = _settings?.AccentColor ?? "#6E5BFF";
+        var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
         foreach (var (dir, card) in _instanceCardBorders)
         {
             var isSelected = string.Equals(dir, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal);
@@ -9260,7 +9213,7 @@ public sealed class MainWindow : Window
 
         if (_localServers == null || _localServers.Count == 0)
         {
-            var emptyAddBtn = CreatePrimaryButton("+ Create Your First Server", "#6E5BFF", Colors.White);
+            var emptyAddBtn = CreatePrimaryButton("+ Create Your First Server", _settings.AccentColor ?? "#8B5A2B", Colors.White);
             emptyAddBtn.Height = 44;
             emptyAddBtn.CornerRadius = new CornerRadius(12);
             emptyAddBtn.FontWeight = FontWeight.Bold;
@@ -9280,11 +9233,11 @@ public sealed class MainWindow : Window
                     EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
                     GradientStops =
                     {
-                        new GradientStop(Color.FromArgb(80, 110, 91, 255), 0),
+                        new GradientStop(Color.FromArgb(80, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B), 0),
                         new GradientStop(Color.FromArgb(20, 56, 214, 196), 1)
                     }
                 },
-                BorderBrush = new SolidColorBrush(Color.Parse("#6E5BFF")),
+                BorderBrush = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B")),
                 BorderThickness = new Thickness(1.5),
                 Child = new TextBlock
                 {
@@ -9297,7 +9250,7 @@ public sealed class MainWindow : Window
                 BoxShadow = new BoxShadows(new BoxShadow
                 {
                     Blur = 24,
-                    Color = Color.FromArgb(80, 110, 91, 255),
+                    Color = GetAccentColor(80),
                     OffsetX = 0,
                     OffsetY = 0
                 }),
@@ -9515,9 +9468,11 @@ public sealed class MainWindow : Window
                 var manageBtn = CreateSecondaryButton("Manage");
                 manageBtn.Height = 44;
                 manageBtn.CornerRadius = new CornerRadius(8);
-                manageBtn.Foreground = new SolidColorBrush(Color.Parse("#BD93F9"));
-                manageBtn.BorderBrush = new SolidColorBrush(Color.Parse("#6E5BFF"));
-                manageBtn.Background = new SolidColorBrush(Color.FromArgb(20, 110, 91, 255));
+                var currentAccentHex = _settings.AccentColor ?? "#8B5A2B";
+                Color currentAccentColor = Color.Parse(currentAccentHex);
+                manageBtn.Foreground = new SolidColorBrush(currentAccentColor);
+                manageBtn.BorderBrush = new SolidColorBrush(currentAccentColor);
+                manageBtn.Background = new SolidColorBrush(Color.FromArgb(20, currentAccentColor.R, currentAccentColor.G, currentAccentColor.B));
                 manageBtn.FontWeight = FontWeight.Bold;
                 var srvId = server.Id;
                 manageBtn.Click += (_, _) =>
@@ -9617,7 +9572,7 @@ public sealed class MainWindow : Window
             
             createCardGrid.Children.Add(createDetails.With(column: 0));
             
-            var createBtn = CreatePrimaryButton("Create Server", "#6E5BFF", Colors.White);
+            var createBtn = CreatePrimaryButton("Create Server", _settings.AccentColor ?? "#8B5A2B", Colors.White);
             createBtn.Height = 36;
             createBtn.Padding = new Thickness(14, 0);
             createBtn.CornerRadius = new CornerRadius(8);
@@ -9631,8 +9586,8 @@ public sealed class MainWindow : Window
 
             var createServerCard = new Border
             {
-                Background = new SolidColorBrush(Color.FromArgb(15, 110, 91, 255)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 110, 91, 255)),
+                Background = new SolidColorBrush(GetAccentColor(15)),
+                BorderBrush = new SolidColorBrush(GetAccentColor(40)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(18),
                 Padding = new Thickness(18),
@@ -9683,14 +9638,14 @@ public sealed class MainWindow : Window
             Height = 34, 
             VerticalAlignment = VerticalAlignment.Center,
             Background = new SolidColorBrush(Color.FromArgb(30, 0, 0, 0)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(55, 110, 91, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(55, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B)),
             BorderThickness = new Thickness(1.5),
             CornerRadius = new CornerRadius(6),
             Foreground = Brushes.White,
             Padding = new Thickness(10, 5)
         };
         
-        var resolveBtn = CreatePrimaryButton("Find Server", "#6E5BFF", Colors.White);
+        var resolveBtn = CreatePrimaryButton("Find Server", _settings.AccentColor ?? "#8B5A2B", Colors.White);
         resolveBtn.Height = 34;
         resolveBtn.MinWidth = 100;
         resolveBtn.Padding = new Thickness(14, 0);
@@ -9785,12 +9740,12 @@ public sealed class MainWindow : Window
                         var badgeRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
                         badgeRow.Children.Add(new Border
                         {
-                            Background = new SolidColorBrush(Color.FromArgb(40, 110, 91, 255)),
-                            BorderBrush = new SolidColorBrush(Color.FromArgb(100, 110, 91, 255)),
+                            Background = new SolidColorBrush(GetAccentColor(40)),
+                            BorderBrush = new SolidColorBrush(GetAccentColor(100)),
                             BorderThickness = new Thickness(1),
                             Padding = new Thickness(8, 3),
                             CornerRadius = new CornerRadius(5),
-                            Child = new TextBlock { Text = $"Invite: {srv.InviteCode}", FontSize = 11, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(Color.Parse("#BD93F9")), TextWrapping = TextWrapping.NoWrap }
+                            Child = new TextBlock { Text = $"Invite: {srv.InviteCode}", FontSize = 11, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(GetAccentColor(255)), TextWrapping = TextWrapping.NoWrap }
                         });
                         badgeRow.Children.Add(new Border
                         {
@@ -10789,7 +10744,7 @@ public sealed class MainWindow : Window
         };
 
         // Copy invite code button (only shown if code is set)
-        var copyInviteBtn = CreatePrimaryButton("❐ Invite Code", "#6E5BFF", Colors.White);
+        var copyInviteBtn = CreatePrimaryButton("❐ Invite Code", _settings.AccentColor ?? "#8B5A2B", Colors.White);
         copyInviteBtn.Height = 36;
         copyInviteBtn.CornerRadius = new CornerRadius(8);
         copyInviteBtn.FontWeight = FontWeight.Bold;
@@ -10851,7 +10806,7 @@ public sealed class MainWindow : Window
             btn.BorderThickness = new Thickness(0);
             if (_activeDashboardTab == tab.Item2)
             {
-                btn.Background = new SolidColorBrush(Color.Parse("#6E5BFF"));
+                btn.Background = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B"));
                 btn.Foreground = Brushes.White;
                 btn.BorderBrush = Brushes.Transparent;
             }
@@ -11045,7 +11000,7 @@ public sealed class MainWindow : Window
                 var actionBtn = new Button
                 {
                     Background = new SolidColorBrush(Color.FromArgb(140, 20, 24, 33)),
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(30, 110, 91, 255)),
+                    BorderBrush = new SolidColorBrush(GetAccentColor(30)),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(8),
                     Height = 44,
@@ -11220,7 +11175,7 @@ public sealed class MainWindow : Window
             worldDetailsStack.Children.Add(fieldRow("Game Mode", "Survival", false));
             worldDetailsStack.Children.Add(fieldRow("Cheats", "Off", false));
 
-            var manageWorldBtn = CreatePrimaryButton("Manage World", "#6E5BFF", Colors.White);
+            var manageWorldBtn = CreatePrimaryButton("Manage World", _settings.AccentColor ?? "#8B5A2B", Colors.White);
             manageWorldBtn.Height = 32;
             manageWorldBtn.CornerRadius = new CornerRadius(8);
             manageWorldBtn.FontSize = 11;
@@ -11259,7 +11214,7 @@ public sealed class MainWindow : Window
                 return new Border
                 {
                     Background = new SolidColorBrush(Color.FromArgb(200, 14, 16, 22)),
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(40, 110, 91, 255)),
+                    BorderBrush = new SolidColorBrush(GetAccentColor(40)),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(12),
                     Padding = new Thickness(10),
@@ -11457,7 +11412,7 @@ public sealed class MainWindow : Window
             var playerLabel = new TextBlock { Text = "Operator Username", Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), FontSize = 12, FontWeight = FontWeight.Bold };
             var playerInput = new TextBox { Watermark = "Enter Minecraft Player Name" };
 
-            var opBtn = CreatePrimaryButton("Grant Operator (OP)", "#6E5BFF", Colors.White);
+            var opBtn = CreatePrimaryButton("Grant Operator (OP)", _settings.AccentColor ?? "#8B5A2B", Colors.White);
             opBtn.Height = 44;
             opBtn.CornerRadius = new CornerRadius(10);
             opBtn.FontWeight = FontWeight.Bold;
@@ -11582,8 +11537,8 @@ public sealed class MainWindow : Window
 
                     var pill = new Border
                     {
-                        Background = new SolidColorBrush(Color.FromArgb(40, 110, 91, 255)),
-                        BorderBrush = new SolidColorBrush(Color.FromArgb(120, 110, 91, 255)),
+                        Background = new SolidColorBrush(GetAccentColor(40)),
+                        BorderBrush = new SolidColorBrush(GetAccentColor(120)),
                         BorderThickness = new Thickness(1),
                         CornerRadius = new CornerRadius(20),
                         Padding = new Thickness(10, 5),
@@ -11620,7 +11575,7 @@ public sealed class MainWindow : Window
             var addPlayerBtn = new Button
             {
                 Content = "+ Add",
-                Background = new SolidColorBrush(Color.Parse("#6E5BFF")),
+                Background = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B")),
                 Foreground = Brushes.White,
                 FontWeight = FontWeight.Bold,
                 Height = 38,
@@ -11651,7 +11606,7 @@ public sealed class MainWindow : Window
             var pillsContainer = new Border
             {
                 Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(30, 110, 91, 255)),
+                BorderBrush = new SolidColorBrush(GetAccentColor(30)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(12),
                 Padding = new Thickness(10, 8),
@@ -11735,7 +11690,7 @@ public sealed class MainWindow : Window
         else if (_activeDashboardTab == "files")
         {
             // View Files Tab
-            var openFolderBtn = CreatePrimaryButton("Open Server Directory", "#6E5BFF", Colors.White);
+            var openFolderBtn = CreatePrimaryButton("Open Server Directory", _settings.AccentColor ?? "#8B5A2B", Colors.White);
             openFolderBtn.Height = 44;
             openFolderBtn.CornerRadius = new CornerRadius(10);
             openFolderBtn.FontWeight = FontWeight.Bold;
@@ -11889,7 +11844,7 @@ public sealed class MainWindow : Window
                     textStack.Children.Add(new TextBlock { Text = project.Description, Foreground = Brushes.Gray, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis });
                     row.Children.Add(textStack.With(column: 0));
                     
-                    var downloadBtn = CreatePrimaryButton("Install", "#6E5BFF", Colors.White);
+                    var downloadBtn = CreatePrimaryButton("Install", _settings.AccentColor ?? "#8B5A2B", Colors.White);
                     downloadBtn.Height = 32;
                     downloadBtn.CornerRadius = new CornerRadius(8);
                     downloadBtn.FontSize = 11;
@@ -12476,7 +12431,7 @@ public sealed class MainWindow : Window
             };
 
             var commandInput = new TextBox { Watermark = "Enter console command (e.g. /say Hello)...", Margin = new Thickness(0, 0, 8, 0), Height = 44 };
-            var sendBtn = CreatePrimaryButton("Send", "#6E5BFF", Colors.White);
+            var sendBtn = CreatePrimaryButton("Send", _settings.AccentColor ?? "#8B5A2B", Colors.White);
             sendBtn.Height = 44;
 
             var suggestionsList = new ListBox
@@ -12796,7 +12751,7 @@ public sealed class MainWindow : Window
         });
 
         var cpuGauge = CreateStatGauge("CPU Usage", "0%", 0, "#00FF87");
-        var ramGauge = CreateStatGauge("RAM Usage", "0.0 / 0.0 GB", 0, "#6E5BFF");
+        var ramGauge = CreateStatGauge("RAM Usage", "0.0 / 0.0 GB", 0, _settings.AccentColor ?? "#8B5A2B");
         var tpsGauge = CreateStatGauge("Server TPS (Ticks Per Second)", "0.0 / 20.0", 0, "#C084FC");
         var msptGauge = CreateStatGauge("Server MSPT (Tick Duration)", "0.0 ms", 0, "#38D6C4");
 
@@ -12954,7 +12909,7 @@ public sealed class MainWindow : Window
             TextWrapping = TextWrapping.Wrap 
         });
 
-        var optiBtn = CreatePrimaryButton("⚡ Optimize Heap Memory Now", "#6E5BFF", Colors.White);
+        var optiBtn = CreatePrimaryButton("⚡ Optimize Heap Memory Now", _settings.AccentColor ?? "#8B5A2B", Colors.White);
         optiBtn.Height = 40;
         optiBtn.CornerRadius = new CornerRadius(10);
         optiBtn.FontWeight = FontWeight.Bold;
@@ -17513,8 +17468,9 @@ if __name__ == '__main__':
                     originalShadow = border.BoxShadow;
                     captured = true;
                 }
-                border.BorderBrush = new SolidColorBrush(Color.Parse("#00F2FE"));
-                border.BoxShadow = BoxShadows.Parse("0 8 20 0 #4C00F2FE, 0 2 8 0 #4C6E5BFF");
+                var accent = Color.Parse(_settings.AccentColor ?? "#8B5A2B");
+                border.BorderBrush = new SolidColorBrush(accent);
+                border.BoxShadow = BoxShadows.Parse($"0 8 20 0 #4C{accent.R:X2}{accent.G:X2}{accent.B:X2}, 0 2 8 0 #4C{accent.R:X2}{accent.G:X2}{accent.B:X2}");
             }
         };
         control.PointerExited += (s, e) =>
@@ -17952,7 +17908,7 @@ if __name__ == '__main__':
         }
         catch
         {
-            return Color.FromArgb(alpha, 110, 91, 255); // Fallback to #6E5BFF
+            return Color.FromArgb(alpha, 139, 90, 43); // Fallback to #8B5A2B
         }
     }
 
@@ -18095,7 +18051,7 @@ if __name__ == '__main__':
             // Reset all style tokens to defaults
             _settings.Style = LayoutStyle.Default();
             _settings.SelectedPreset = "None";
-            _settings.AccentColor = "#6E5BFF";
+            _settings.AccentColor = "#8B5A2B";
             _settingsStore.Save(_settings);
 
             ApplySelectedPresetStyle();
@@ -18205,7 +18161,7 @@ if __name__ == '__main__':
                 }
                 else
                 {
-                    _settings.AccentColor = "#6E5BFF";
+                    _settings.AccentColor = "#8B5A2B";
                 }
                 _settingsStore.Save(_settings);
             }

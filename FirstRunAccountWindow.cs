@@ -97,7 +97,7 @@ public sealed class FirstRunAccountWindow : Window
             EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
             GradientStops =
             {
-                new GradientStop(Color.Parse("#6E5BFF"), 0),
+                new GradientStop(Color.Parse("#3B82F6"), 0),
                 new GradientStop(Color.Parse("#00F2FE"), 1)
             }
         };
@@ -136,7 +136,7 @@ public sealed class FirstRunAccountWindow : Window
         // Add a glow focus visual effect
         _usernameInput.GotFocus += (s, e) =>
         {
-            _usernameInput.BorderBrush = new SolidColorBrush(Color.Parse("#6E5BFF"));
+            _usernameInput.BorderBrush = new SolidColorBrush(Color.Parse("#3B82F6"));
         };
         _usernameInput.LostFocus += (s, e) =>
         {
@@ -220,8 +220,8 @@ public sealed class FirstRunAccountWindow : Window
             {
                 GradientStops =
                 {
-                    new GradientStop(Color.FromArgb(100, 110, 91, 255), 0),
-                    new GradientStop(Color.FromArgb(0, 110, 91, 255), 1)
+                    new GradientStop(Color.FromArgb(100, 59, 130, 246), 0),
+                    new GradientStop(Color.FromArgb(0, 59, 130, 246), 1)
                 }
             }
         };
@@ -257,7 +257,7 @@ public sealed class FirstRunAccountWindow : Window
 
         var brandSubtitle = new TextBlock
         {
-            Text = "PERFORMANCE REDEFINED",
+            Text = "SECURE & OPTIMIZED MINECRAFT CLIENT",
             FontSize = 9,
             FontWeight = FontWeight.Black,
             Foreground = new SolidColorBrush(Color.Parse("#72C8FF")),
@@ -274,10 +274,10 @@ public sealed class FirstRunAccountWindow : Window
         {
             Spacing = 16
         };
-        featuresStack.Children.Add(CreateFeatureItem("60FPS+ Optimizations"));
-        featuresStack.Children.Add(CreateFeatureItem("Customizable to any level"));
-        featuresStack.Children.Add(CreateFeatureItem("Multi-Account Manager"));
-        featuresStack.Children.Add(CreateFeatureItem("Modern UI Experience"));
+        featuresStack.Children.Add(CreateFeatureItem("Performance-Optimized Engine"));
+        featuresStack.Children.Add(CreateFeatureItem("100% Secure & Open Source"));
+        featuresStack.Children.Add(CreateFeatureItem("Official Microsoft OAuth"));
+        featuresStack.Children.Add(CreateFeatureItem("Private & Local Settings"));
 
         var leftStack = new StackPanel
         {
@@ -312,8 +312,29 @@ public sealed class FirstRunAccountWindow : Window
             Text = "Choose how you'd like to authenticate to begin.",
             FontSize = 13,
             Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
-            Margin = new Thickness(0, 4, 0, 20),
+            Margin = new Thickness(0, 4, 0, 12),
             FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
+        };
+
+        var securityBadge = new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(10, 5),
+            CornerRadius = new CornerRadius(12),
+            Background = new SolidColorBrush(Color.FromArgb(20, 16, 185, 129)), // emerald green 10%
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 16, 185, 129)), // emerald green 30%
+            BorderThickness = new Thickness(1),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 6,
+                Children =
+                {
+                    new TextBlock { Text = "🛡️", FontSize = 12, VerticalAlignment = VerticalAlignment.Center },
+                    new TextBlock { Text = "Verified Secure OAuth 2.0 Connection", FontSize = 11, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(Color.Parse("#10B981")), FontFamily = new FontFamily("SF Pro, Inter, Segoe UI") }
+                }
+            },
+            Margin = new Thickness(0, 0, 0, 16)
         };
 
         // Pill segmented tab selector container
@@ -325,7 +346,7 @@ public sealed class FirstRunAccountWindow : Window
             Height = 44,
             CornerRadius = new CornerRadius(22),
             Background = new SolidColorBrush(Color.FromArgb(200, 6, 9, 18)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(50, 110, 91, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(50, 59, 130, 246)),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(3),
             Child = new Grid
@@ -354,13 +375,36 @@ public sealed class FirstRunAccountWindow : Window
                     FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
                 },
                 _usernameInput,
-                new TextBlock
+                new Border
                 {
-                    Text = "Allows playing locally under any nickname. Ideal for offline sessions. (Note: standard multiplayer servers enforce online Microsoft authentication.)",
-                    FontSize = 11,
-                    Foreground = new SolidColorBrush(Color.Parse("#64748B")),
-                    TextWrapping = TextWrapping.Wrap,
-                    FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
+                    Padding = new Thickness(12, 10),
+                    Background = new SolidColorBrush(Color.FromArgb(15, 255, 255, 255)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Child = new StackPanel
+                    {
+                        Spacing = 4,
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = "💡 Offline Mode Features:",
+                                FontSize = 11,
+                                FontWeight = FontWeight.Bold,
+                                Foreground = Brushes.White,
+                                FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
+                            },
+                            new TextBlock
+                            {
+                                Text = "• Authenticates locally on your machine without storing data online.\n• Allows choosing any name for singleplayer and offline LAN networks.\n• Note: Standard public multiplayer servers require Microsoft mode.",
+                                FontSize = 11,
+                                Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
+                                TextWrapping = TextWrapping.Wrap,
+                                FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
+                            }
+                        }
+                    }
                 }
             }
         };
@@ -394,8 +438,8 @@ public sealed class FirstRunAccountWindow : Window
                 new Border
                 {
                     Padding = new Thickness(16, 20),
-                    Background = new SolidColorBrush(Color.FromArgb(70, 110, 91, 255)),
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(40, 110, 91, 255)),
+                    Background = new SolidColorBrush(Color.FromArgb(40, 59, 130, 246)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(80, 59, 130, 246)),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(14),
                     Child = new StackPanel
@@ -417,7 +461,7 @@ public sealed class FirstRunAccountWindow : Window
                                 {
                                     new TextBlock
                                     {
-                                        Text = "Secure Browser Authentication",
+                                        Text = "Official Microsoft Login Integration",
                                         FontSize = 13,
                                         FontWeight = FontWeight.Bold,
                                         Foreground = Brushes.White,
@@ -425,7 +469,7 @@ public sealed class FirstRunAccountWindow : Window
                                     },
                                     new TextBlock
                                     {
-                                        Text = "A secure browser window will open for official login.",
+                                        Text = "All authentication runs directly through secure, official Microsoft OAuth servers. We never see or store your credentials.",
                                         FontSize = 11,
                                         Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
                                         TextWrapping = TextWrapping.Wrap,
@@ -436,13 +480,36 @@ public sealed class FirstRunAccountWindow : Window
                         }
                     }
                 },
-                new TextBlock
+                new Border
                 {
-                    Text = "Supported features: Official online multiplayer, skins synchronization, Realms access, and full Microsoft account security guarantees.",
-                    FontSize = 11,
-                    Foreground = new SolidColorBrush(Color.Parse("#64748B")),
-                    TextWrapping = TextWrapping.Wrap,
-                    FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
+                    Padding = new Thickness(12, 10),
+                    Background = new SolidColorBrush(Color.FromArgb(15, 255, 255, 255)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Child = new StackPanel
+                    {
+                        Spacing = 4,
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = "🛡️ Security Guarantees:",
+                                FontSize = 11,
+                                FontWeight = FontWeight.Bold,
+                                Foreground = Brushes.White,
+                                FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
+                            },
+                            new TextBlock
+                            {
+                                Text = "• Password-less authentication using Microsoft Device Code flow.\n• Fugo Client only receives a temporary, cryptographically signed token from Mojang.\n• Access multiplayer servers, Realms, and skins safely.",
+                                FontSize = 11,
+                                Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
+                                TextWrapping = TextWrapping.Wrap,
+                                FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
+                            }
+                        }
+                    }
                 }
             }
         };
@@ -502,16 +569,18 @@ public sealed class FirstRunAccountWindow : Window
         var activePanelBorder = new Border { Margin = new Thickness(0, 24, 0, 0), Child = activePanelGrid };
 
         Grid.SetRow(headerStack, 0);
-        Grid.SetRow(pillSelector, 1);
-        Grid.SetRow(activePanelBorder, 2);
-        Grid.SetRow(_submitButton, 3);
+        Grid.SetRow(securityBadge, 1);
+        Grid.SetRow(pillSelector, 2);
+        Grid.SetRow(activePanelBorder, 3);
+        Grid.SetRow(_submitButton, 4);
 
         var rightStack = new Grid
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto"),
             Children =
             {
                 headerStack,
+                securityBadge,
                 pillSelector,
                 activePanelBorder,
                 _submitButton
@@ -553,8 +622,8 @@ public sealed class FirstRunAccountWindow : Window
                         RadiusY = new RelativeScalar(0.5, RelativeUnit.Relative),
                         GradientStops =
                         {
-                            new GradientStop(Color.FromArgb(28, 110, 91, 255), 0),
-                            new GradientStop(Color.FromArgb(0, 110, 91, 255), 1)
+                            new GradientStop(Color.FromArgb(28, 59, 130, 246), 0),
+                            new GradientStop(Color.FromArgb(0, 59, 130, 246), 1)
                         }
                     },
                     [Canvas.LeftProperty] = -150d,
@@ -593,8 +662,8 @@ public sealed class FirstRunAccountWindow : Window
                         RadiusY = new RelativeScalar(0.5, RelativeUnit.Relative),
                         GradientStops =
                         {
-                            new GradientStop(Color.FromArgb(20, 211, 0, 197), 0),
-                            new GradientStop(Color.FromArgb(0, 211, 0, 197), 1)
+                            new GradientStop(Color.FromArgb(20, 99, 102, 241), 0),
+                            new GradientStop(Color.FromArgb(0, 99, 102, 241), 1)
                         }
                     },
                     [Canvas.LeftProperty] = -50d,
@@ -620,7 +689,7 @@ public sealed class FirstRunAccountWindow : Window
             CornerRadius = new CornerRadius(24),
             ClipToBounds = true,
             Background = new SolidColorBrush(Color.Parse("#03050C")),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 110, 91, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 59, 130, 246)),
             BorderThickness = new Thickness(1),
             Child = mainLayout
         };

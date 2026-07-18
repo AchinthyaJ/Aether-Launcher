@@ -7,7 +7,7 @@
   <ImplicitUsings>enable</ImplicitUsings>
   <ApplicationIcon>minecraft.ico</ApplicationIcon>
   <AssemblyName>FugoLauncher</AssemblyName>
-  <Version>1.0.4</Version>
+  <Version>3.1.0</Version>
   <Product>Fugo Launcher</Product>
   <Authors>Fugo Launcher Team</Authors>
   <PackageId>FugoLauncher</PackageId>
