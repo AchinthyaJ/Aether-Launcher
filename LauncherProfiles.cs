@@ -161,6 +161,11 @@ internal sealed class LauncherProfile
     public string InstanceDirectory { get; set; } = string.Empty;
     public string GameDirectoryOverride { get; set; } = string.Empty;
     public string JvmArguments { get; set; } = string.Empty;
+    public string JavaPath { get; set; } = string.Empty;
+    public int? MaxRamMb { get; set; }
+    public int? WindowWidth { get; set; }
+    public int? WindowHeight { get; set; }
+    public string EnvironmentVariables { get; set; } = string.Empty;
     public HashSet<string> InstalledModIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public bool IsInstalled { get; set; } = false;
     public bool LastLaunchCrashed { get; set; } = false;

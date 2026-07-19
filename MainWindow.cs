@@ -102,7 +102,7 @@ public sealed class MainWindow : Window
     private static readonly string[] ProjectTypeOptions = ["Mod", "Modpack"];
     private static readonly string[] LoaderOptions = ["Any", "Vanilla", "Fabric", "Quilt", "Forge", "NeoForge"];
     private static readonly string[] ProfileLoaderOptions = ["Vanilla", "Fabric", "Quilt", "Forge", "NeoForge"];
-    private static readonly string[] ProfilePresetOptions = ["Fugo Client (Fabric) (Coming Soon)", "Vanilla Minecraft", "Custom Modded"];
+    private static readonly string[] ProfilePresetOptions = ["Fugo Client (Fabric)", "Vanilla Minecraft", "Custom Modded"];
     private static readonly string[] VersionCategoryOptions = ["Versions", "Snapshots", "Other sources"];
     private static readonly string[] SourceOptions = ["Modrinth", "CurseForge"];
     private static readonly string[] SortOptions = ["Relevance", "Downloads", "Followers", "Newest", "Alphabetical"];
@@ -249,12 +249,35 @@ public sealed class MainWindow : Window
     private StackPanel profilePresetSection = null!;
     private Button createProfileButton = null!;
     private Button renameProfileButton = null!;
+    private Border _editorSettingsRoot = null!;
+    private Border _editorCreationRoot = null!;
+    private TextBlock _settingsHeaderInstanceName = null!;
+    private Border _settingsCoverPreview = null!;
+    private TextBox _settingsNameInput = null!;
+    private TextBox _settingsGameDirInput = null!;
+    private ComboBox _settingsGameVersionCombo = null!;
+    private ComboBox _settingsLoaderCombo = null!;
+    private TextBox _settingsJavaPathInput = null!;
+    private TextBox _settingsJvmArgsInput = null!;
+    private Slider _settingsMemorySlider = null!;
+    private TextBlock _settingsMemoryLabel = null!;
+    private TextBox _settingsWidthInput = null!;
+    private TextBox _settingsHeightInput = null!;
+    private TextBlock _settingsVersionLabel = null!;
+    private TextBlock _settingsTitle = null!;
+    private TextBlock _settingsSubtitle = null!;
+    private ScrollViewer _settingsContentScroller = null!;
+    private StackPanel _settingsGeneralPanel = null!;
+    private StackPanel _settingsInstallPanel = null!;
+    private StackPanel _settingsWindowPanel = null!;
+    private StackPanel _settingsJavaPanel = null!;
+    private readonly List<Button> _settingsTabButtons = [];
+    private string _activeSettingsTab = "general";
     private Button btnStart = null!;
     private CancellationTokenSource? _launchCts;
     private Button launchNavButton = null!;
     private Button profilesNavButton = null!;
     private Button modrinthNavButton = null!;
-    private Button performanceNavButton = null!;
     private Button settingsNavButton = null!;
     private Button layoutNavButton = null!;
     private Button accountsNavButton = null!;
@@ -337,6 +360,51 @@ public sealed class MainWindow : Window
     private Control performanceSection = null!;
     private Control settingsSection = null!;
     private Control layoutSection = null!;
+    private Control workspaceSection = null!;
+    // Instance Workspace fields
+    private Border _wsHeaderIcon = null!;
+    private TextBlock _wsHeaderName = null!;
+    private TextBlock _wsHeaderVersion = null!;
+    private TextBlock _wsHeaderStatus = null!;
+    private TextBlock _wsHeaderPlayTime = null!;
+    private Button _wsHeaderPlayBtn = null!;
+    private Border _wsTabModsPanel = null!;
+    private Border _wsTabResourcePacksPanel = null!;
+    private Border _wsTabShaderPacksPanel = null!;
+    private Border _wsTabWorldsPanel = null!;
+    private Border _wsTabScreenshotsPanel = null!;
+    private Border _wsTabFilesPanel = null!;
+    private Border _wsTabLogsPanel = null!;
+    private Border _wsTabSettingsPanel = null!;
+    private ListBox _wsModsListBox = null!;
+    private TextBox _wsModsSearchInput = null!;
+    private ComboBox _wsModsSortCombo = null!;
+    private ListBox _wsRpListBox = null!;
+    private ListBox _wsSpListBox = null!;
+    private ListBox _wsWorldsListBox = null!;
+    private ScrollViewer _wsScreenshotsGallery = null!;
+    private ListBox _wsFilesList = null!;
+    private TextBlock _wsFilesPathLabel = null!;
+    private string _wsCurrentFilesDir = string.Empty;
+    private ComboBox _wsLogsCombo = null!;
+    private TextBlock _wsLogsContent = null!;
+    private ScrollViewer _wsLogsScroll = null!;
+    private TextBox _wsSettingsJavaPath = null!;
+    private TextBox _wsSettingsJvmArgs = null!;
+    private Slider _wsSettingsMemorySlider = null!;
+    private TextBlock _wsSettingsMemoryLabel = null!;
+    private TextBox _wsSettingsResWidth = null!;
+    private TextBox _wsSettingsResHeight = null!;
+    private TextBox _wsSettingsEnvVars = null!;
+    private string _activeWorkspaceTab = "content";
+    private string _activeContentSubTab = "mods";
+    private System.Collections.Generic.Dictionary<string, Button> _wsTabButtons = new();
+    private System.Collections.Generic.Dictionary<string, Button> _wsContentSubTabButtons = new();
+    private Border _wsTabContentPanel = null!;
+    private TextBlock _wsHeaderLastPlayed = null!;
+    private Border? _backgroundBorder;
+    private readonly System.Collections.Generic.List<Border> _allGlassPanels = new();
+    private readonly System.Collections.Generic.Dictionary<Border, (IBrush? Bg, IBrush? Border)> _originalBrushes = new();
     private Border? _homeStatusBar;
     public ProgressBar? PbProgress { get; set; }
     public TextBox? ModrinthSearchInput { get; set; }
@@ -359,6 +427,7 @@ public sealed class MainWindow : Window
     private Button _quickModSearchButton = null!;
     private readonly ListBox _quickModResults = new();
     private readonly ObservableCollection<ModrinthProject> _quickSearchResults = [];
+    private readonly ObservableCollection<ModItem> _workspaceModsList = [];
 
     private ComboBox instanceVersionCombo = null!;
     private ComboBox instanceCategoryCombo = null!;
@@ -606,14 +675,25 @@ public sealed class MainWindow : Window
 
 
 
+        _backgroundBorder = new Border 
+        { 
+            Background = GetMainBackground(),
+            ZIndex = -1 // Keep behind all children
+        };
+        if (_activeSection != "home" && _activeSection != "launch")
+        {
+            _backgroundBorder.Effect = new BlurEffect { Radius = 40 };
+        }
+
         if (topNavigation)
         {
             return WrapWindowSurface(new Grid
             {
-                Background = GetMainBackground(),
+                Background = Brushes.Transparent,
                 RowDefinitions = new RowDefinitions("Auto,*"),
                 Children =
                 {
+                    _backgroundBorder.With(rowSpan: 2),
                     new Border {
                         Background = new SolidColorBrush(GetAccentColor(8)),
                         IsHitTestVisible = false,
@@ -685,12 +765,13 @@ public sealed class MainWindow : Window
         var sidebarOnRight = string.Equals(style.SidebarSide, "right", StringComparison.OrdinalIgnoreCase);
         return WrapWindowSurface(new Grid
         {
-            Background = GetMainBackground(),
+            Background = Brushes.Transparent,
             ColumnDefinitions = sidebarOnRight
                 ? new ColumnDefinitions($"*,{sidebarWidth}")
                 : new ColumnDefinitions($"{sidebarWidth},*"),
             Children =
             {
+                _backgroundBorder.With(columnSpan: 2),
                 new Canvas
                 {
                     Children =
@@ -1234,8 +1315,6 @@ public sealed class MainWindow : Window
         profilesNavButton.Click += (_, _) => SetActiveSection("instances");
         modrinthNavButton = CreateNavButton("⌕", "Mods", collapsed);
         modrinthNavButton.Click += (_, _) => SetActiveSection("modrinth");
-        performanceNavButton = CreateNavButton("🛠", "Manage", collapsed);
-        performanceNavButton.Click += (_, _) => SetActiveSection("performance");
         settingsNavButton = CreateNavButton("⚙", "Settings", collapsed);
         settingsNavButton.Click += (_, _) => SetActiveSection("settings");
         layoutNavButton = CreateNavButton("▤", "Servers", collapsed);
@@ -1287,7 +1366,6 @@ public sealed class MainWindow : Window
                     DetachFromParent(launchNavButton)!,
                     DetachFromParent(profilesNavButton)!,
                     DetachFromParent(modrinthNavButton)!,
-                    DetachFromParent(performanceNavButton)!,
                     DetachFromParent(settingsNavButton)!,
                     DetachFromParent(layoutNavButton)!
                 }
@@ -1314,8 +1392,6 @@ public sealed class MainWindow : Window
         profilesNavButton.Click += (_, _) => SetActiveSection("instances");
         modrinthNavButton = CreateNavButton("⌕", "Mods");
         modrinthNavButton.Click += (_, _) => SetActiveSection("modrinth");
-        performanceNavButton = CreateNavButton("🛠", "Manage");
-        performanceNavButton.Click += (_, _) => SetActiveSection("performance");
         settingsNavButton = CreateNavButton("⚙", "Settings");
         settingsNavButton.Click += (_, _) => SetActiveSection("settings");
         layoutNavButton = CreateNavButton("▤", "Servers");
@@ -1324,11 +1400,10 @@ public sealed class MainWindow : Window
         ApplyHoverMotion(launchNavButton);
         ApplyHoverMotion(profilesNavButton);
         ApplyHoverMotion(modrinthNavButton);
-        ApplyHoverMotion(performanceNavButton);
         ApplyHoverMotion(settingsNavButton);
         ApplyHoverMotion(layoutNavButton);
 
-        foreach (var button in new[] { launchNavButton, profilesNavButton, modrinthNavButton, performanceNavButton, settingsNavButton, layoutNavButton })
+        foreach (var button in new[] { launchNavButton, profilesNavButton, modrinthNavButton, settingsNavButton, layoutNavButton })
         {
             if (button == null) continue;
             button.Height = 40;
@@ -1371,7 +1446,6 @@ public sealed class MainWindow : Window
                 DetachFromParent(launchNavButton)!,
                 DetachFromParent(profilesNavButton)!,
                 DetachFromParent(modrinthNavButton)!,
-                DetachFromParent(performanceNavButton)!,
                 DetachFromParent(settingsNavButton)!,
                 DetachFromParent(layoutNavButton)!
             }
@@ -1467,11 +1541,11 @@ public sealed class MainWindow : Window
         profileLoaderCombo ??= CreateComboBox(ProfileLoaderOptions);
 
         profilePresetCombo ??= CreateComboBox(ProfilePresetOptions);
-        profilePresetCombo.SelectedItem = "Fugo Client (Fabric) (Coming Soon)";
+        profilePresetCombo.SelectedItem = "Fugo Client (Fabric)";
         profilePresetCombo.SelectionChanged += (s, e) =>
         {
             var selectedPreset = profilePresetCombo.SelectedItem?.ToString();
-            if (selectedPreset == "Fugo Client (Fabric) (Coming Soon)" || selectedPreset == "Fugo Client (Fabric)")
+            if (selectedPreset == "Fugo Client (Fabric)")
             {
                 profileNameInput.Text = "Fugo Client";
                 profileLoaderCombo.SelectedIndex = 1; // Fabric is Index 1 in ProfileLoaderOptions
@@ -2604,6 +2678,7 @@ public sealed class MainWindow : Window
         performanceSection ??= BuildPerformanceDeck();
         settingsSection ??= BuildSettingsDeck();
         layoutSection ??= BuildLayoutDeck();
+        workspaceSection ??= BuildWorkspaceDeck();
 
         launchSection.IsVisible = _activeSection == "launch";
         modrinthSection.IsVisible = _activeSection == "modrinth";
@@ -2611,6 +2686,7 @@ public sealed class MainWindow : Window
         performanceSection.IsVisible = _activeSection == "performance";
         settingsSection.IsVisible = _activeSection == "settings";
         layoutSection.IsVisible = _activeSection == "layout";
+        workspaceSection.IsVisible = _activeSection == "workspace";
     }
 
     private void InvalidateUiCache()
@@ -2622,6 +2698,7 @@ public sealed class MainWindow : Window
         performanceSection = null!;
         settingsSection = null!;
         layoutSection = null!;
+        workspaceSection = null!;
         
         // Overlays
         _instanceEditorOverlay = null!;
@@ -2632,7 +2709,6 @@ public sealed class MainWindow : Window
         launchNavButton = null!;
         profilesNavButton = null!;
         modrinthNavButton = null!;
-        performanceNavButton = null!;
         settingsNavButton = null!;
         layoutNavButton = null!;
         accountsNavButton = null!;
@@ -2727,6 +2803,7 @@ public sealed class MainWindow : Window
         var performance = DetachFromParent(performanceSection)!;
         var settings = DetachFromParent(settingsSection)!;
         var layout = DetachFromParent(layoutSection)!;
+        var workspace = DetachFromParent(workspaceSection)!;
 
         return new Grid
         {
@@ -2749,7 +2826,8 @@ public sealed class MainWindow : Window
                             profiles!,
                             performance!,
                             settings!,
-                            layout!
+                            layout!,
+                            workspace!
                         }
                     }
                 }
@@ -4100,32 +4178,31 @@ public sealed class MainWindow : Window
             menuBtn.Click += (_, _) => contextMenu.Open(menuBtn);
             cardGrid.Children.Add(menuBtn.With(row: 0));
 
-            // Row 1: Bottom Details & Play Button
-            var playBtn = new Button
+            // Row 1: Bottom Details & Action Buttons (Play & Manage)
+            var cardPlayBtn = new Button
             {
-                Width = 34,
-                Height = 34,
-                Padding = new Thickness(0), // Reset padding so it doesn't squish the icon into a white rectangle!
-                CornerRadius = new CornerRadius(17),
+                Height = 32,
+                Width = 94,
+                CornerRadius = new CornerRadius(8),
                 Background = new SolidColorBrush(Color.Parse(_settings?.AccentColor ?? "#8B5A2B")),
                 BorderThickness = new Thickness(0),
-                Content = new TextBlock
+                Content = new StackPanel
                 {
-                    Text = "▶",
-                    FontSize = 14,
-                    Foreground = Brushes.White,
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 4,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(2, 0, 0, 0)
+                    Children =
+                    {
+                        new TextBlock { Text = "▶", FontSize = 11, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center },
+                        new TextBlock { Text = "Play", FontSize = 12, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }
+                    }
                 },
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(12),
-                Focusable = false,
-                IsVisible = !isFugo // Hide play button for Fugo Client entirely
+                Cursor = new Cursor(StandardCursorType.Hand),
+                Focusable = false
             };
 
-            playBtn.Click += async (_, _) =>
+            cardPlayBtn.Click += async (_, _) =>
             {
                 _selectedProfile = profile;
                 profileListBox.SelectedItem = profile;
@@ -4133,27 +4210,78 @@ public sealed class MainWindow : Window
                 await LaunchAsync();
             };
 
-            playBtn.PointerEntered += (_, _) =>
+            cardPlayBtn.PointerEntered += (_, _) =>
             {
                 var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
-                playBtn.Background = new SolidColorBrush(Color.FromArgb(200, Color.Parse(currentAccent).R, Color.Parse(currentAccent).G, Color.Parse(currentAccent).B));
+                cardPlayBtn.Background = new SolidColorBrush(Color.FromArgb(200, Color.Parse(currentAccent).R, Color.Parse(currentAccent).G, Color.Parse(currentAccent).B));
             };
-            playBtn.PointerExited += (_, _) =>
+            cardPlayBtn.PointerExited += (_, _) =>
             {
                 var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
-                playBtn.Background = new SolidColorBrush(Color.Parse(currentAccent));
+                cardPlayBtn.Background = new SolidColorBrush(Color.Parse(currentAccent));
             };
+
+            var cardManageBtn = new Button
+            {
+                Height = 32,
+                Width = 94,
+                CornerRadius = new CornerRadius(8),
+                Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Content = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 4,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Children =
+                    {
+                        new TextBlock { Text = "⚙", FontSize = 12, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center },
+                        new TextBlock { Text = "Manage", FontSize = 12, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }
+                    }
+                },
+                Cursor = new Cursor(StandardCursorType.Hand),
+                Focusable = false
+            };
+
+            cardManageBtn.Click += (_, _) =>
+            {
+                _selectedProfile = profile;
+                profileListBox.SelectedItem = profile;
+                UpdateLauncherContext();
+                SetActiveSection("workspace");
+            };
+
+            cardManageBtn.PointerEntered += (_, _) =>
+            {
+                cardManageBtn.Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
+            };
+            cardManageBtn.PointerExited += (_, _) =>
+            {
+                cardManageBtn.Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255));
+            };
+
+            var actionsRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            actionsRow.Children.Add(cardPlayBtn);
+            actionsRow.Children.Add(cardManageBtn);
 
             var detailsGrid = new Grid
             {
-                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                RowDefinitions = new RowDefinitions("*,Auto"),
                 Margin = new Thickness(12),
                 VerticalAlignment = VerticalAlignment.Stretch
             };
 
             var textStack = new StackPanel
             {
-                VerticalAlignment = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Top,
                 Spacing = 4
             };
 
@@ -4210,15 +4338,15 @@ public sealed class MainWindow : Window
                     : "Ready to launch",
                 FontSize = 11,
                 Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")),
-                Margin = new Thickness(0, 8, 0, 0)
+                Margin = new Thickness(0, 4, 0, 0)
             };
 
             textStack.Children.Add(nameStack);
             textStack.Children.Add(versionBlock);
             textStack.Children.Add(lastPlayedBlock);
 
-            detailsGrid.Children.Add(textStack.With(column: 0));
-            detailsGrid.Children.Add(playBtn.With(column: 1));
+            detailsGrid.Children.Add(textStack.With(row: 0));
+            detailsGrid.Children.Add(actionsRow.With(row: 1));
 
             cardGrid.Children.Add(detailsGrid.With(row: 1));
 
@@ -4302,6 +4430,15 @@ public sealed class MainWindow : Window
                 card.BorderThickness = new Thickness(2);
                 card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, accentColorParsed.R, accentColorParsed.G, accentColorParsed.B), OffsetX = 0, OffsetY = 0 });
             }
+
+            card.DoubleTapped += (s, e) =>
+            {
+                e.Handled = true;
+                _selectedProfile = profile;
+                profileListBox.SelectedItem = profile;
+                UpdateLauncherContext();
+                SetActiveSection("workspace");
+            };
 
             return card;
         });
@@ -5884,6 +6021,18 @@ public sealed class MainWindow : Window
         }
     }
 
+    private bool IsDescendantOf(Control? child, Control? parent)
+    {
+        if (child == null || parent == null) return false;
+        var current = child;
+        while (current != null)
+        {
+            if (current == parent) return true;
+            current = current.Parent as Control;
+        }
+        return false;
+    }
+
     public void SetActiveSection(string section)
     {
         _activeSection = section;
@@ -5894,6 +6043,46 @@ public sealed class MainWindow : Window
         var performanceVisible = section == "performance";
         var settingsVisible = section == "settings";
         var layoutVisible = section == "layout";
+        var workspaceVisible = section == "workspace";
+
+        // Update background blur
+        if (_backgroundBorder != null)
+        {
+            if (launchVisible)
+            {
+                _backgroundBorder.Effect = null;
+            }
+            else
+            {
+                _backgroundBorder.Effect = new BlurEffect { Radius = 40 };
+            }
+        }
+
+        // Update card opacities
+        Control? activeContainer = null;
+        if (launchVisible) activeContainer = launchSection;
+        else if (modrinthVisible) activeContainer = modrinthSection;
+        else if (profilesVisible) activeContainer = profilesSection;
+        else if (performanceVisible) activeContainer = performanceSection;
+        else if (settingsVisible) activeContainer = settingsSection;
+        else if (layoutVisible) activeContainer = layoutSection;
+        else if (workspaceVisible) activeContainer = workspaceSection;
+
+        if (activeContainer != null)
+        {
+            foreach (var panel in _allGlassPanels)
+            {
+                if (IsDescendantOf(panel, activeContainer))
+                {
+                    panel.Opacity = launchVisible ? 1.0 : 0.6;
+                }
+            }
+        }
+
+        if (workspaceVisible)
+        {
+            RefreshWorkspaceUi();
+        }
 
         AnimateSection(launchSection, "LaunchSection", launchVisible);
         AnimateSection(modrinthSection, "ModrinthSection", modrinthVisible);
@@ -5901,6 +6090,7 @@ public sealed class MainWindow : Window
         AnimateSection(performanceSection, "PerformanceSection", performanceVisible);
         AnimateSection(settingsSection, "SettingsSection", settingsVisible);
         AnimateSection(layoutSection, "LayoutSection", layoutVisible);
+        AnimateSection(workspaceSection, "WorkspaceSection", workspaceVisible);
 
         if (_playOverlay != null)
         {
@@ -5909,8 +6099,7 @@ public sealed class MainWindow : Window
 
         ApplyNavState(launchNavButton, section == "home" || section == "launch");
         ApplyNavState(modrinthNavButton, section == "modrinth");
-        ApplyNavState(profilesNavButton, section == "instances" || section == "profiles");
-        ApplyNavState(performanceNavButton, section == "performance");
+        ApplyNavState(profilesNavButton, section == "instances" || section == "profiles" || section == "workspace");
         ApplyNavState(settingsNavButton, section == "settings");
         ApplyNavState(layoutNavButton, section == "layout");
         if (accountsNavButton != null) ApplyNavState(accountsNavButton, section == "accounts");
@@ -6104,7 +6293,7 @@ public sealed class MainWindow : Window
                     string localJarSource = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "death-client", "aether-client-1.0.0.jar");
                     if (!File.Exists(localJarSource))
                     {
-                        localJarSource = "/home/inchara/Death Client/death-client/aether-client-1.0.0.jar";
+                        localJarSource = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Project Aether", "Aether Launcher", "death-client", "aether-client-1.0.0.jar");
                     }
 
                     if (File.Exists(localJarSource))
@@ -6495,9 +6684,13 @@ public sealed class MainWindow : Window
             }
 
             var jvmArgsList = new List<MArgument>();
-            if (!string.IsNullOrWhiteSpace(_settings.JvmArgs))
+            var effectiveJvmArgs = (_selectedProfile is not null && !string.IsNullOrWhiteSpace(_selectedProfile.JvmArguments))
+                ? _selectedProfile.JvmArguments
+                : _settings.JvmArgs;
+
+            if (!string.IsNullOrWhiteSpace(effectiveJvmArgs))
             {
-                jvmArgsList.AddRange(_settings.JvmArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                jvmArgsList.AddRange(effectiveJvmArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                     .Where(arg => !arg.Contains("--sun-misc-unsafe-memory-access") && !arg.Contains("--enable-native-access"))
                     .Select(arg => new MArgument(arg)));
             }
@@ -6539,11 +6732,11 @@ public sealed class MainWindow : Window
             var process = await launcher.BuildProcessAsync(versionToLaunch, new MLaunchOption
             {
                 Session = session,
-                JavaPath = javaPath,
-                MaximumRamMb = _settings.MaxRamMb,
+                JavaPath = (_selectedProfile is not null && !string.IsNullOrWhiteSpace(_selectedProfile.JavaPath)) ? _selectedProfile.JavaPath : javaPath,
+                MaximumRamMb = (_selectedProfile is not null && _selectedProfile.MaxRamMb.HasValue) ? _selectedProfile.MaxRamMb.Value : _settings.MaxRamMb,
                 ExtraJvmArguments = jvmArgsList.ToArray(),
-                ScreenWidth = _settings.WindowWidth,
-                ScreenHeight = _settings.WindowHeight,
+                ScreenWidth = (_selectedProfile is not null && _selectedProfile.WindowWidth.HasValue) ? _selectedProfile.WindowWidth.Value : _settings.WindowWidth,
+                ScreenHeight = (_selectedProfile is not null && _selectedProfile.WindowHeight.HasValue) ? _selectedProfile.WindowHeight.Value : _settings.WindowHeight,
                 Path = _selectedProfile is not null
                     ? new MinecraftPath(!string.IsNullOrWhiteSpace(_selectedProfile.GameDirectoryOverride) ? _selectedProfile.GameDirectoryOverride : _selectedProfile.InstanceDirectory)
                     {
@@ -6572,6 +6765,21 @@ public sealed class MainWindow : Window
             process.StartInfo.Arguments = scrubbedArgs;
             process.StartInfo.CreateNoWindow = true;
             process.StartInfo.UseShellExecute = false;
+
+            if (_selectedProfile is not null && !string.IsNullOrWhiteSpace(_selectedProfile.EnvironmentVariables))
+            {
+                var pairs = _selectedProfile.EnvironmentVariables.Split(new[] { '\n', '\r', ';' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var pair in pairs)
+                {
+                    var idx = pair.IndexOf('=');
+                    if (idx > 0)
+                    {
+                        var key = pair.Substring(0, idx).Trim();
+                        var val = pair.Substring(idx + 1).Trim();
+                        process.StartInfo.EnvironmentVariables[key] = val;
+                    }
+                }
+            }
 
             LauncherLog.Info($"[Launch] Command line: {process.StartInfo.FileName} {process.StartInfo.Arguments}");
 
@@ -8041,14 +8249,6 @@ public sealed class MainWindow : Window
         var selected = profileListBox.SelectedItem as LauncherProfile;
         if (selected == null) return;
 
-        if (selected.Name == "Fugo Client" || selected.Name.Contains("Fugo", StringComparison.OrdinalIgnoreCase) || selected.Name == "Aether Client" || selected.Name.Contains("Aether", StringComparison.OrdinalIgnoreCase))
-        {
-            _handlingProfileSelection = true;
-            profileListBox.SelectedItem = _selectedProfile;
-            _handlingProfileSelection = false;
-            return;
-        }
-
         if (selected.Name == "__add_new_placeholder__")
         {
             // Restore selection to the previously selected profile without re-entering this handler
@@ -8064,7 +8264,7 @@ public sealed class MainWindow : Window
                 profilePresetSection.IsVisible = true;
             if (profilePresetCombo != null)
             {
-                profilePresetCombo.SelectedItem = "Fugo Client (Fabric) (Coming Soon)";
+                profilePresetCombo.SelectedItem = "Fugo Client (Fabric)";
                 profileNameInput.Text = "Fugo Client";
                 profileLoaderCombo.SelectedIndex = 1;
                 var targetVer = _versionItems.FirstOrDefault(v => v.Contains("1.21.1"))
@@ -8507,12 +8707,7 @@ public sealed class MainWindow : Window
         activeContextLabel.Text = string.Empty;
         installModeLabel.Text = _selectedProfile.Name;
         
-        if (_selectedProfile.Name == "Fugo Client" || _selectedProfile.Name.Contains("Fugo", StringComparison.OrdinalIgnoreCase) || _selectedProfile.Name == "Aether Client" || _selectedProfile.Name.Contains("Aether", StringComparison.OrdinalIgnoreCase))
-        {
-            btnStart.Content = "Coming Soon";
-            btnStart.IsEnabled = false;
-        }
-        else if (_selectedProfile.LaunchCountSinceLastInstall == 0)
+        if (_selectedProfile.LaunchCountSinceLastInstall == 0)
         {
             btnStart.Content = "Install";
             btnStart.IsEnabled = true;
@@ -8574,7 +8769,7 @@ public sealed class MainWindow : Window
 
         try
         {
-            if (profilePresetCombo != null && (profilePresetCombo.SelectedItem?.ToString() == "Fugo Client (Fabric) (Coming Soon)" || profilePresetCombo.SelectedItem?.ToString() == "Fugo Client (Fabric)" || profilePresetCombo.SelectedItem?.ToString() == "Aether Client (Fabric) (Coming Soon)" || profilePresetCombo.SelectedItem?.ToString() == "Aether Client (Fabric)"))
+            if (profilePresetCombo != null && (profilePresetCombo.SelectedItem?.ToString() == "Fugo Client (Fabric)" || profilePresetCombo.SelectedItem?.ToString() == "Aether Client (Fabric) (Coming Soon)" || profilePresetCombo.SelectedItem?.ToString() == "Aether Client (Fabric)"))
             {
                 _settings.EnableFancyMenu = true;
                 _settingsStore.Save(_settings);
@@ -8630,22 +8825,23 @@ public sealed class MainWindow : Window
     {
         if (_selectedProfile is null)
         {
-            await DialogService.ShowInfoAsync(this, "Profile required", "Select an instance before renaming it.");
+            await DialogService.ShowInfoAsync(this, "Profile required", "Select an instance before saving edits.");
             return;
         }
 
         var nextName = profileNameInput.Text?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(nextName))
         {
-            await DialogService.ShowInfoAsync(this, "Profile name required", "Enter a new name for the selected instance.");
+            await DialogService.ShowInfoAsync(this, "Profile name required", "Enter a name for the selected instance.");
             return;
         }
 
         _selectedProfile.Name = nextName;
+        _selectedProfile.GameDirectoryOverride = string.IsNullOrWhiteSpace(profileGameDirInput.Text) ? null : profileGameDirInput.Text.Trim();
         _profileStore.Save(_selectedProfile);
         RefreshProfiles(_selectedProfile);
         _instanceEditorOverlay.IsVisible = false;
-        SetProgressState($"Renamed to {nextName}.", 0, 0);
+        SetProgressState($"Saved changes for {nextName}.", 0, 0);
     }
 
     private async Task DeleteSelectedProfileAsync(LauncherProfile? profile = null)
@@ -13011,7 +13207,7 @@ public sealed class MainWindow : Window
                 defaults[kvp.Key] = kvp.Value;
             }
 
-            var lines = new List<string> { "# Minecraft Server Properties", $"# Generated/Updated by Death Client at {DateTime.Now}" };
+            var lines = new List<string> { "# Minecraft Server Properties", $"# Generated/Updated by Aether Client at {DateTime.Now}" };
             foreach (var kvp in defaults)
             {
                 lines.Add($"{kvp.Key}={kvp.Value}");
@@ -15837,12 +16033,7 @@ if __name__ == '__main__':
         }
         else
         {
-            if (_selectedProfile != null && (_selectedProfile.Name == "Fugo Client" || _selectedProfile.Name.Contains("Fugo", StringComparison.OrdinalIgnoreCase) || _selectedProfile.Name == "Aether Client" || _selectedProfile.Name.Contains("Aether", StringComparison.OrdinalIgnoreCase)))
-            {
-                btnStart.Content = "Coming Soon";
-                btnStart.IsEnabled = false;
-            }
-            else if (_selectedProfile != null && _selectedProfile.LaunchCountSinceLastInstall == 0)
+            if (_selectedProfile != null && _selectedProfile.LaunchCountSinceLastInstall == 0)
             {
                 btnStart.Content = "Install";
             }
@@ -16598,6 +16789,7 @@ if __name__ == '__main__':
                 // Deep aqua-tinted wet shadow — water always has a blue-green shadow
                 BoxShadow = BoxShadows.Parse("0 10 32 0 #46003C78, inset 0 2 12 -2 #5A00C8FF")
             };
+            _allGlassPanels.Add(glassPanel);
             return glassPanel;
         }
 
@@ -16641,6 +16833,7 @@ if __name__ == '__main__':
             Margin = mar,
             Child = child
         };
+        _allGlassPanels.Add(panel);
         return panel;
     }
 
@@ -18386,6 +18579,1700 @@ if __name__ == '__main__':
                 await Task.Delay(15000);
             }
         });
+    }
+
+    private Control CreateVectorIcon(string name, double size = 16, string? hexColor = null)
+    {
+        string pathData = name switch
+        {
+            "mods" => "M19 6H17V5c0-1.66-1.34-3-3-3s-3 1.34-3 3v1H9c-1.66 0-3 1.34-3 3v2H5c-1.66 0-3 1.34-3 3s1.34 3 3 3h1v2c0 1.66 1.34 3 3 3h2v-1c0-1.66 1.34-3 3-3s3 1.34 3 3v1h2c1.66 0 3-1.34 3-3v-2h-1c-1.66 0-3-1.34-3-3s1.34-3 3-3h1V9c0-1.66-1.34-3-3-3z",
+            "resourcepacks" => "M12 2L2 7L12 12L22 7L12 2Z M2 17L12 22L22 17 M2 12L12 17L22 12",
+            "shaderpacks" => "M7.5 5.6L10 7L8.6 4.5L10 2L7.5 3.4L5 2L6.4 4.5L5 7L7.5 5.6ZM19.5 15.4L17 14L18.4 16.5L17 19L19.5 17.6L22 19L20.6 16.5L22 14L19.5 15.4ZM22 2L19.5 3.4L17 2L18.4 4.5L17 7L19.5 5.6L22 7L20.6 4.5L22 2ZM14.1 8.9L3 20V21H4L15.1 9.9L14.1 8.9Z",
+            "content" => "M12 2L2 7L12 12L22 7L12 2Z M2 17L12 22L22 17 M2 12L12 17L22 12",
+            "worlds" => "M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM11 19.93C7.05 19.44 4 16.08 4 12C4 11.38 4.08 10.78 4.24 10.21L9 15V16C9 17.1 9.9 18 11 18V19.93ZM17.9 17.39C17.64 16.58 16.9 16 16 16H15V13C15 12.45 14.55 12 14 12H8V10H10C10.55 10 11 9.55 11 9V7H13C14.1 7 15 6.1 15 5V4.59C17.93 5.77 20 8.64 20 12C20 14.08 19.2 15.97 17.9 17.39Z",
+            "screenshots" => "M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM19 19H5V5H19V19ZM14.14 11.86L11.14 15.73L9 13.14L6 17H18L14.14 11.86Z",
+            "files" => "M10 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V8C22 6.9 21.1 6 20 6H12L10 4Z",
+            "logs" => "M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM19 19H5V5H19V19ZM7 7H17V9H7V7ZM7 11H17V13H7V11ZM7 15H14V17H7V15Z",
+            "settings" => "M19.14 12.94C19.2 12.63 19.23 12.32 19.23 12C19.23 11.68 19.2 11.37 19.14 11.06L21.34 9.35C21.54 9.19 21.59 8.91 21.46 8.7L19.36 5.06C19.23 4.85 18.98 4.77 18.76 4.85L16.17 5.9C15.63 5.48 15.03 5.14 14.38 4.87L13.99 2.12C13.96 1.89 13.76 1.72 13.53 1.72H9.33C9.1 1.72 8.9 1.89 8.87 2.12L8.48 4.87C7.83 5.14 7.23 5.48 6.69 5.9L4.1 4.85C3.88 4.77 3.63 4.85 3.5 5.06L1.4 8.7C1.27 8.91 1.32 9.19 1.52 9.35L3.72 11.06C3.66 11.37 3.63 11.68 3.63 12C3.63 12.32 3.66 12.63 3.72 12.94L1.52 14.65C1.32 14.81 1.27 15.09 1.4 15.3L3.5 18.94C3.63 19.15 3.88 19.23 4.1 19.15L6.69 18.1C7.23 18.52 7.83 18.86 8.48 19.13L8.87 21.88C8.9 22.11 9.1 22.28 9.33 22.28H13.53C13.76 22.28 13.96 22.11 13.99 21.88L14.38 19.13C15.03 18.86 15.63 18.52 16.17 18.1L18.76 19.15C18.98 19.23 19.23 19.15 19.36 18.94L21.46 15.3C21.59 15.09 21.54 14.81 21.34 14.65L19.14 12.94ZM11.43 15.36C9.57 15.36 8.07 13.86 8.07 12C8.07 10.14 9.57 8.64 11.43 8.64C13.29 8.64 14.79 10.14 14.79 12C14.79 13.86 13.29 15.36 11.43 15.36Z",
+            _ => "M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2Z"
+        };
+
+        IBrush brush = string.IsNullOrEmpty(hexColor) 
+            ? Brushes.White 
+            : new SolidColorBrush(Color.Parse(hexColor));
+
+        var path = new Avalonia.Controls.Shapes.Path
+        {
+            Data = StreamGeometry.Parse(pathData),
+            Width = size,
+            Height = size,
+            Stretch = Stretch.Uniform,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+
+        if (name == "content" || name == "resourcepacks")
+        {
+            path.Stroke = brush;
+            path.StrokeThickness = 1.5;
+            path.Fill = Brushes.Transparent;
+        }
+        else
+        {
+            path.Fill = brush;
+        }
+
+        return path;
+    }
+
+    private Control BuildWorkspaceDeck()
+    {
+        var backBtn = CreateSecondaryButton("← Back");
+        backBtn.Height = 36;
+        backBtn.Width = 100;
+        backBtn.CornerRadius = new CornerRadius(10);
+        backBtn.Padding = new Thickness(8, 4);
+        backBtn.Click += (_, _) => SetActiveSection("profiles");
+
+        _wsHeaderIcon = new Border
+        {
+            Width = 72,
+            Height = 72,
+            CornerRadius = new CornerRadius(14),
+            Background = Brushes.Gray,
+            ClipToBounds = true
+        };
+
+        _wsHeaderName = new TextBlock
+        {
+            Text = "Instance Name",
+            FontSize = 24,
+            FontWeight = FontWeight.Black,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        // Version + Loader badge pill
+        _wsHeaderVersion = new TextBlock
+        {
+            Text = "Fabric · 1.21.1",
+            FontSize = 11,
+            Foreground = new SolidColorBrush(Color.Parse("#CCCCCC")),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var versionBadge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(50, 100, 100, 200)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 150, 150, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(999),
+            Padding = new Thickness(10, 3),
+            Child = _wsHeaderVersion
+        };
+
+        _wsHeaderStatus = new TextBlock
+        {
+            Text = "Ready to play",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = new SolidColorBrush(Color.Parse("#4ADE80")), // green for ready
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        _wsHeaderPlayTime = new TextBlock
+        {
+            Text = "0 launches",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        _wsHeaderLastPlayed = new TextBlock
+        {
+            Text = "Never",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        _wsHeaderPlayBtn = new Button
+        {
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = "▷", FontSize = 14, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center },
+                    new TextBlock { Text = "Play", FontSize = 14.5, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center }
+                }
+            },
+            Height = 42,
+            Width = 130,
+            CornerRadius = new CornerRadius(10),
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops = { new GradientStop(Color.Parse("#5B6BF9"), 0.0), new GradientStop(Color.Parse("#8E4CF6"), 1.0) }
+            },
+            Foreground = Brushes.White,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        _wsHeaderPlayBtn.Click += async (_, _) =>
+        {
+            if (_selectedProfile != null)
+            {
+                UpdateLauncherContext();
+                await LaunchAsync();
+            }
+        };
+        ApplyHoverMotion(_wsHeaderPlayBtn);
+
+        // === TOP ROW: Icon + Name/Badge + Play ===
+        var topHeaderRow = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            ColumnSpacing = 16,
+            Children =
+            {
+                _wsHeaderIcon.With(column: 0),
+                new StackPanel
+                {
+                    Spacing = 6,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Children =
+                    {
+                        versionBadge,
+                        _wsHeaderName
+                    }
+                }.With(column: 1),
+                _wsHeaderPlayBtn.With(column: 2)
+            }
+        };
+
+        // === BOTTOM ROW: 4-cell stats strip + icon buttons ===
+        // Cell builder helper
+        Control MakeStatCell(string label, TextBlock valueBlock) =>
+            new StackPanel
+            {
+                Spacing = 2,
+                Children =
+                {
+                    new TextBlock { Text = label, FontSize = 10, FontWeight = FontWeight.Bold, Foreground = Brushes.Gray },
+                    valueBlock
+                }
+            };
+
+        // Quick-access icon buttons inline in the strip
+        var wsSettingsBtn = new Button
+        {
+            Background = Brushes.Transparent,
+            BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Height = 32,
+            Padding = new Thickness(10, 0),
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        ToolTip.SetTip(wsSettingsBtn, "Instance Settings");
+        var settingsStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        settingsStack.Children.Add(CreateVectorIcon("settings", 12, "#AAAAAA"));
+        settingsStack.Children.Add(new TextBlock { Text = "Settings", FontSize = 11, Foreground = Brushes.LightGray, VerticalAlignment = VerticalAlignment.Center });
+        wsSettingsBtn.Content = settingsStack;
+        wsSettingsBtn.Click += (_, _) => SwitchWorkspaceTab("settings");
+
+        var wsConsoleBtn = new Button
+        {
+            Background = Brushes.Transparent,
+            BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Height = 32,
+            Padding = new Thickness(10, 0),
+            Cursor = new Cursor(StandardCursorType.Hand),
+        };
+        var consoleStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        consoleStack.Children.Add(CreateVectorIcon("logs", 12, "#AAAAAA"));
+        consoleStack.Children.Add(new TextBlock { Text = "Console", FontSize = 11, Foreground = Brushes.LightGray, VerticalAlignment = VerticalAlignment.Center });
+        wsConsoleBtn.Content = consoleStack;
+        wsConsoleBtn.Click += (_, _) => SwitchWorkspaceTab("logs");
+
+        var wsMoreBtn = new Button
+        {
+            Background = Brushes.Transparent,
+            BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Height = 32,
+            Padding = new Thickness(10, 0),
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        var moreStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        moreStack.Children.Add(new TextBlock { Text = "⋮", FontSize = 14, FontWeight = FontWeight.Bold, Foreground = Brushes.LightGray, VerticalAlignment = VerticalAlignment.Center });
+        moreStack.Children.Add(new TextBlock { Text = "More", FontSize = 11, Foreground = Brushes.LightGray, VerticalAlignment = VerticalAlignment.Center });
+        wsMoreBtn.Content = moreStack;
+
+        var moreMenu = new ContextMenu();
+        var openDirItem = new MenuItem { Header = "Open Folder" };
+        openDirItem.Click += (_, _) => { if (_selectedProfile != null && Directory.Exists(_selectedProfile.InstanceDirectory)) Process.Start(new ProcessStartInfo { FileName = _selectedProfile.InstanceDirectory, UseShellExecute = true }); };
+
+        var duplicateItem = new MenuItem { Header = "Duplicate Instance" };
+        duplicateItem.Click += async (_, _) =>
+        {
+            if (_selectedProfile != null)
+            {
+                try
+                {
+                    string newName = $"{_selectedProfile.Name} (Copy)";
+                    var newProfile = _profileStore.CreateProfile(newName, _selectedProfile.GameVersion, _selectedProfile.Loader, _selectedProfile.LoaderVersion, _selectedProfile.SourceProjectSlug, _selectedProfile.GameDirectoryOverride);
+                    if (Directory.Exists(_selectedProfile.InstanceDirectory))
+                    {
+                        await Task.Run(() =>
+                        {
+                            foreach (string dirPath in Directory.GetDirectories(_selectedProfile.InstanceDirectory, "*", SearchOption.AllDirectories))
+                            {
+                                Directory.CreateDirectory(dirPath.Replace(_selectedProfile.InstanceDirectory, newProfile.InstanceDirectory));
+                            }
+                            foreach (string newPath in Directory.GetFiles(_selectedProfile.InstanceDirectory, "*.*", SearchOption.AllDirectories))
+                            {
+                                if (Path.GetFileName(newPath) == LauncherProfile.ManifestFileName) continue;
+                                File.Copy(newPath, newPath.Replace(_selectedProfile.InstanceDirectory, newProfile.InstanceDirectory), true);
+                            }
+                        });
+                    }
+                    RefreshProfiles(newProfile);
+                    SetActiveSection("profiles");
+                    await DialogService.ShowInfoAsync(this, "Success", $"Duplicated '{_selectedProfile.Name}' successfully.");
+                }
+                catch (Exception ex)
+                {
+                    await DialogService.ShowInfoAsync(this, "Error", $"Failed to duplicate profile: {ex.Message}");
+                }
+            }
+        };
+
+        var exportItem = new MenuItem { Header = "Export Zip" };
+        exportItem.Click += async (_, _) =>
+        {
+            if (_selectedProfile != null)
+            {
+                try
+                {
+                    var topLevel = TopLevel.GetTopLevel(this);
+                    if (topLevel == null) return;
+                    var file = await topLevel.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+                    {
+                        Title = "Export Instance Zip",
+                        DefaultExtension = "zip",
+                        SuggestedFileName = $"{_selectedProfile.Name}.zip"
+                    });
+                    if (file == null) return;
+
+                    var exportPath = file.Path.LocalPath;
+                    await Task.Run(() =>
+                    {
+                        if (File.Exists(exportPath)) File.Delete(exportPath);
+                        System.IO.Compression.ZipFile.CreateFromDirectory(_selectedProfile.InstanceDirectory, exportPath);
+                    });
+                    await DialogService.ShowInfoAsync(this, "Success", "Exported instance successfully.");
+                }
+                catch (Exception ex)
+                {
+                    await DialogService.ShowInfoAsync(this, "Error", $"Failed to export profile: {ex.Message}");
+                }
+            }
+        };
+
+        var deleteItem = new MenuItem { Header = "Delete Instance", Foreground = Brushes.Tomato };
+        deleteItem.Click += async (_, _) =>
+        {
+            if (_selectedProfile != null)
+            {
+                await DeleteSelectedProfileAsync(_selectedProfile);
+                SetActiveSection("profiles");
+            }
+        };
+
+        moreMenu.ItemsSource = new[] { openDirItem, duplicateItem, exportItem, deleteItem };
+        wsMoreBtn.ContextMenu = moreMenu;
+        wsMoreBtn.Click += (_, _) => moreMenu.Open(wsMoreBtn);
+
+        // 4-cell divider helper
+        var divider = new Border
+        {
+            Width = 1,
+            Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+            Margin = new Thickness(0, 2, 0, 2),
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        var divider2 = new Border
+        {
+            Width = 1,
+            Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+            Margin = new Thickness(0, 2, 0, 2),
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+
+        var bottomHeaderRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 20,
+            Children =
+            {
+                MakeStatCell("STATUS", _wsHeaderStatus),
+                divider,
+                MakeStatCell("LAST PLAYED", _wsHeaderLastPlayed),
+                divider2,
+                MakeStatCell("LAUNCHES", _wsHeaderPlayTime),
+                // Spacer
+                new Border { HorizontalAlignment = HorizontalAlignment.Stretch, Width = double.NaN },
+                wsSettingsBtn,
+                wsConsoleBtn,
+                wsMoreBtn
+            }
+        };
+
+        var headerLayout = new StackPanel
+        {
+            Spacing = 16,
+            Children = { topHeaderRow, bottomHeaderRow }
+        };
+
+        var headerCard = CreateGlassPanel(headerLayout, padding: new Thickness(20));
+        // Header card should never be translucent even in non-home tabs
+        headerCard.Opacity = 1.0;
+
+        // === PRIMARY TAB ROW ===
+        _wsTabButtons.Clear();
+        var primaryTabsList = new[]
+        {
+            ("content", "Content", "content"),
+            ("worlds", "Worlds", "worlds"),
+            ("screenshots", "Screenshots", "screenshots"),
+            ("files", "Files", "files")
+        };
+
+        var tabRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4,
+            Margin = new Thickness(0, 10, 0, 4)
+        };
+
+        // === CONTENT SUB-TABS (pill style) ===
+        _wsContentSubTabButtons.Clear();
+        var contentSubTabsList = new[]
+        {
+            ("mods", "⊞ Mods"),
+            ("resourcepacks", "◧ Resource Packs"),
+            ("shaderpacks", "✦ Shaders")
+        };
+
+        var contentSubTabRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+
+        foreach (var (subKey, subLabel) in contentSubTabsList)
+        {
+            var subBtn = new Button
+            {
+                Content = new TextBlock
+                {
+                    Text = subLabel,
+                    FontSize = 12.5,
+                    FontWeight = FontWeight.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                Height = 30,
+                Padding = new Thickness(14, 4),
+                CornerRadius = new CornerRadius(999),
+                Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Cursor = new Cursor(StandardCursorType.Hand)
+            };
+            string capturedSubKey = subKey;
+            subBtn.Click += (_, _) => SwitchContentSubTab(capturedSubKey);
+            _wsContentSubTabButtons[subKey] = subBtn;
+            contentSubTabRow.Children.Add(subBtn);
+        }
+
+        // === BUILD ALL PANELS ===
+        _wsTabModsPanel = CreateGlassPanel(BuildWorkspaceModsTab(), padding: new Thickness(20));
+        _wsTabModsPanel.Opacity = 0.6;
+        _wsTabResourcePacksPanel = CreateGlassPanel(BuildWorkspaceResourcePacksTab(), padding: new Thickness(20));
+        _wsTabResourcePacksPanel.Opacity = 0.6;
+        _wsTabShaderPacksPanel = CreateGlassPanel(BuildWorkspaceShaderPacksTab(), padding: new Thickness(20));
+        _wsTabShaderPacksPanel.Opacity = 0.6;
+
+        // Content tab hosts the 3 content sub-panels toggled by the sub-tab row
+        var contentInnerGrid = new Grid
+        {
+            Children =
+            {
+                _wsTabModsPanel,
+                _wsTabResourcePacksPanel,
+                _wsTabShaderPacksPanel
+            }
+        };
+
+        var contentWrapper = new StackPanel
+        {
+            Spacing = 0,
+            Children = { contentSubTabRow, contentInnerGrid }
+        };
+
+        _wsTabContentPanel = new Border
+        {
+            Child = contentWrapper
+        };
+
+        _wsTabWorldsPanel = CreateGlassPanel(BuildWorkspaceWorldsTab(), padding: new Thickness(20));
+        _wsTabWorldsPanel.Opacity = 0.6;
+        _wsTabScreenshotsPanel = CreateGlassPanel(BuildWorkspaceScreenshotsTab(), padding: new Thickness(20));
+        _wsTabScreenshotsPanel.Opacity = 0.6;
+        _wsTabFilesPanel = CreateGlassPanel(BuildWorkspaceFilesTab(), padding: new Thickness(20));
+        _wsTabFilesPanel.Opacity = 0.6;
+        _wsTabLogsPanel = CreateGlassPanel(BuildWorkspaceLogsTab(), padding: new Thickness(20));
+        _wsTabLogsPanel.Opacity = 0.6;
+        _wsTabSettingsPanel = CreateGlassPanel(BuildWorkspaceSettingsTab(), padding: new Thickness(20));
+        _wsTabSettingsPanel.Opacity = 0.6;
+
+        var tabContentGrid = new Grid
+        {
+            Children =
+            {
+                _wsTabContentPanel,
+                _wsTabWorldsPanel,
+                _wsTabScreenshotsPanel,
+                _wsTabFilesPanel,
+                _wsTabLogsPanel,
+                _wsTabSettingsPanel
+            }
+        };
+
+        foreach (var (key, label, iconName) in primaryTabsList)
+        {
+            var btnStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            btnStack.Children.Add(CreateVectorIcon(iconName, 14, "#888888"));
+            btnStack.Children.Add(new TextBlock { Text = label, FontSize = 13.5, FontWeight = FontWeight.Bold, Foreground = Brushes.Gray, VerticalAlignment = VerticalAlignment.Center });
+
+            var btn = new Button
+            {
+                Content = btnStack,
+                Height = 36,
+                Background = Brushes.Transparent,
+                BorderBrush = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(12, 6),
+                CornerRadius = new CornerRadius(8),
+                Cursor = new Cursor(StandardCursorType.Hand)
+            };
+            string capturedKey = key;
+            btn.Click += (_, _) => SwitchWorkspaceTab(capturedKey);
+            _wsTabButtons[key] = btn;
+            tabRow.Children.Add(btn);
+        }
+
+        SwitchWorkspaceTab("content");
+
+        var mainStack = new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                backBtn,
+                headerCard,
+                tabRow,
+                tabContentGrid
+            }
+        };
+
+        return CreateSectionScroller(mainStack);
+    }
+
+    private void SwitchWorkspaceTab(string tabKey)
+    {
+        // Map mods/resourcepacks/shaderpacks → route into the Content tab
+        bool isContentSubKey = tabKey == "mods" || tabKey == "resourcepacks" || tabKey == "shaderpacks";
+        string primaryKey = isContentSubKey ? "content" : tabKey;
+        _activeWorkspaceTab = primaryKey;
+
+        _wsTabContentPanel.IsVisible = primaryKey == "content";
+        _wsTabWorldsPanel.IsVisible = primaryKey == "worlds";
+        _wsTabScreenshotsPanel.IsVisible = primaryKey == "screenshots";
+        _wsTabFilesPanel.IsVisible = primaryKey == "files";
+        _wsTabLogsPanel.IsVisible = primaryKey == "logs";
+        _wsTabSettingsPanel.IsVisible = primaryKey == "settings";
+
+        var accentColor = _settings?.AccentColor ?? "#8B5A2B";
+        var accent = Color.Parse(accentColor);
+
+        foreach (var (k, btn) in _wsTabButtons)
+        {
+            var isSelected = k == primaryKey;
+            var stack = btn.Content as StackPanel;
+            if (stack == null) continue;
+
+            var pathIcon = stack.Children[0] as Avalonia.Controls.Shapes.Path;
+            var text = stack.Children[1] as TextBlock;
+
+            if (isSelected)
+            {
+                if (pathIcon != null)
+                {
+                    if (k == "content") { pathIcon.Stroke = new SolidColorBrush(accent); pathIcon.Fill = Brushes.Transparent; }
+                    else pathIcon.Fill = new SolidColorBrush(accent);
+                }
+                if (text != null) text.Foreground = Brushes.White;
+                btn.Background = new SolidColorBrush(Color.FromArgb(20, accent.R, accent.G, accent.B));
+                btn.BorderBrush = new SolidColorBrush(accent);
+                btn.BorderThickness = new Thickness(0, 0, 0, 2);
+            }
+            else
+            {
+                if (pathIcon != null)
+                {
+                    if (k == "content") { pathIcon.Stroke = new SolidColorBrush(Color.Parse("#888888")); pathIcon.Fill = Brushes.Transparent; }
+                    else pathIcon.Fill = new SolidColorBrush(Color.Parse("#888888"));
+                }
+                if (text != null) text.Foreground = Brushes.Gray;
+                btn.Background = Brushes.Transparent;
+                btn.BorderBrush = Brushes.Transparent;
+                btn.BorderThickness = new Thickness(0);
+            }
+        }
+
+        // If routing to content, also switch sub-tab
+        if (isContentSubKey) SwitchContentSubTab(tabKey);
+        else if (primaryKey == "content") SwitchContentSubTab(_activeContentSubTab);
+
+        if (primaryKey == "files") RefreshFilesList();
+        else if (primaryKey == "logs") RefreshLogsList();
+        else if (primaryKey == "screenshots") RefreshScreenshotsList();
+    }
+
+    private void SwitchContentSubTab(string subKey)
+    {
+        _activeContentSubTab = subKey;
+        _wsTabModsPanel.IsVisible = subKey == "mods";
+        _wsTabResourcePacksPanel.IsVisible = subKey == "resourcepacks";
+        _wsTabShaderPacksPanel.IsVisible = subKey == "shaderpacks";
+
+        var accent = Color.Parse(_settings?.AccentColor ?? "#8B5A2B");
+        foreach (var (k, btn) in _wsContentSubTabButtons)
+        {
+            var isActive = k == subKey;
+            var tb = (btn.Content as TextBlock);
+            if (isActive)
+            {
+                btn.Background = new SolidColorBrush(Color.FromArgb(40, accent.R, accent.G, accent.B));
+                btn.BorderBrush = new SolidColorBrush(accent);
+                btn.BorderThickness = new Thickness(1);
+                if (tb != null) tb.Foreground = Brushes.White;
+            }
+            else
+            {
+                btn.Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255));
+                btn.BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
+                btn.BorderThickness = new Thickness(1);
+                if (tb != null) tb.Foreground = Brushes.Gray;
+            }
+        }
+    }
+
+
+
+    private Control BuildWorkspaceModsTab()
+    {
+        _wsModsListBox = new ListBox
+        {
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            MaxHeight = 400
+        };
+
+        _wsModsListBox.ItemTemplate = new FuncDataTemplate<ModItem>((mod, _) =>
+        {
+            if (mod == null) return new Border();
+
+            var toggle = new ToggleSwitch
+            {
+                IsChecked = mod.IsEnabled,
+                OnContent = "Enabled",
+                OffContent = "Disabled",
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            toggle.Checked += (s, e) => { if (!mod.IsEnabled) { mod.IsEnabled = true; RefreshWorkspaceModsList(); } };
+            toggle.Unchecked += (s, e) => { if (mod.IsEnabled) { mod.IsEnabled = false; RefreshWorkspaceModsList(); } };
+
+            var nameBlock = new TextBlock
+            {
+                Text = mod.FileName,
+                FontSize = 13.5,
+                FontWeight = FontWeight.Bold,
+                Foreground = Brushes.White,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+
+            var sizeBlock = new TextBlock
+            {
+                Text = mod.FileSize,
+                FontSize = 11.5,
+                Foreground = Brushes.Gray,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var deleteBtn = new Button
+            {
+                Content = "🗑",
+                Foreground = Brushes.Tomato,
+                Background = Brushes.Transparent,
+                FontSize = 14,
+                BorderThickness = new Thickness(0)
+            };
+            deleteBtn.Click += async (_, _) =>
+            {
+                var confirm = await DialogService.ShowConfirmAsync(this, "Remove Mod", $"Are you sure you want to delete mod '{mod.FileName}' permanently?");
+                if (confirm)
+                {
+                    try
+                    {
+                        if (File.Exists(mod.FullPath)) File.Delete(mod.FullPath);
+                        RefreshWorkspaceModsList();
+                    }
+                    catch (Exception ex)
+                    {
+                        await DialogService.ShowInfoAsync(this, "Error", $"Failed to delete mod: {ex.Message}");
+                    }
+                }
+            };
+
+            var openPageBtn = new Button
+            {
+                Content = "🔗 Search Mod",
+                FontSize = 11,
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Height = 24,
+                Padding = new Thickness(6, 2),
+                CornerRadius = new CornerRadius(6)
+            };
+            openPageBtn.Click += (_, _) =>
+            {
+                string cleanName = mod.FileName.Replace(".disabled", "").Replace(".jar", "");
+                cleanName = System.Text.RegularExpressions.Regex.Replace(cleanName, @"[-_]\d+.*", "");
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = $"https://modrinth.com/mods?q={Uri.EscapeDataString(cleanName)}",
+                    UseShellExecute = true
+                });
+            };
+
+            var rowGrid = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"),
+                ColumnSpacing = 12,
+                Children =
+                {
+                    toggle.With(column: 0),
+                    new StackPanel { Spacing = 2, Children = { nameBlock, sizeBlock } }.With(column: 1),
+                    openPageBtn.With(column: 2),
+                    deleteBtn.With(column: 3)
+                }
+            };
+
+            return new Border
+            {
+                Padding = new Thickness(8),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = rowGrid
+            };
+        });
+
+        _wsModsSearchInput = new TextBox { Watermark = "Search installed mods...", Height = 32 };
+        _wsModsSearchInput.TextChanged += (s, e) => FilterWorkspaceMods();
+
+        _wsModsSortCombo = new ComboBox
+        {
+            ItemsSource = new[] { "Name", "Size", "Status" },
+            SelectedIndex = 0,
+            Height = 32
+        };
+        _wsModsSortCombo.SelectionChanged += (s, e) => FilterWorkspaceMods();
+
+        var installNewBtn = CreateCompactSecondaryButton("+ Install Mods");
+        installNewBtn.Click += (_, _) =>
+        {
+            if (_selectedProfile != null)
+            {
+                SetActiveSection("modrinth");
+                modrinthLoaderCombo.SelectedItem = _selectedProfile.Loader.Substring(0, 1).ToUpper() + _selectedProfile.Loader.Substring(1);
+                modrinthVersionInput.Text = _selectedProfile.GameVersion;
+                _ = SearchModrinthAsync();
+            }
+        };
+
+        var headerRow = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnSpacing = 8,
+            Children =
+            {
+                _wsModsSearchInput.With(column: 0),
+                _wsModsSortCombo.With(column: 1),
+                installNewBtn.With(column: 2)
+            }
+        };
+
+        return new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                headerRow,
+                new ScrollViewer { Content = _wsModsListBox, MaxHeight = 400 }
+            }
+        };
+    }
+
+    private Control BuildWorkspaceResourcePacksTab()
+    {
+        _wsRpListBox = new ListBox { Background = Brushes.Transparent, BorderThickness = new Thickness(0), MaxHeight = 400 };
+        _wsRpListBox.ItemTemplate = new FuncDataTemplate<string>((file, _) =>
+        {
+            if (string.IsNullOrEmpty(file)) return new Border();
+            var name = Path.GetFileName(file);
+            var size = FormatFileSize(new FileInfo(file).Length);
+            
+            var deleteBtn = new Button
+            {
+                Content = "🗑",
+                Foreground = Brushes.Tomato,
+                Background = Brushes.Transparent,
+                FontSize = 14,
+                BorderThickness = new Thickness(0)
+            };
+            deleteBtn.Click += async (_, _) =>
+            {
+                if (await DialogService.ShowConfirmAsync(this, "Remove Pack", $"Are you sure you want to delete '{name}'?"))
+                {
+                    try { File.Delete(file); RefreshWorkspaceResourcePacksList(); } catch { }
+                }
+            };
+
+            return new Border
+            {
+                Padding = new Thickness(8),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+                    ColumnSpacing = 12,
+                    Children =
+                    {
+                        new StackPanel { Spacing = 2, Children = { new TextBlock { Text = name, FontSize = 13.5, Foreground = Brushes.White }, new TextBlock { Text = size, FontSize = 11.5, Foreground = Brushes.Gray } } }.With(column: 0),
+                        deleteBtn.With(column: 1)
+                    }
+                }
+            };
+        });
+
+        var importBtn = CreateCompactSecondaryButton("⤓ Import Pack");
+        importBtn.Click += async (_, _) =>
+        {
+            if (_selectedProfile == null) return;
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel == null) return;
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+            {
+                Title = "Select Resource Pack Zip",
+                FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Zip Files") { Patterns = ["*.zip"] }]
+            });
+            if (files != null && files.Count > 0)
+            {
+                var rpDir = Path.Combine(_selectedProfile.InstanceDirectory, "resourcepacks");
+                Directory.CreateDirectory(rpDir);
+                File.Copy(files[0].Path.LocalPath, Path.Combine(rpDir, files[0].Name), true);
+                RefreshWorkspaceResourcePacksList();
+            }
+        };
+
+        var openDirBtn = CreateCompactSecondaryButton("📂 Open Folder");
+        openDirBtn.Click += (_, _) =>
+        {
+            if (_selectedProfile == null) return;
+            var rpDir = Path.Combine(_selectedProfile.InstanceDirectory, "resourcepacks");
+            Directory.CreateDirectory(rpDir);
+            Process.Start(new ProcessStartInfo { FileName = rpDir, UseShellExecute = true });
+        };
+
+        return new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8, Children = { new TextBlock { Text = "Resource Packs", FontSize = 16, FontWeight = FontWeight.Bold, Foreground = Brushes.White }.With(column: 0), openDirBtn.With(column: 1), importBtn.With(column: 2) } },
+                new ScrollViewer { Content = _wsRpListBox, MaxHeight = 400 }
+            }
+        };
+    }
+
+    private Control BuildWorkspaceShaderPacksTab()
+    {
+        _wsSpListBox = new ListBox { Background = Brushes.Transparent, BorderThickness = new Thickness(0), MaxHeight = 400 };
+        _wsSpListBox.ItemTemplate = new FuncDataTemplate<string>((file, _) =>
+        {
+            if (string.IsNullOrEmpty(file)) return new Border();
+            var name = Path.GetFileName(file);
+            var size = FormatFileSize(new FileInfo(file).Length);
+
+            var deleteBtn = new Button
+            {
+                Content = "🗑",
+                Foreground = Brushes.Tomato,
+                Background = Brushes.Transparent,
+                FontSize = 14,
+                BorderThickness = new Thickness(0)
+            };
+            deleteBtn.Click += async (_, _) =>
+            {
+                if (await DialogService.ShowConfirmAsync(this, "Remove Shader", $"Are you sure you want to delete '{name}'?"))
+                {
+                    try { File.Delete(file); RefreshWorkspaceShaderPacksList(); } catch { }
+                }
+            };
+
+            return new Border
+            {
+                Padding = new Thickness(8),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+                    ColumnSpacing = 12,
+                    Children =
+                    {
+                        new StackPanel { Spacing = 2, Children = { new TextBlock { Text = name, FontSize = 13.5, Foreground = Brushes.White }, new TextBlock { Text = size, FontSize = 11.5, Foreground = Brushes.Gray } } }.With(column: 0),
+                        deleteBtn.With(column: 1)
+                    }
+                }
+            };
+        });
+
+        var importBtn = CreateCompactSecondaryButton("⤓ Import Shader");
+        importBtn.Click += async (_, _) =>
+        {
+            if (_selectedProfile == null) return;
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel == null) return;
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+            {
+                Title = "Select Shader Pack Zip",
+                FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Zip Files") { Patterns = ["*.zip"] }]
+            });
+            if (files != null && files.Count > 0)
+            {
+                var spDir = Path.Combine(_selectedProfile.InstanceDirectory, "shaderpacks");
+                Directory.CreateDirectory(spDir);
+                File.Copy(files[0].Path.LocalPath, Path.Combine(spDir, files[0].Name), true);
+                RefreshWorkspaceShaderPacksList();
+            }
+        };
+
+        var openDirBtn = CreateCompactSecondaryButton("📂 Open Folder");
+        openDirBtn.Click += (_, _) =>
+        {
+            if (_selectedProfile == null) return;
+            var spDir = Path.Combine(_selectedProfile.InstanceDirectory, "shaderpacks");
+            Directory.CreateDirectory(spDir);
+            Process.Start(new ProcessStartInfo { FileName = spDir, UseShellExecute = true });
+        };
+
+        return new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8, Children = { new TextBlock { Text = "Shader Packs", FontSize = 16, FontWeight = FontWeight.Bold, Foreground = Brushes.White }.With(column: 0), openDirBtn.With(column: 1), importBtn.With(column: 2) } },
+                new ScrollViewer { Content = _wsSpListBox, MaxHeight = 400 }
+            }
+        };
+    }
+
+    private Control BuildWorkspaceWorldsTab()
+    {
+        _wsWorldsListBox = new ListBox { Background = Brushes.Transparent, BorderThickness = new Thickness(0), MaxHeight = 400 };
+        _wsWorldsListBox.ItemTemplate = new FuncDataTemplate<string>((dir, _) =>
+        {
+            if (string.IsNullOrEmpty(dir)) return new Border();
+            var name = Path.GetFileName(dir);
+
+            var deleteBtn = new Button
+            {
+                Content = "🗑",
+                Foreground = Brushes.Tomato,
+                Background = Brushes.Transparent,
+                FontSize = 14,
+                BorderThickness = new Thickness(0)
+            };
+            deleteBtn.Click += async (_, _) =>
+            {
+                if (await DialogService.ShowConfirmAsync(this, "Delete World", $"Are you sure you want to delete world '{name}' permanently?"))
+                {
+                    try { Directory.Delete(dir, true); RefreshWorkspaceWorldsList(); } catch { }
+                }
+            };
+
+            var renameBtn = new Button
+            {
+                Content = "✎ Rename",
+                FontSize = 12,
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Height = 24,
+                Padding = new Thickness(6, 2),
+                CornerRadius = new CornerRadius(6)
+            };
+            renameBtn.Click += async (_, _) =>
+            {
+                var newName = await DialogService.ShowTextInputAsync(this, "Rename World", "Enter new name for the world:");
+                if (!string.IsNullOrWhiteSpace(newName) && newName != name)
+                {
+                    try
+                    {
+                        var parent = Path.GetDirectoryName(dir);
+                        var target = Path.Combine(parent!, newName);
+                        Directory.Move(dir, target);
+                        RefreshWorkspaceWorldsList();
+                    }
+                    catch (Exception ex)
+                    {
+                        await DialogService.ShowInfoAsync(this, "Error", $"Failed to rename: {ex.Message}");
+                    }
+                }
+            };
+
+            var backupBtn = new Button
+            {
+                Content = "📦 Backup",
+                FontSize = 12,
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Height = 24,
+                Padding = new Thickness(6, 2),
+                CornerRadius = new CornerRadius(6)
+            };
+            backupBtn.Click += async (_, _) =>
+            {
+                try
+                {
+                    var parent = Path.GetDirectoryName(dir);
+                    var backupFile = Path.Combine(parent!, $"{name}-backup-{DateTime.Now:yyyyMMddHHmmss}.zip");
+                    await Task.Run(() => System.IO.Compression.ZipFile.CreateFromDirectory(dir, backupFile));
+                    await DialogService.ShowInfoAsync(this, "Backup Success", $"World backup created at:\n{Path.GetFileName(backupFile)}");
+                }
+                catch (Exception ex)
+                {
+                    await DialogService.ShowInfoAsync(this, "Error", $"Failed to create backup: {ex.Message}");
+                }
+            };
+
+            var openFolderBtn = new Button
+            {
+                Content = "📂 Folder",
+                FontSize = 12,
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Height = 24,
+                Padding = new Thickness(6, 2),
+                CornerRadius = new CornerRadius(6)
+            };
+            openFolderBtn.Click += (_, _) =>
+            {
+                Process.Start(new ProcessStartInfo { FileName = dir, UseShellExecute = true });
+            };
+
+            return new Border
+            {
+                Padding = new Thickness(8),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"),
+                    ColumnSpacing = 8,
+                    Children =
+                    {
+                        new TextBlock { Text = name, FontSize = 13.5, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }.With(column: 0),
+                        openFolderBtn.With(column: 1),
+                        backupBtn.With(column: 2),
+                        renameBtn.With(column: 3),
+                        deleteBtn.With(column: 4)
+                    }
+                }
+            };
+        });
+
+        var openDirBtn = CreateCompactSecondaryButton("📂 Open Folder");
+        openDirBtn.Click += (_, _) =>
+        {
+            if (_selectedProfile == null) return;
+            var savesDir = Path.Combine(_selectedProfile.InstanceDirectory, "saves");
+            Directory.CreateDirectory(savesDir);
+            Process.Start(new ProcessStartInfo { FileName = savesDir, UseShellExecute = true });
+        };
+
+        return new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8, Children = { new TextBlock { Text = "Worlds / Saves", FontSize = 16, FontWeight = FontWeight.Bold, Foreground = Brushes.White }.With(column: 0), openDirBtn.With(column: 1) } },
+                new ScrollViewer { Content = _wsWorldsListBox, MaxHeight = 400 }
+            }
+        };
+    }
+
+    private Control BuildWorkspaceScreenshotsTab()
+    {
+        _wsScreenshotsGallery = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            MaxHeight = 400,
+            Content = new TextBlock { Text = "No screenshots captured yet.", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+        };
+
+        var openDirBtn = CreateCompactSecondaryButton("📂 Open Folder");
+        openDirBtn.Click += (_, _) =>
+        {
+            if (_selectedProfile == null) return;
+            var scDir = Path.Combine(_selectedProfile.InstanceDirectory, "screenshots");
+            Directory.CreateDirectory(scDir);
+            Process.Start(new ProcessStartInfo { FileName = scDir, UseShellExecute = true });
+        };
+
+        return new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8, Children = { new TextBlock { Text = "Screenshots Gallery", FontSize = 16, FontWeight = FontWeight.Bold, Foreground = Brushes.White }.With(column: 0), openDirBtn.With(column: 1) } },
+                _wsScreenshotsGallery
+            }
+        };
+    }
+
+    private Control BuildWorkspaceFilesTab()
+    {
+        _wsFilesPathLabel = new TextBlock { Text = "Location: /", FontSize = 12, Foreground = Brushes.Gray, VerticalAlignment = VerticalAlignment.Center };
+        
+        _wsFilesList = new ListBox
+        {
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            MaxHeight = 350
+        };
+
+        _wsFilesList.ItemTemplate = new FuncDataTemplate<FileSystemInfo>((item, _) =>
+        {
+            if (item == null) return new Border();
+            bool isDir = item is DirectoryInfo;
+            string icon = isDir ? "📁" : "📄";
+            string name = item.Name;
+            
+            return new Border
+            {
+                Padding = new Thickness(6),
+                Child = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children =
+                    {
+                        new TextBlock { Text = icon, FontSize = 15, VerticalAlignment = VerticalAlignment.Center },
+                        new TextBlock { Text = name, FontSize = 13, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }
+                    }
+                }
+            };
+        });
+
+        _wsFilesList.DoubleTapped += (s, e) =>
+        {
+            var item = _wsFilesList.SelectedItem as FileSystemInfo;
+            if (item == null) return;
+            if (item is DirectoryInfo di)
+            {
+                _wsCurrentFilesDir = di.FullName;
+                RefreshFilesList();
+            }
+            else if (item is FileInfo fi)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo { FileName = fi.FullName, UseShellExecute = true });
+                }
+                catch { }
+            }
+        };
+
+        var backBtn = new Button
+        {
+            Content = "↩ Up",
+            Height = 26,
+            FontSize = 11,
+            Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+            CornerRadius = new CornerRadius(6)
+        };
+        backBtn.Click += (_, _) =>
+        {
+            if (_selectedProfile == null) return;
+            if (_wsCurrentFilesDir != _selectedProfile.InstanceDirectory)
+            {
+                var parent = Path.GetDirectoryName(_wsCurrentFilesDir);
+                if (parent != null && parent.StartsWith(_selectedProfile.InstanceDirectory))
+                {
+                    _wsCurrentFilesDir = parent;
+                    RefreshFilesList();
+                }
+            }
+        };
+
+        Button CreateFileShortcutButton(string name)
+        {
+            return new Button
+            {
+                Content = name,
+                Height = 24,
+                FontSize = 11,
+                Foreground = Brushes.White,
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 2),
+                CornerRadius = new CornerRadius(6),
+                Margin = new Thickness(0, 0, 4, 0),
+                Cursor = new Cursor(StandardCursorType.Hand)
+            };
+        }
+
+        var configShortcut = CreateFileShortcutButton("config");
+        configShortcut.Click += (_, _) => NavigateToShortcut("config");
+        
+        var modsShortcut = CreateFileShortcutButton("mods");
+        modsShortcut.Click += (_, _) => NavigateToShortcut("mods");
+        
+        var rpShortcut = CreateFileShortcutButton("resourcepacks");
+        rpShortcut.Click += (_, _) => NavigateToShortcut("resourcepacks");
+        
+        var spShortcut = CreateFileShortcutButton("shaderpacks");
+        spShortcut.Click += (_, _) => NavigateToShortcut("shaderpacks");
+        
+        var savesShortcut = CreateFileShortcutButton("saves");
+        savesShortcut.Click += (_, _) => NavigateToShortcut("saves");
+
+        var shortcutsBar = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children = { configShortcut, modsShortcut, rpShortcut, spShortcut, savesShortcut }
+        };
+
+        void NavigateToShortcut(string folderName)
+        {
+            if (_selectedProfile != null)
+            {
+                var target = Path.Combine(_selectedProfile.InstanceDirectory, folderName);
+                Directory.CreateDirectory(target);
+                _wsCurrentFilesDir = target;
+                RefreshFilesList();
+            }
+        }
+
+        var navRow = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            ColumnSpacing = 8,
+            Children =
+            {
+                backBtn.With(column: 0),
+                _wsFilesPathLabel.With(column: 1),
+                shortcutsBar.With(column: 2)
+            }
+        };
+
+        return new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                navRow,
+                new ScrollViewer { Content = _wsFilesList, MaxHeight = 350 }
+            }
+        };
+    }
+
+    private Control BuildWorkspaceLogsTab()
+    {
+        _wsLogsCombo = new ComboBox { Height = 32 };
+        _wsLogsCombo.SelectionChanged += (s, e) => LoadSelectedLogContent();
+
+        _wsLogsContent = new TextBlock
+        {
+            FontSize = 12,
+            Foreground = Brushes.LightGray,
+            FontFamily = new FontFamily("Courier New, monospace"),
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        _wsLogsScroll = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            MaxHeight = 350,
+            Content = _wsLogsContent
+        };
+
+        var refreshBtn = CreateCompactSecondaryButton("↻ Refresh");
+        refreshBtn.Click += (_, _) => RefreshLogsList();
+
+        return new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8, Children = { new TextBlock { Text = "Instance Logs", FontSize = 16, FontWeight = FontWeight.Bold, Foreground = Brushes.White }.With(column: 0), _wsLogsCombo.With(column: 1), refreshBtn.With(column: 2) } },
+                _wsLogsScroll
+            }
+        };
+    }
+
+    private Control BuildWorkspaceSettingsTab()
+    {
+        _wsSettingsJavaPath = new TextBox { Watermark = "Path to java binary (leave blank for default)" };
+        _wsSettingsJvmArgs = new TextBox { Watermark = "JVM launch arguments" };
+        
+        _wsSettingsMemorySlider = new Slider { Minimum = 512, Maximum = 16384, Value = 2048, SmallChange = 512, LargeChange = 1024 };
+        _wsSettingsMemoryLabel = new TextBlock { Text = "Memory: 2048 MB", FontSize = 13, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
+        _wsSettingsMemorySlider.ValueChanged += (s, e) =>
+        {
+            var val = (int)_wsSettingsMemorySlider.Value;
+            _wsSettingsMemoryLabel.Text = $"Memory: {val} MB ({(val/1024.0):F1} GB)";
+        };
+
+        _wsSettingsResWidth = new TextBox { Watermark = "Width (e.g. 1280)" };
+        _wsSettingsResHeight = new TextBox { Watermark = "Height (e.g. 720)" };
+        _wsSettingsEnvVars = new TextBox { Watermark = "KEY=VALUE (one per line or separated by semicolon)", AcceptsReturn = true, Height = 60 };
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("180,*"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,Auto,Auto"),
+            RowSpacing = 12
+        };
+
+        void AddConfigRow(int row, string label, Control ctrl)
+        {
+            grid.Children.Add(new TextBlock { Text = label, FontSize = 13, Foreground = Brushes.Gray, VerticalAlignment = VerticalAlignment.Center }.With(row: row, column: 0));
+            grid.Children.Add(ctrl.With(row: row, column: 1));
+        }
+
+        AddConfigRow(0, "Java Executable Path", _wsSettingsJavaPath);
+        AddConfigRow(1, "JVM Arguments", _wsSettingsJvmArgs);
+        
+        var memStack = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Children =
+            {
+                _wsSettingsMemorySlider.With(column: 0),
+                _wsSettingsMemoryLabel.With(column: 1)
+            }
+        };
+        AddConfigRow(2, "Memory Allocation", memStack);
+
+        var resStack = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,*"),
+            Children =
+            {
+                _wsSettingsResWidth.With(column: 0),
+                new TextBlock { Text = "✕", Foreground = Brushes.Gray, Margin = new Thickness(8, 0), VerticalAlignment = VerticalAlignment.Center }.With(column: 1),
+                _wsSettingsResHeight.With(column: 2)
+            }
+        };
+        AddConfigRow(3, "Resolution / Size", resStack);
+        AddConfigRow(4, "Environment Variables", _wsSettingsEnvVars);
+
+        var saveBtn = CreateCompactSecondaryButton("Save Settings");
+        saveBtn.Click += (_, _) => SaveWorkspaceSettings();
+
+        return new StackPanel
+        {
+            Spacing = 16,
+            Children =
+            {
+                new TextBlock { Text = "Instance Settings", FontSize = 16, FontWeight = FontWeight.Bold, Foreground = Brushes.White },
+                grid,
+                saveBtn
+            }
+        };
+    }
+
+    private void RefreshWorkspaceUi()
+    {
+        if (_selectedProfile == null) return;
+
+        _wsHeaderName.Text = _selectedProfile.Name;
+        _wsHeaderVersion.Text = _selectedProfile.LoaderDisplay;
+        _wsHeaderStatus.Text = "Ready to play";
+        _wsHeaderStatus.Foreground = new SolidColorBrush(Color.Parse("#4ADE80"));
+        _wsHeaderPlayTime.Text = $"{_selectedProfile.LaunchCountSinceLastInstall} launches";
+        _wsHeaderLastPlayed.Text = _selectedProfile.UpdatedUtc == DateTime.MinValue
+            ? "Never"
+            : _selectedProfile.UpdatedUtc.ToLocalTime().ToString("MMM d, h:mm tt");
+        
+
+        try
+        {
+            string localCover = Path.Combine(_selectedProfile.InstanceDirectory, "cover.png");
+            if (!File.Exists(localCover))
+                localCover = Path.Combine(_selectedProfile.InstanceDirectory, "cover.jpg");
+
+            if (File.Exists(localCover))
+            {
+                _wsHeaderIcon.Background = new ImageBrush(new Bitmap(localCover)) { Stretch = Stretch.UniformToFill };
+                _wsHeaderIcon.Child = null;
+            }
+            else if (_selectedProfile.Name == "Fugo Client" || _selectedProfile.Name.Contains("Fugo", StringComparison.OrdinalIgnoreCase))
+            {
+                _wsHeaderIcon.Background = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                    GradientStops = { new GradientStop(Color.Parse("#181436"), 0.0), new GradientStop(Color.Parse("#0D0B1C"), 1.0) }
+                };
+                _wsHeaderIcon.Child = new Image
+                {
+                    Source = new Bitmap(AssetLoader.Open(new Uri(GetTaskbarIconUri()))),
+                    Width = 40,
+                    Height = 40,
+                    Stretch = Stretch.Uniform
+                };
+            }
+            else
+            {
+                _wsHeaderIcon.Background = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                    GradientStops = { new GradientStop(Color.Parse("#8E2DE2"), 0.0), new GradientStop(Color.Parse("#4A00E0"), 1.0) }
+                };
+                _wsHeaderIcon.Child = null;
+            }
+        }
+        catch { }
+
+
+
+        RefreshWorkspaceModsList();
+        RefreshWorkspaceResourcePacksList();
+        RefreshWorkspaceShaderPacksList();
+        RefreshWorkspaceWorldsList();
+        
+        _wsCurrentFilesDir = _selectedProfile.InstanceDirectory;
+        
+        _wsSettingsJavaPath.Text = _selectedProfile.JavaPath;
+        _wsSettingsJvmArgs.Text = _selectedProfile.JvmArguments;
+        _wsSettingsMemorySlider.Value = _selectedProfile.MaxRamMb ?? _settings.MaxRamMb;
+        _wsSettingsResWidth.Text = (_selectedProfile.WindowWidth ?? _settings.WindowWidth).ToString();
+        _wsSettingsResHeight.Text = (_selectedProfile.WindowHeight ?? _settings.WindowHeight).ToString();
+        _wsSettingsEnvVars.Text = _selectedProfile.EnvironmentVariables;
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
+        int counter = 0;
+        double number = bytes;
+        while (Math.Round(number / 1024) >= 1)
+        {
+            number /= 1024;
+            counter++;
+        }
+        return $"{number:F1} {suffixes[counter]}";
+    }
+
+    private void RefreshWorkspaceModsList()
+    {
+        if (_selectedProfile == null) return;
+        var list = new List<ModItem>();
+        try
+        {
+            var modsDir = _selectedProfile.ModsDirectory;
+            if (Directory.Exists(modsDir))
+            {
+                foreach (var file in Directory.GetFiles(modsDir))
+                {
+                    var name = Path.GetFileName(file);
+                    if (name.EndsWith(".jar") || name.EndsWith(".jar.disabled"))
+                    {
+                        var info = new FileInfo(file);
+                        var item = new ModItem
+                        {
+                            FileName = name,
+                            FileSize = FormatFileSize(info.Length),
+                            FullPath = file
+                        };
+                        item.InitState(!name.EndsWith(".disabled"));
+                        list.Add(item);
+                    }
+                }
+            }
+        }
+        catch { }
+
+        _workspaceModsList.Clear();
+        foreach (var mod in list) _workspaceModsList.Add(mod);
+        FilterWorkspaceMods();
+    }
+
+    private void FilterWorkspaceMods()
+    {
+        if (_selectedProfile == null) return;
+        var query = _wsModsSearchInput?.Text ?? "";
+        var sortMode = _wsModsSortCombo?.SelectedItem?.ToString() ?? "Name";
+
+        IEnumerable<ModItem> filtered = _workspaceModsList;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            filtered = filtered.Where(m => m.FileName.Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (sortMode == "Size")
+        {
+            filtered = filtered.OrderByDescending(m => {
+                try { return new FileInfo(m.FullPath).Length; } catch { return 0L; }
+            });
+        }
+        else if (sortMode == "Status")
+        {
+            filtered = filtered.OrderByDescending(m => m.IsEnabled);
+        }
+        else
+        {
+            filtered = filtered.OrderBy(m => m.FileName, StringComparer.OrdinalIgnoreCase);
+        }
+
+        _wsModsListBox.ItemsSource = filtered.ToList();
+    }
+
+    private void RefreshWorkspaceResourcePacksList()
+    {
+        if (_selectedProfile == null) return;
+        var list = new List<string>();
+        try
+        {
+            var rpDir = Path.Combine(_selectedProfile.InstanceDirectory, "resourcepacks");
+            if (Directory.Exists(rpDir))
+            {
+                list.AddRange(Directory.GetFiles(rpDir, "*.zip"));
+            }
+        }
+        catch { }
+        _wsRpListBox.ItemsSource = list;
+    }
+
+    private void RefreshWorkspaceShaderPacksList()
+    {
+        if (_selectedProfile == null) return;
+        var list = new List<string>();
+        try
+        {
+            var spDir = Path.Combine(_selectedProfile.InstanceDirectory, "shaderpacks");
+            if (Directory.Exists(spDir))
+            {
+                list.AddRange(Directory.GetFiles(spDir, "*.zip"));
+            }
+        }
+        catch { }
+        _wsSpListBox.ItemsSource = list;
+    }
+
+    private void RefreshWorkspaceWorldsList()
+    {
+        if (_selectedProfile == null) return;
+        var list = new List<string>();
+        try
+        {
+            var savesDir = Path.Combine(_selectedProfile.InstanceDirectory, "saves");
+            if (Directory.Exists(savesDir))
+            {
+                list.AddRange(Directory.GetDirectories(savesDir));
+            }
+        }
+        catch { }
+        _wsWorldsListBox.ItemsSource = list;
+    }
+
+    private void RefreshScreenshotsList()
+    {
+        if (_selectedProfile == null) return;
+        var panel = new WrapPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
+        try
+        {
+            var scDir = Path.Combine(_selectedProfile.InstanceDirectory, "screenshots");
+            if (Directory.Exists(scDir))
+            {
+                var files = Directory.GetFiles(scDir, "*.png").OrderByDescending(f => File.GetCreationTime(f));
+                foreach (var file in files)
+                {
+                    try
+                    {
+                        var img = new Image
+                        {
+                            Source = new Bitmap(file),
+                            Width = 180,
+                            Height = 100,
+                            Stretch = Stretch.UniformToFill
+                        };
+                        var border = new Border
+                        {
+                            Width = 180,
+                            Height = 100,
+                            CornerRadius = new CornerRadius(8),
+                            ClipToBounds = true,
+                            Margin = new Thickness(6),
+                            Child = img,
+                            Cursor = new Cursor(StandardCursorType.Hand)
+                        };
+                        border.PointerPressed += (s, e) =>
+                        {
+                            try
+                            {
+                                Process.Start(new ProcessStartInfo { FileName = file, UseShellExecute = true });
+                            }
+                            catch { }
+                        };
+                        panel.Children.Add(border);
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
+
+        if (panel.Children.Count == 0)
+        {
+            _wsScreenshotsGallery.Content = new TextBlock { Text = "No screenshots captured yet.", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 40, 0, 0) };
+        }
+        else
+        {
+            _wsScreenshotsGallery.Content = panel;
+        }
+    }
+
+    private void RefreshFilesList()
+    {
+        if (_selectedProfile == null) return;
+        if (string.IsNullOrEmpty(_wsCurrentFilesDir) || !_wsCurrentFilesDir.StartsWith(_selectedProfile.InstanceDirectory))
+        {
+            _wsCurrentFilesDir = _selectedProfile.InstanceDirectory;
+        }
+
+        _wsFilesPathLabel.Text = "Location: " + _wsCurrentFilesDir.Replace(_selectedProfile.InstanceDirectory, "");
+        if (string.IsNullOrWhiteSpace(_wsFilesPathLabel.Text)) _wsFilesPathLabel.Text = "Location: /";
+
+        var list = new List<FileSystemInfo>();
+        try
+        {
+            if (Directory.Exists(_wsCurrentFilesDir))
+            {
+                var di = new DirectoryInfo(_wsCurrentFilesDir);
+                list.AddRange(di.GetDirectories());
+                list.AddRange(di.GetFiles());
+            }
+        }
+        catch { }
+        _wsFilesList.ItemsSource = list;
+    }
+
+    private void RefreshLogsList()
+    {
+        if (_selectedProfile == null) return;
+        var list = new List<string>();
+        try
+        {
+            var logsDir = Path.Combine(_selectedProfile.InstanceDirectory, "logs");
+            if (Directory.Exists(logsDir))
+            {
+                list.AddRange(Directory.GetFiles(logsDir).Select(Path.GetFileName).Where(f => f != null)!);
+            }
+        }
+        catch { }
+
+        _wsLogsCombo.ItemsSource = list;
+        if (list.Contains("latest.log"))
+        {
+            _wsLogsCombo.SelectedItem = "latest.log";
+        }
+        else if (list.Count > 0)
+        {
+            _wsLogsCombo.SelectedIndex = 0;
+        }
+        else
+        {
+            _wsLogsContent.Text = "No log files found in logs directory.";
+        }
+    }
+
+    private void LoadSelectedLogContent()
+    {
+        if (_selectedProfile == null) return;
+        var selected = _wsLogsCombo.SelectedItem as string;
+        if (string.IsNullOrEmpty(selected)) return;
+
+        try
+        {
+            var path = Path.Combine(_selectedProfile.InstanceDirectory, "logs", selected);
+            if (File.Exists(path))
+            {
+                var lines = File.ReadLines(path).TakeLast(200);
+                _wsLogsContent.Text = string.Join(Environment.NewLine, lines);
+                _wsLogsScroll.Offset = new Vector(0, _wsLogsScroll.Extent.Height);
+            }
+            else
+            {
+                _wsLogsContent.Text = "Log file not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _wsLogsContent.Text = $"Failed to read log: {ex.Message}";
+        }
+    }
+
+    private void SaveWorkspaceSettings()
+    {
+        if (_selectedProfile == null) return;
+
+        _selectedProfile.JavaPath = _wsSettingsJavaPath.Text ?? "";
+        _selectedProfile.JvmArguments = _wsSettingsJvmArgs.Text ?? "";
+        _selectedProfile.MaxRamMb = (int)_wsSettingsMemorySlider.Value;
+        
+        if (int.TryParse(_wsSettingsResWidth.Text, out int w)) _selectedProfile.WindowWidth = w;
+        if (int.TryParse(_wsSettingsResHeight.Text, out int h)) _selectedProfile.WindowHeight = h;
+        
+        _selectedProfile.EnvironmentVariables = _wsSettingsEnvVars.Text ?? "";
+
+        _profileStore.Save(_selectedProfile);
+        _ = DialogService.ShowInfoAsync(this, "Success", "Instance settings saved successfully.");
     }
 }
 

@@ -25,7 +25,7 @@
     <PackageReference Include="Avalonia.Markup.Xaml.Loader" Version="11.3.0" />
     <PackageReference Include="CmlLib.Core" Version="4.0.5" />
     <PackageReference Include="System.Resources.Extensions" Version="9.0.10" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.5" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.7" />
   </ItemGroup>
   <ItemGroup>
     <TrimmerRootDescriptor Include="TrimmerRoots.xml" />
