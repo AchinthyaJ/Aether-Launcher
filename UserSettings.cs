@@ -90,6 +90,7 @@ internal sealed class LayoutStyle
     // ─── Colors / Accent ────────────────────────────────────────────────
     public string? AccentColorOverride { get; set; }
     public string? AccentColor { get; set; }  // shorthand alias used by some methods
+    public string? SecondaryAccentColor { get; set; }
     public double BackgroundOpacity { get; set; } = 0.65;
     public string? BackgroundOverlayColor { get; set; }
     public string? BackgroundImagePath { get; set; }
@@ -165,7 +166,7 @@ internal sealed class LayoutStyle
         TitleText = TitleText, TitleFontSize = TitleFontSize, TitleForeground = TitleForeground,
         PrimaryFontFamily = PrimaryFontFamily, PrimaryForeground = PrimaryForeground,
         SecondaryForeground = SecondaryForeground,
-        AccentColorOverride = AccentColorOverride, BackgroundOpacity = BackgroundOpacity,
+        AccentColorOverride = AccentColorOverride, SecondaryAccentColor = SecondaryAccentColor, BackgroundOpacity = BackgroundOpacity,
         BackgroundOverlayColor = BackgroundOverlayColor,
         BackgroundImagePath = BackgroundImagePath,
         BackgroundOverlayOpacity = BackgroundOverlayOpacity,
@@ -205,6 +206,7 @@ internal sealed class UserSettings
     public string ClientLayout { get; set; } = string.Empty; // Legacy — kept for migration only
     public string ThemeVariant { get; set; } = "dark";
     public string AccentColor { get; set; } = "#3B82F6";
+    public string SecondaryAccentColor { get; set; } = "#8F70FF";
     public string? SelectedPreset { get; set; } = "None";
     public LayoutStyle Style { get; set; } = new();
     public List<string> SectionOrder { get; set; } = ["Hero", "Stats", "Actions"];

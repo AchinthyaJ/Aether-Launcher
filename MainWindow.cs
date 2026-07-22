@@ -99,7 +99,7 @@ public sealed class MainWindow : Window
     private readonly ObservableCollection<ModItem> _modItems = [];
     private readonly ObservableCollection<ModrinthProject> _searchResults = [];
     private readonly List<ModrinthProject> _rawSearchResults = [];
-    private static readonly string[] ProjectTypeOptions = ["Mod", "Modpack"];
+    private static readonly string[] ProjectTypeOptions = ["Mod", "Modpack", "Resourcepack", "Shader"];
     private static readonly string[] LoaderOptions = ["Any", "Vanilla", "Fabric", "Quilt", "Forge", "NeoForge"];
     private static readonly string[] ProfileLoaderOptions = ["Vanilla", "Fabric", "Quilt", "Forge", "NeoForge"];
     private static readonly string[] ProfilePresetOptions = ["Fugo Client (Fabric)", "Vanilla Minecraft", "Custom Modded"];
@@ -129,6 +129,9 @@ public sealed class MainWindow : Window
         public bool AutoInvite { get; set; } = true;
         public DateTime? InviteCodeLastChanged { get; set; } = null;
         public string GcProfile { get; set; } = "aikar";
+        public DateTime? LastOnline { get; set; } = null;
+        public DateTime? LastBackup { get; set; } = null;
+        public string UptimeHistory { get; set; } = "";
     }
 
     public class PropertyDefinition
@@ -222,6 +225,7 @@ public sealed class MainWindow : Window
     private Dictionary<string, string> _serverStatuses = new();
     private Dictionary<string, DateTime> _serverStartTimes = new();
     private Dictionary<string, List<string>> _serverActivePlayers = new();
+    private Dictionary<string, Dictionary<string, DateTime>> _playerJoinTimes = new();
     private string _publicIpAddress = "";
     private System.Action<string>? _onServerLogAdded;
     private System.Action<string>? _onServerStatusChanged;
@@ -249,30 +253,7 @@ public sealed class MainWindow : Window
     private StackPanel profilePresetSection = null!;
     private Button createProfileButton = null!;
     private Button renameProfileButton = null!;
-    private Border _editorSettingsRoot = null!;
-    private Border _editorCreationRoot = null!;
-    private TextBlock _settingsHeaderInstanceName = null!;
-    private Border _settingsCoverPreview = null!;
-    private TextBox _settingsNameInput = null!;
-    private TextBox _settingsGameDirInput = null!;
-    private ComboBox _settingsGameVersionCombo = null!;
-    private ComboBox _settingsLoaderCombo = null!;
-    private TextBox _settingsJavaPathInput = null!;
-    private TextBox _settingsJvmArgsInput = null!;
-    private Slider _settingsMemorySlider = null!;
-    private TextBlock _settingsMemoryLabel = null!;
-    private TextBox _settingsWidthInput = null!;
-    private TextBox _settingsHeightInput = null!;
-    private TextBlock _settingsVersionLabel = null!;
-    private TextBlock _settingsTitle = null!;
-    private TextBlock _settingsSubtitle = null!;
-    private ScrollViewer _settingsContentScroller = null!;
-    private StackPanel _settingsGeneralPanel = null!;
-    private StackPanel _settingsInstallPanel = null!;
-    private StackPanel _settingsWindowPanel = null!;
-    private StackPanel _settingsJavaPanel = null!;
     private readonly List<Button> _settingsTabButtons = [];
-    private string _activeSettingsTab = "general";
     private Button btnStart = null!;
     private CancellationTokenSource? _launchCts;
     private Button launchNavButton = null!;
@@ -324,7 +305,6 @@ public sealed class MainWindow : Window
     private ComboBox modrinthSortCombo = null!;
     private readonly ObservableCollection<WorldItem> _worldItems = [];
     private readonly ObservableCollection<ResourcePackItem> _resourcePackItems = [];
-    private ToggleSwitch? _offlineModeToggle;
     private ListBox? _worldsListBox;
     private ListBox? _rpListBox;
     private ListBox? _modsListBox;
@@ -365,6 +345,11 @@ public sealed class MainWindow : Window
     private Border _wsHeaderIcon = null!;
     private TextBlock _wsHeaderName = null!;
     private TextBlock _wsHeaderVersion = null!;
+    private StackPanel _wsHeaderBadgesPanel = null!;
+    private Border _wsLoaderBadge = null!;
+    private TextBlock _wsLoaderBadgeText = null!;
+    private Border _wsVersionBadge = null!;
+    private TextBlock _wsVersionBadgeText = null!;
     private TextBlock _wsHeaderStatus = null!;
     private TextBlock _wsHeaderPlayTime = null!;
     private Button _wsHeaderPlayBtn = null!;
@@ -377,10 +362,18 @@ public sealed class MainWindow : Window
     private Border _wsTabLogsPanel = null!;
     private Border _wsTabSettingsPanel = null!;
     private ListBox _wsModsListBox = null!;
-    private TextBox _wsModsSearchInput = null!;
     private ComboBox _wsModsSortCombo = null!;
     private ListBox _wsRpListBox = null!;
     private ListBox _wsSpListBox = null!;
+    private TextBox _wsSearchInput = null!;
+    private readonly System.Collections.Generic.List<string> _workspaceResourcePacksList = new();
+    private readonly System.Collections.Generic.List<string> _workspaceShaderPacksList = new();
+    private Border _wsRpPlaceholder = null!;
+    private ScrollViewer _wsRpScrollViewer = null!;
+    private Border _wsSpPlaceholder = null!;
+    private ScrollViewer _wsSpScrollViewer = null!;
+    private Border _wsModsPlaceholder = null!;
+    private ScrollViewer _wsModsScrollViewer = null!;
     private ListBox _wsWorldsListBox = null!;
     private ScrollViewer _wsScreenshotsGallery = null!;
     private ListBox _wsFilesList = null!;
@@ -1108,7 +1101,9 @@ public sealed class MainWindow : Window
     private StackPanel BuildWindowControls()
     {
         var minimizeButton = CreateWindowControlButton("−", Color.Parse("#F4B63C"), () => WindowState = WindowState.Minimized);
+        ToolTip.SetTip(minimizeButton, "Minimize");
         var closeButton = CreateWindowControlButton("✕", Color.Parse("#FF5C70"), Close);
+        ToolTip.SetTip(closeButton, "Close");
 
         var stackPanel = new StackPanel
         {
@@ -1309,15 +1304,15 @@ public sealed class MainWindow : Window
                 }
             };
 
-        launchNavButton = CreateNavButton("⌂", "Home", collapsed);
+        launchNavButton = CreateNavButton("home", "Home", collapsed);
         launchNavButton.Click += (_, _) => SetActiveSection("home");
-        profilesNavButton = CreateNavButton("▣", "Instances", collapsed);
+        profilesNavButton = CreateNavButton("folder", "Instances", collapsed);
         profilesNavButton.Click += (_, _) => SetActiveSection("instances");
-        modrinthNavButton = CreateNavButton("⌕", "Mods", collapsed);
+        modrinthNavButton = CreateNavButton("puzzle", "Mods", collapsed);
         modrinthNavButton.Click += (_, _) => SetActiveSection("modrinth");
-        settingsNavButton = CreateNavButton("⚙", "Settings", collapsed);
+        settingsNavButton = CreateNavButton("settings", "Settings", collapsed);
         settingsNavButton.Click += (_, _) => SetActiveSection("settings");
-        layoutNavButton = CreateNavButton("▤", "Servers", collapsed);
+        layoutNavButton = CreateNavButton("server", "Servers", collapsed);
         layoutNavButton.Click += (_, _) => SetActiveSection("layout");
 
         var edgeToggleButton = new Button
@@ -1346,6 +1341,7 @@ public sealed class MainWindow : Window
             }
         };
         edgeToggleButton.Click += (_, _) => ToggleSidebarCollapsed();
+        ToolTip.SetTip(edgeToggleButton, collapsed ? "Expand Sidebar" : "Collapse Sidebar");
 
         var sbBg = !string.IsNullOrWhiteSpace(style.SidebarBackground) ? style.SidebarBackground : "#090C12";
         var sbBorder = !string.IsNullOrWhiteSpace(style.SidebarBorderColor) ? style.SidebarBorderColor : "#171B24";
@@ -1386,15 +1382,15 @@ public sealed class MainWindow : Window
 
     private Control BuildTopNavigation()
     {
-        launchNavButton = CreateNavButton("⌂", "Home");
+        launchNavButton = CreateNavButton("home", "Home");
         launchNavButton.Click += (_, _) => SetActiveSection("home");
-        profilesNavButton = CreateNavButton("▣", "Instances");
+        profilesNavButton = CreateNavButton("folder", "Instances");
         profilesNavButton.Click += (_, _) => SetActiveSection("instances");
-        modrinthNavButton = CreateNavButton("⌕", "Mods");
+        modrinthNavButton = CreateNavButton("puzzle", "Mods");
         modrinthNavButton.Click += (_, _) => SetActiveSection("modrinth");
-        settingsNavButton = CreateNavButton("⚙", "Settings");
+        settingsNavButton = CreateNavButton("settings", "Settings");
         settingsNavButton.Click += (_, _) => SetActiveSection("settings");
-        layoutNavButton = CreateNavButton("▤", "Servers");
+        layoutNavButton = CreateNavButton("server", "Servers");
         layoutNavButton.Click += (_, _) => SetActiveSection("layout");
 
         ApplyHoverMotion(launchNavButton);
@@ -1507,6 +1503,7 @@ public sealed class MainWindow : Window
             accountsNavButton.Click += (_, _) => ShowAccountsOverlay();
             ApplyHoverMotion(accountsNavButton);
             UpdateAccountsButtonText();
+            ToolTip.SetTip(accountsNavButton, "Manage Accounts");
         }
 
         usernameInput ??= CreateTextBox();
@@ -1668,7 +1665,7 @@ public sealed class MainWindow : Window
 
         if (modrinthSearchButton is null)
         {
-            modrinthSearchButton = CreatePrimaryButton("Search", _settings.AccentColor, Colors.White);
+            modrinthSearchButton = CreatePrimaryButton("Search", _settings.AccentColor ?? "#8B5A2B", Colors.White);
             modrinthSearchButton.Click += async (_, _) => await SearchModrinthAsync();
         }
 
@@ -1763,7 +1760,7 @@ public sealed class MainWindow : Window
         if (icon != null) playStack.Children.Add(icon);
         if (label != null) playStack.Children.Add(label);
         
-        var accentColor = Color.Parse(_settings.AccentColor);
+        var accentColor = Color.Parse(_settings.AccentColor ?? "#8B5A2B");
         
         var reinstallPart = new StackPanel
         {
@@ -2019,6 +2016,7 @@ public sealed class MainWindow : Window
                 IsVisible = true,
                 IsHitTestVisible = false
             };
+            ToolTip.SetTip(removeBtn, "Remove Account");
             removeBtn.PointerPressed += (_, e) => e.Handled = true;
             removeBtn.Click += async (_, _) =>
             {
@@ -2287,6 +2285,7 @@ public sealed class MainWindow : Window
             FontSize = 24,
             Padding = new Thickness(8, 0)
         };
+        ToolTip.SetTip(closeButton, "Close");
         closeButton.Click += (_, _) => 
         {
             _accountsOverlay.IsVisible = false;
@@ -2922,7 +2921,7 @@ public sealed class MainWindow : Window
                 ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
                 Children =
                 {
-                    new TextBlock { Text = "□", FontSize = 15, Foreground = new SolidColorBrush(Color.Parse(_settings.AccentColor)) },
+                    CreateNavigationIcon("puzzle", 16, new SolidColorBrush(Color.Parse(_settings.AccentColor))),
                     new TextBlock { Text = "Mods", FontSize = 12.5, FontWeight = FontWeight.Bold, Foreground = Brushes.White, Margin = new Thickness(12, 0) }.With(column: 1),
                     new TextBlock { Text = "〉", FontSize = 12, Foreground = Brushes.Gray }.With(column: 2)
                 }
@@ -2943,7 +2942,7 @@ public sealed class MainWindow : Window
                 ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
                 Children =
                 {
-                    new TextBlock { Text = "〓", FontSize = 15, Foreground = new SolidColorBrush(Color.Parse(_settings.AccentColor)) },
+                    CreateNavigationIcon("folder", 16, new SolidColorBrush(Color.Parse(_settings.AccentColor))),
                     new TextBlock { Text = "Instances", FontSize = 11.5, FontWeight = FontWeight.Bold, Foreground = Brushes.White, Margin = new Thickness(12, 0) }.With(column: 1),
                     new TextBlock { Text = "〉", FontSize = 12, Foreground = Brushes.Gray }.With(column: 2)
                 }
@@ -3226,7 +3225,7 @@ public sealed class MainWindow : Window
                         BoxShadow = new BoxShadows(new BoxShadow
                         {
                             Blur = 16,
-                            Color = Color.FromArgb(60, Color.Parse(_settings.AccentColor).R, Color.Parse(_settings.AccentColor).G, Color.Parse(_settings.AccentColor).B),
+                            Color = Color.FromArgb(60, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B),
                             OffsetX = 0,
                             OffsetY = 0
                         }),
@@ -3238,7 +3237,7 @@ public sealed class MainWindow : Window
                                     ? Color.Parse(_settings.Style.ProgressBarBackground)
                                     : Color.FromArgb(25, 255, 255, 255)
                             );
-                            var accentColorVal = Color.Parse(_settings.AccentColor);
+                            var accentColorVal = Color.Parse(_settings.AccentColor ?? "#8B5A2B");
                             pb.Foreground = new LinearGradientBrush
                             {
                                 StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
@@ -3386,6 +3385,16 @@ public sealed class MainWindow : Window
         filterRow.Children.Add(sortPanel.With(column: 4));
 
         filterRow.Children.Add(modrinthSearchButton.With(column: 5));
+
+        void UpdateLoaderVersionVisibility()
+        {
+            var pType = modrinthProjectTypeCombo.SelectedItem?.ToString();
+            bool isShader = string.Equals(pType, "Shader", StringComparison.OrdinalIgnoreCase);
+            loaderPanel.IsVisible = !isShader;
+            versionPanel.IsVisible = !isShader;
+        }
+        modrinthProjectTypeCombo.SelectionChanged += (s, e) => UpdateLoaderVersionVisibility();
+        UpdateLoaderVersionVisibility();
         
         // ── Card Item Template ────────────────────────────────────────────
         modrinthResultsListBox.Background = Brushes.Transparent;
@@ -3601,6 +3610,7 @@ public sealed class MainWindow : Window
             ZIndex = 10,
             Cursor = new Cursor(StandardCursorType.Hand)
         };
+        ToolTip.SetTip(closeDetailsBtn, "Close Details");
         closeDetailsBtn.Click += (_, _) => {
             modrinthDetailsPane.IsVisible = false;
             modrinthResultsListBox.SelectedItem = null;
@@ -3716,7 +3726,7 @@ public sealed class MainWindow : Window
         var suppressBg = new Avalonia.Styling.Setter(ListBoxItem.BackgroundProperty, Brushes.Transparent);
         var suppressBorder = new Avalonia.Styling.Setter(ListBoxItem.BorderBrushProperty, Brushes.Transparent);
         var suppressBorderThickness = new Avalonia.Styling.Setter(ListBoxItem.BorderThicknessProperty, new Thickness(0));
-        foreach (var selectorFn in new Func<Selector?, Selector?>[]
+        foreach (var selectorFn in new Func<Selector?, Selector>[]
         {
             x => x!.OfType<ListBoxItem>(),
             x => x!.OfType<ListBoxItem>().Class(":selected"),
@@ -3758,9 +3768,9 @@ public sealed class MainWindow : Window
             {
                 var plusIcon = new Border
                 {
-                    Width = 50,
-                    Height = 50,
-                    CornerRadius = new CornerRadius(25),
+                    Width = 36,
+                    Height = 36,
+                    CornerRadius = new CornerRadius(18),
                     BorderThickness = new Thickness(2),
                     BorderBrush = new SolidColorBrush(Color.Parse("#5C6E91")),
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -3768,12 +3778,12 @@ public sealed class MainWindow : Window
                     Child = new TextBlock
                     {
                         Text = "+",
-                        FontSize = 26,
+                        FontSize = 20,
                         FontWeight = FontWeight.Bold,
                         Foreground = new SolidColorBrush(Color.Parse("#5C6E91")),
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(0, -2, 0, 0)
+                        Margin = new Thickness(0, -1, 0, 0)
                     }
                 };
 
@@ -3784,13 +3794,13 @@ public sealed class MainWindow : Window
                     FontWeight = FontWeight.SemiBold,
                     Foreground = new SolidColorBrush(Color.Parse("#5C6E91")),
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 12, 0, 0)
+                    Margin = new Thickness(0, 4, 0, 0)
                 };
 
                 var addCard = new Border
                 {
-                    Width = 230,
-                    Height = 280,
+                    Width = 245,
+                    Height = 145,
                     CornerRadius = new CornerRadius(14),
                     BorderThickness = new Thickness(2),
                     BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
@@ -3801,6 +3811,7 @@ public sealed class MainWindow : Window
                     {
                         VerticalAlignment = VerticalAlignment.Center,
                         HorizontalAlignment = HorizontalAlignment.Center,
+                        Spacing = 4,
                         Children = { plusIcon, addText }
                     },
                     Transitions = new Transitions
@@ -3858,10 +3869,10 @@ public sealed class MainWindow : Window
 
             var card = new Border
             {
-                Width = 230,
-                Height = 280,
+                Width = 245,
+                Height = 145,
                 CornerRadius = new CornerRadius(14),
-                BorderThickness = isFugo ? new Thickness(2) : new Thickness(1),
+                BorderThickness = new Thickness(1),
                 BorderBrush = isFugo
                     ? new LinearGradientBrush
                       {
@@ -3869,8 +3880,8 @@ public sealed class MainWindow : Window
                           EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
                           GradientStops =
                           {
-                              new GradientStop(Color.Parse("#D4AF37"), 0.0),
-                              new GradientStop(Color.Parse("#AA7C11"), 1.0)
+                              new GradientStop(Color.Parse("#5B21B6"), 0.0),
+                              new GradientStop(Color.Parse("#3730A3"), 1.0)
                           }
                       }
                     : new SolidColorBrush(Color.FromArgb(35, 255, 255, 255)),
@@ -3886,20 +3897,16 @@ public sealed class MainWindow : Window
                 RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative)
             };
 
-            var cardGrid = new Grid
+            var iconContainer = new Border
             {
-                RowDefinitions = new RowDefinitions("140,140")
-            };
-            card.Child = cardGrid;
-
-            // Row 0: Curated Loader Gradients
-            var topPreview = new Border
-            {
-                ClipToBounds = true,
-                CornerRadius = new CornerRadius(14, 14, 0, 0)
+                Width = 36,
+                Height = 36,
+                CornerRadius = new CornerRadius(8),
+                Background = new SolidColorBrush(Color.Parse("#1E293B")),
+                ClipToBounds = true
             };
 
-            IBrush coverBrush;
+            IBrush coverBrush = Brushes.Transparent;
             try
             {
                 // First look for local cover overrides inside the instance folder
@@ -3914,79 +3921,59 @@ public sealed class MainWindow : Window
                         Stretch = Stretch.UniformToFill
                     };
                 }
-                else if (profile.Name == "Fugo Client" || profile.Name.Contains("Fugo", StringComparison.OrdinalIgnoreCase))
+                else if (isFugo)
                 {
-                    // Center the launcher logo over a gorgeous cosmic royal purple gradient!
-                    topPreview.Background = new LinearGradientBrush
-                    {
-                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                        GradientStops =
-                        {
-                            new GradientStop(Color.Parse("#181436"), 0.0),
-                            new GradientStop(Color.Parse("#0D0B1C"), 1.0)
-                        }
-                    };
-                    
                     var logoImg = new Image
                     {
                         Source = new Bitmap(AssetLoader.Open(new Uri(GetTaskbarIconUri()))),
-                        Width = 80,
-                        Height = 80,
+                        Width = 24,
+                        Height = 24,
                         Stretch = Stretch.Uniform,
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center
                     };
-                    topPreview.Child = logoImg;
-                    coverBrush = Brushes.Transparent;
+                    iconContainer.Child = logoImg;
                 }
                 else
                 {
-                    // Fallback to user-provided Default_covers
-                    string[] defaultCovers = {
-                        "instance_default_cover.png",
-                        "Pasted image.png",
-                        "Pasted image (2).png",
-                        "Pasted image (3).png",
-                        "Pasted image (4).png",
-                        "Pasted image (5).png",
-                        "Pasted image (6).png",
-                        "Pasted image (7).png",
-                        "Pasted image (8).png",
-                        "Pasted image (9).png",
-                        "Pasted image (10).png",
-                        "Pasted image (11).png",
-                        "Pasted image (12).png",
-                        "Pasted image (13).png"
-                    };
+                    bool isSnapshot = IsSnapshotVersion(profile.GameVersion);
+                    string fileName = isSnapshot ? "snapshot_icon.png" : "minecraft_icon.png";
 
-                    int hash = Math.Abs(profile.InstanceDirectory.GetHashCode());
-                    string selectedCover = defaultCovers[hash % defaultCovers.Length];
+                    Bitmap? logoBmp = null;
+                    string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", fileName);
+                    if (!File.Exists(path)) path = Path.Combine(Directory.GetCurrentDirectory(), "assets", fileName);
 
-                    try
+                    if (File.Exists(path))
                     {
-                        var uriStr = "avares://FugoLauncher/assets/Default_covers/" + selectedCover.Replace(" ", "%20");
-                        coverBrush = new ImageBrush(new Bitmap(AssetLoader.Open(new Uri(uriStr)))) { Stretch = Stretch.UniformToFill };
+                        try { logoBmp = new Bitmap(path); } catch {}
                     }
-                    catch
+
+                    if (logoBmp == null)
                     {
-                        // Safe fallback gradient if everything fails
-                        coverBrush = new LinearGradientBrush
+                        try
                         {
-                            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                            GradientStops =
-                            {
-                                new GradientStop(Color.Parse("#8E2DE2"), 0.0),
-                                new GradientStop(Color.Parse("#4A00E0"), 1.0)
-                            }
+                            logoBmp = new Bitmap(AssetLoader.Open(new Uri($"avares://FugoLauncher/assets/{fileName}")));
+                        }
+                        catch {}
+                    }
+
+                    if (logoBmp != null)
+                    {
+                        var logoImg = new Image
+                        {
+                            Source = logoBmp,
+                            Width = 24,
+                            Height = 24,
+                            Stretch = Stretch.Uniform,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center
                         };
+                        iconContainer.Child = logoImg;
                     }
                 }
             }
             catch
             {
-                // Ultimate resilient fallback to gradients if files are missing or inaccessible
                 LinearGradientBrush gradient;
                 if (profile.LoaderDisplay.Contains("Fabric", StringComparison.OrdinalIgnoreCase))
                 {
@@ -4029,41 +4016,68 @@ public sealed class MainWindow : Window
                 }
                 coverBrush = gradient;
             }
+
             if (coverBrush != Brushes.Transparent)
             {
-                topPreview.Background = coverBrush;
+                card.Background = coverBrush;
             }
-            cardGrid.Children.Add(topPreview.With(row: 0));
-
-            // Overlay shadow
-            var overlay = new Border
+            else
             {
-                Background = new SolidColorBrush(Color.FromArgb(25, 0, 0, 0))
-            };
-            cardGrid.Children.Add(overlay.With(row: 0));
+                card.Background = new SolidColorBrush(Color.FromArgb(160, 10, 14, 26));
+            }
 
-            // "•••" Context Menu Button
+            // Normal Content Layout
+            var normalContent = new Grid
+            {
+                RowDefinitions = new RowDefinitions("Auto,*,Auto"),
+                Margin = new Thickness(14),
+                Transitions = new Transitions
+                {
+                    new DoubleTransition { Property = Control.OpacityProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) }
+                }
+            };
+
+            // Row 0: Top Bar (Icon, Last Played, Context Menu)
+            var topBar = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto")
+            };
+            topBar.Children.Add(iconContainer.With(column: 0));
+
+            var lastPlayedBlock = new TextBlock
+            {
+                Text = profile.LaunchCountSinceLastInstall > 0
+                    ? $"Played {profile.LaunchCountSinceLastInstall} times"
+                    : "Never",
+                FontSize = 10,
+                Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 0, 24, 0)
+            };
+
+            // Context Menu Button ("•••")
             var menuBtn = new Button
             {
-                Width = 32,
-                Height = 28,
-                CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Color.FromArgb(180, 0, 0, 0)),
+                Width = 24,
+                Height = 24,
+                CornerRadius = new CornerRadius(12),
+                Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
                 Content = new TextBlock
                 {
                     Text = "•••",
-                    FontSize = 14,
+                    FontSize = 11,
                     FontWeight = FontWeight.Bold,
                     Foreground = Brushes.White,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, -2, 0, 0)
+                    Margin = new Thickness(0, -1, 0, 0)
                 },
                 HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(8),
-                Focusable = false
+                VerticalAlignment = VerticalAlignment.Center,
+                Focusable = false,
+                Cursor = new Cursor(StandardCursorType.Hand)
             };
 
             var contextMenu = new ContextMenu();
@@ -4176,113 +4190,20 @@ public sealed class MainWindow : Window
 
             menuBtn.ContextMenu = contextMenu;
             menuBtn.Click += (_, _) => contextMenu.Open(menuBtn);
-            cardGrid.Children.Add(menuBtn.With(row: 0));
 
-            // Row 1: Bottom Details & Action Buttons (Play & Manage)
-            var cardPlayBtn = new Button
+            var topBarRight = new Panel
             {
-                Height = 32,
-                Width = 94,
-                CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Color.Parse(_settings?.AccentColor ?? "#8B5A2B")),
-                BorderThickness = new Thickness(0),
-                Content = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 4,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Children =
-                    {
-                        new TextBlock { Text = "▶", FontSize = 11, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center },
-                        new TextBlock { Text = "Play", FontSize = 12, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }
-                    }
-                },
-                Cursor = new Cursor(StandardCursorType.Hand),
-                Focusable = false
+                Children = { lastPlayedBlock, menuBtn }
             };
+            topBar.Children.Add(topBarRight.With(column: 2));
+            normalContent.Children.Add(topBar.With(row: 0));
 
-            cardPlayBtn.Click += async (_, _) =>
-            {
-                _selectedProfile = profile;
-                profileListBox.SelectedItem = profile;
-                UpdateLauncherContext();
-                await LaunchAsync();
-            };
-
-            cardPlayBtn.PointerEntered += (_, _) =>
-            {
-                var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
-                cardPlayBtn.Background = new SolidColorBrush(Color.FromArgb(200, Color.Parse(currentAccent).R, Color.Parse(currentAccent).G, Color.Parse(currentAccent).B));
-            };
-            cardPlayBtn.PointerExited += (_, _) =>
-            {
-                var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
-                cardPlayBtn.Background = new SolidColorBrush(Color.Parse(currentAccent));
-            };
-
-            var cardManageBtn = new Button
-            {
-                Height = 32,
-                Width = 94,
-                CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                Content = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 4,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Children =
-                    {
-                        new TextBlock { Text = "⚙", FontSize = 12, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center },
-                        new TextBlock { Text = "Manage", FontSize = 12, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }
-                    }
-                },
-                Cursor = new Cursor(StandardCursorType.Hand),
-                Focusable = false
-            };
-
-            cardManageBtn.Click += (_, _) =>
-            {
-                _selectedProfile = profile;
-                profileListBox.SelectedItem = profile;
-                UpdateLauncherContext();
-                SetActiveSection("workspace");
-            };
-
-            cardManageBtn.PointerEntered += (_, _) =>
-            {
-                cardManageBtn.Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
-            };
-            cardManageBtn.PointerExited += (_, _) =>
-            {
-                cardManageBtn.Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255));
-            };
-
-            var actionsRow = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            actionsRow.Children.Add(cardPlayBtn);
-            actionsRow.Children.Add(cardManageBtn);
-
-            var detailsGrid = new Grid
-            {
-                RowDefinitions = new RowDefinitions("*,Auto"),
-                Margin = new Thickness(12),
-                VerticalAlignment = VerticalAlignment.Stretch
-            };
-
+            // Row 1: Instance Name & Subtext
             var textStack = new StackPanel
             {
-                VerticalAlignment = VerticalAlignment.Top,
-                Spacing = 4
+                VerticalAlignment = VerticalAlignment.Center,
+                Spacing = 2,
+                Margin = new Thickness(0, 8, 0, 0)
             };
 
             var nameStack = new StackPanel
@@ -4295,7 +4216,7 @@ public sealed class MainWindow : Window
             var nameBlock = new TextBlock
             {
                 Text = profile.Name,
-                FontSize = 15,
+                FontSize = 14,
                 FontWeight = FontWeight.Bold,
                 Foreground = Brushes.White,
                 TextTrimming = TextTrimming.CharacterEllipsis
@@ -4315,7 +4236,7 @@ public sealed class MainWindow : Window
                     Child = new TextBlock
                     {
                         Text = "★ OFFICIAL",
-                        FontSize = 8,
+                        FontSize = 7,
                         FontWeight = FontWeight.Bold,
                         Foreground = new SolidColorBrush(Color.Parse("#FFE066")),
                         VerticalAlignment = VerticalAlignment.Center
@@ -4326,35 +4247,174 @@ public sealed class MainWindow : Window
             var versionBlock = new TextBlock
             {
                 Text = $"{profile.LoaderDisplay} {profile.VersionId}".Trim(),
-                FontSize = 12,
+                FontSize = 11,
                 Foreground = new SolidColorBrush(Color.Parse("#A4A8B1")),
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
 
-            var lastPlayedBlock = new TextBlock
-            {
-                Text = profile.LaunchCountSinceLastInstall > 0
-                    ? $"Played {profile.LaunchCountSinceLastInstall} times"
-                    : "Ready to launch",
-                FontSize = 11,
-                Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")),
-                Margin = new Thickness(0, 4, 0, 0)
-            };
-
             textStack.Children.Add(nameStack);
             textStack.Children.Add(versionBlock);
-            textStack.Children.Add(lastPlayedBlock);
+            normalContent.Children.Add(textStack.With(row: 1));
 
-            detailsGrid.Children.Add(textStack.With(row: 0));
-            detailsGrid.Children.Add(actionsRow.With(row: 1));
+            // Row 2: Bottom Bar (Loader Pill & Version Pill)
+            Color loaderColor = Color.Parse("#A0A8B8");
+            string loaderDisplay = profile.LoaderDisplay ?? "Vanilla";
+            if (loaderDisplay.Contains("Fabric", StringComparison.OrdinalIgnoreCase))
+                loaderColor = Color.Parse("#C894FF");
+            else if (loaderDisplay.Contains("Forge", StringComparison.OrdinalIgnoreCase))
+                loaderColor = Color.Parse("#FF8A80");
+            else if (loaderDisplay.Contains("NeoForge", StringComparison.OrdinalIgnoreCase))
+                loaderColor = Color.Parse("#FFA726");
+            else if (loaderDisplay.Contains("Vanilla", StringComparison.OrdinalIgnoreCase))
+                loaderColor = Color.Parse("#81C784");
 
-            cardGrid.Children.Add(detailsGrid.With(row: 1));
+            var loaderPill = new Border
+            {
+                BorderBrush = new SolidColorBrush(loaderColor),
+                BorderThickness = new Thickness(1),
+                Background = new SolidColorBrush(Color.FromArgb(20, loaderColor.R, loaderColor.G, loaderColor.B)),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(6, 2),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Child = new TextBlock
+                {
+                    Text = loaderDisplay,
+                    FontSize = 9,
+                    FontWeight = FontWeight.Bold,
+                    Foreground = new SolidColorBrush(loaderColor),
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            };
+
+            var bottomBar = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                VerticalAlignment = VerticalAlignment.Bottom
+            };
+            bottomBar.Children.Add(loaderPill.With(column: 0));
+
+            var shortVersionBlock = new TextBlock
+            {
+                Text = profile.GameVersion ?? "",
+                FontSize = 10,
+                Foreground = new SolidColorBrush(Color.Parse("#8E96A8")),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            bottomBar.Children.Add(shortVersionBlock.With(column: 1));
+            normalContent.Children.Add(bottomBar.With(row: 2));
+
+            // Hover Content Overlay
+            var hoverOverlay = new Grid
+            {
+                Opacity = 0.0,
+                IsHitTestVisible = false,
+                Transitions = new Transitions
+                {
+                    new DoubleTransition { Property = Control.OpacityProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) }
+                }
+            };
+
+            // Console button (>_)
+            var consoleBtn = new Button
+            {
+                Width = 32,
+                Height = 32,
+                CornerRadius = new CornerRadius(16),
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                BorderThickness = new Thickness(0),
+                Content = CreateVectorIcon("logs", 12, "#FFFFFF"),
+                Cursor = new Cursor(StandardCursorType.Hand),
+                Focusable = false
+            };
+            ToolTip.SetTip(consoleBtn, "Console Logs");
+            consoleBtn.Click += (_, _) =>
+            {
+                _selectedProfile = profile;
+                profileListBox.SelectedItem = profile;
+                UpdateLauncherContext();
+                SetActiveSection("workspace");
+            };
+            consoleBtn.PointerEntered += (_, _) => consoleBtn.Background = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255));
+            consoleBtn.PointerExited += (_, _) => consoleBtn.Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
+
+            // Settings button (⚙)
+            var settingsBtn = new Button
+            {
+                Width = 32,
+                Height = 32,
+                CornerRadius = new CornerRadius(16),
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                BorderThickness = new Thickness(0),
+                Content = CreateVectorIcon("settings", 12, "#FFFFFF"),
+                Cursor = new Cursor(StandardCursorType.Hand),
+                Focusable = false
+            };
+            ToolTip.SetTip(settingsBtn, "Instance Settings");
+            settingsBtn.Click += (_, _) => OpenProfileEditor(profile);
+            settingsBtn.PointerEntered += (_, _) => settingsBtn.Background = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255));
+            settingsBtn.PointerExited += (_, _) => settingsBtn.Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
+
+            // Play Now Button
+            var currentAccentVal = Color.Parse(_settings?.AccentColor ?? "#8B5A2B");
+            var hoverPlayBtn = new Button
+            {
+                Height = 34,
+                CornerRadius = new CornerRadius(10),
+                Background = new SolidColorBrush(currentAccentVal),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(14, 0),
+                Content = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 6,
+                    Children =
+                    {
+                        new TextBlock { Text = "▶", FontSize = 10, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center },
+                        new TextBlock { Text = "Play Now", FontSize = 11, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }
+                    }
+                },
+                Cursor = new Cursor(StandardCursorType.Hand),
+                Focusable = false
+            };
+            hoverPlayBtn.Click += async (_, _) =>
+            {
+                _selectedProfile = profile;
+                profileListBox.SelectedItem = profile;
+                UpdateLauncherContext();
+                await LaunchAsync();
+            };
+            hoverPlayBtn.PointerEntered += (_, _) =>
+            {
+                hoverPlayBtn.Background = new SolidColorBrush(Color.FromArgb(200, currentAccentVal.R, currentAccentVal.G, currentAccentVal.B));
+            };
+            hoverPlayBtn.PointerExited += (_, _) =>
+            {
+                hoverPlayBtn.Background = new SolidColorBrush(currentAccentVal);
+            };
+
+            var hoverStack = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children = { consoleBtn, hoverPlayBtn, settingsBtn }
+            };
+            hoverOverlay.Children.Add(hoverStack);
+
+            var cardGrid = new Grid();
+            cardGrid.Children.Add(normalContent);
+            cardGrid.Children.Add(hoverOverlay);
+            card.Child = cardGrid;
 
             card.Tag = isFugo; // Tag for UpdateInstanceCardSelection to know if it's golden
-            
+
             // Dynamic card hover animation
             card.PointerEntered += (_, _) =>
             {
+                normalContent.Opacity = 0.15;
+                hoverOverlay.Opacity = 1.0;
+                hoverOverlay.IsHitTestVisible = true;
                 card.RenderTransform = TransformOperations.Parse("scale(1.025)");
                 if (isFugo)
                 {
@@ -4365,22 +4425,27 @@ public sealed class MainWindow : Window
                         GradientStops =
                         {
                             new GradientStop(Color.Parse("#FFE066"), 0.0),
-                            new GradientStop(Color.Parse("#FFB330"), 0.5),
+                            new GradientStop(Color.Parse("#38D6C4"), 0.5),
                             new GradientStop(Color.Parse("#FFE066"), 1.0)
                         }
                     };
+                    card.BorderThickness = new Thickness(2);
                 }
                 else
                 {
                     if (!string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal))
                     {
                         card.BorderBrush = new SolidColorBrush(Color.Parse("#38D6C4"));
+                        card.BorderThickness = new Thickness(2);
                     }
                 }
                 card.Background = new SolidColorBrush(Color.FromArgb(200, 16, 22, 38));
             };
             card.PointerExited += (_, _) =>
             {
+                normalContent.Opacity = 1.0;
+                hoverOverlay.Opacity = 0.0;
+                hoverOverlay.IsHitTestVisible = false;
                 var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
                 card.RenderTransform = TransformOperations.Parse("scale(1.0)");
                 if (isFugo)
@@ -4391,8 +4456,9 @@ public sealed class MainWindow : Window
                         {
                             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
                             EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                            GradientStops = { new GradientStop(Color.Parse("#FFE066"), 0.0), new GradientStop(Color.Parse("#FFB330"), 0.5), new GradientStop(Color.Parse("#FFE066"), 1.0) }
+                            GradientStops = { new GradientStop(Color.Parse("#FFE066"), 0.0), new GradientStop(Color.Parse("#38D6C4"), 0.5), new GradientStop(Color.Parse("#FFE066"), 1.0) }
                         };
+                        card.BorderThickness = new Thickness(2);
                     }
                     else
                     {
@@ -4400,8 +4466,9 @@ public sealed class MainWindow : Window
                         {
                             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
                             EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                            GradientStops = { new GradientStop(Color.Parse("#D4AF37"), 0.0), new GradientStop(Color.Parse("#AA7C11"), 1.0) }
+                            GradientStops = { new GradientStop(Color.Parse("#5B21B6"), 0.0), new GradientStop(Color.Parse("#3730A3"), 1.0) }
                         };
+                        card.BorderThickness = new Thickness(1);
                     }
                 }
                 else
@@ -4409,13 +4476,23 @@ public sealed class MainWindow : Window
                     if (string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal))
                     {
                         card.BorderBrush = new SolidColorBrush(Color.Parse(currentAccent));
+                        card.BorderThickness = new Thickness(2);
                     }
                     else
                     {
                         card.BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
+                        card.BorderThickness = new Thickness(1);
                     }
                 }
-                card.Background = new SolidColorBrush(Color.FromArgb(160, 10, 14, 26));
+
+                if (coverBrush != Brushes.Transparent)
+                {
+                    card.Background = coverBrush;
+                }
+                else
+                {
+                    card.Background = new SolidColorBrush(Color.FromArgb(160, 10, 14, 26));
+                }
             };
 
             // Register for selection highlight tracking
@@ -4424,11 +4501,25 @@ public sealed class MainWindow : Window
             // Apply initial selected state if this profile is the active one
             if (string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal))
             {
-                var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
-                Color accentColorParsed = Color.Parse(currentAccent);
-                card.BorderBrush = new SolidColorBrush(accentColorParsed);
-                card.BorderThickness = new Thickness(2);
-                card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, accentColorParsed.R, accentColorParsed.G, accentColorParsed.B), OffsetX = 0, OffsetY = 0 });
+                if (isFugo)
+                {
+                    card.BorderBrush = new LinearGradientBrush
+                    {
+                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                        GradientStops = { new GradientStop(Color.Parse("#FFE066"), 0.0), new GradientStop(Color.Parse("#38D6C4"), 0.5), new GradientStop(Color.Parse("#FFE066"), 1.0) }
+                    };
+                    card.BorderThickness = new Thickness(2);
+                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(120, 56, 214, 196), OffsetX = 0, OffsetY = 0 });
+                }
+                else
+                {
+                    var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
+                    Color accentColorParsed = Color.Parse(currentAccent);
+                    card.BorderBrush = new SolidColorBrush(accentColorParsed);
+                    card.BorderThickness = new Thickness(2);
+                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, accentColorParsed.R, accentColorParsed.G, accentColorParsed.B), OffsetX = 0, OffsetY = 0 });
+                }
             }
 
             card.DoubleTapped += (s, e) =>
@@ -4522,6 +4613,7 @@ public sealed class MainWindow : Window
                 Padding = new Thickness(6),
                 CornerRadius = new CornerRadius(6)
             };
+            ToolTip.SetTip(deleteBtn, "Delete World");
             deleteBtn.Click += async (_, _) =>
             {
                 var confirm = await DialogService.ShowConfirmAsync(this, "Delete World", $"Are you sure you want to delete world '{worldItem.Name}' permanently?");
@@ -4735,6 +4827,7 @@ public sealed class MainWindow : Window
                 Padding = new Thickness(6),
                 CornerRadius = new CornerRadius(6)
             };
+            ToolTip.SetTip(deleteBtn, "Delete Resource Pack");
             deleteBtn.Click += async (_, _) =>
             {
                 var confirm = await DialogService.ShowConfirmAsync(this, "Delete Pack", $"Are you sure you want to delete resource pack '{packItem.Name}' permanently?");
@@ -4985,6 +5078,7 @@ public sealed class MainWindow : Window
                     new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Easing = new BackEaseOut(), Duration = TimeSpan.FromMilliseconds(250) }
                 }
             };
+            ToolTip.SetTip(deleteBtn, "Delete Mod");
             deleteBtn.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
             deleteBtn.PointerEntered += (s, e) =>
             {
@@ -5659,6 +5753,73 @@ public sealed class MainWindow : Window
             catch {}
         };
 
+        var secHexInput = new TextBox
+        {
+            Watermark = "#8F70FF",
+            Text = _settings.SecondaryAccentColor ?? "#8F70FF",
+            Width = 140,
+            Height = 32,
+            CornerRadius = new CornerRadius(6),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            FontSize = 12
+        };
+
+        var secHexPreview = new Border
+        {
+            Width = 24,
+            Height = 24,
+            CornerRadius = new CornerRadius(12),
+            BorderBrush = Brushes.White,
+            BorderThickness = new Thickness(1),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Color.Parse(_settings.SecondaryAccentColor ?? "#8F70FF"))
+        };
+
+        var secHexApplyBtn = new Button
+        {
+            Content = "Apply",
+            Height = 32,
+            Padding = new Thickness(16, 0),
+            CornerRadius = new CornerRadius(6),
+            FontSize = 12,
+            FontWeight = FontWeight.Bold
+        };
+
+        void UpdateSecPreview(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return;
+            var hex = text.Trim();
+            if (!hex.StartsWith("#")) hex = "#" + hex;
+            try
+            {
+                var color = Color.Parse(hex);
+                secHexPreview.Background = new SolidColorBrush(color);
+                secHexApplyBtn.IsEnabled = true;
+            }
+            catch
+            {
+                secHexPreview.Background = Brushes.Transparent;
+                secHexApplyBtn.IsEnabled = false;
+            }
+        }
+
+        secHexInput.TextChanged += (s, e) => UpdateSecPreview(secHexInput.Text ?? "");
+
+        secHexApplyBtn.Click += (_, _) => {
+            var hex = secHexInput.Text?.Trim() ?? "";
+            if (!hex.StartsWith("#")) hex = "#" + hex;
+            try
+            {
+                Color.Parse(hex); // validate
+                _settings.SecondaryAccentColor = hex;
+                _settingsStore.Save(_settings);
+                InvalidateUiCache();
+                Content = BuildRoot();
+                SetActiveSection("settings");
+            }
+            catch {}
+        };
+
         var colorCard = CreateSubCard("Theme & Appearance", new StackPanel
         {
             Spacing = 16,
@@ -5695,6 +5856,37 @@ public sealed class MainWindow : Window
                         hexInput,
                         hexPreview,
                         hexApplyBtn
+                    }
+                },
+                new TextBlock { Text = "Pick a secondary accent color for the launcher UI.", Foreground = new SolidColorBrush(Color.Parse("#B0BACF")), FontSize = 14, Margin = new Thickness(0, 8, 0, 0) },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 12,
+                    Children =
+                    {
+                        CreateSecondaryColorPreset("#8B5A2B"),
+                        CreateSecondaryColorPreset("#FF5B5B"),
+                        CreateSecondaryColorPreset("#5BFF85"),
+                        CreateSecondaryColorPreset("#FFB85B"),
+                        CreateSecondaryColorPreset("#5BC2FF"),
+                        CreateSecondaryColorPreset("#FF5BE2"),
+                        CreateSecondaryColorPreset("#FFE15B"),
+                        CreateSecondaryColorPreset("#B55BFF"),
+                        CreateSecondaryColorPreset("#5BFFDE"),
+                        CreateSecondaryColorPreset("#E2E8F0")
+                    }
+                },
+                new TextBlock { Text = "Or enter a custom HEX code:", Foreground = new SolidColorBrush(Color.Parse("#B0BACF")), FontSize = 14, Margin = new Thickness(0, 8, 0, 0) },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 12,
+                    Children =
+                    {
+                        secHexInput,
+                        secHexPreview,
+                        secHexApplyBtn
                     }
                 }
             }
@@ -6033,6 +6225,60 @@ public sealed class MainWindow : Window
         return false;
     }
 
+    private bool IsSnapshotVersion(string version)
+    {
+        if (string.IsNullOrEmpty(version)) return false;
+        var lower = version.ToLowerInvariant();
+        if (lower.Contains("pre") || lower.Contains("rc") || lower.Contains("experimental") || lower.Contains("snapshot"))
+            return true;
+        if (lower.Length >= 5 && char.IsDigit(lower[0]) && char.IsDigit(lower[1]) && lower[2] == 'w' && char.IsDigit(lower[3]) && char.IsDigit(lower[4]))
+            return true;
+        return false;
+    }
+
+    private IBrush? AdjustBrushOpacity(IBrush? brush, double opacity)
+    {
+        if (brush == null) return null;
+        if (brush is SolidColorBrush scb)
+        {
+            var c = scb.Color;
+            return new SolidColorBrush(Color.FromArgb((byte)(c.A * opacity), c.R, c.G, c.B));
+        }
+        if (brush is LinearGradientBrush lgb)
+        {
+            var newLgb = new LinearGradientBrush
+            {
+                StartPoint = lgb.StartPoint,
+                EndPoint = lgb.EndPoint,
+                Opacity = lgb.Opacity
+            };
+            foreach (var gs in lgb.GradientStops)
+            {
+                var c = gs.Color;
+                newLgb.GradientStops.Add(new GradientStop(Color.FromArgb((byte)(c.A * opacity), c.R, c.G, c.B), gs.Offset));
+            }
+            return newLgb;
+        }
+        if (brush is RadialGradientBrush rgb)
+        {
+            var newRgb = new RadialGradientBrush
+            {
+                Center = rgb.Center,
+                GradientOrigin = rgb.GradientOrigin,
+                RadiusX = rgb.RadiusX,
+                RadiusY = rgb.RadiusY,
+                Opacity = rgb.Opacity
+            };
+            foreach (var gs in rgb.GradientStops)
+            {
+                var c = gs.Color;
+                newRgb.GradientStops.Add(new GradientStop(Color.FromArgb((byte)(c.A * opacity), c.R, c.G, c.B), gs.Offset));
+            }
+            return newRgb;
+        }
+        return brush;
+    }
+
     public void SetActiveSection(string section)
     {
         _activeSection = section;
@@ -6058,24 +6304,16 @@ public sealed class MainWindow : Window
             }
         }
 
-        // Update card opacities
-        Control? activeContainer = null;
-        if (launchVisible) activeContainer = launchSection;
-        else if (modrinthVisible) activeContainer = modrinthSection;
-        else if (profilesVisible) activeContainer = profilesSection;
-        else if (performanceVisible) activeContainer = performanceSection;
-        else if (settingsVisible) activeContainer = settingsSection;
-        else if (layoutVisible) activeContainer = layoutSection;
-        else if (workspaceVisible) activeContainer = workspaceSection;
-
-        if (activeContainer != null)
+        // Update card background/border opacity dynamically
+        // Keeping card panel.Opacity at 1.0 keeps text, images, and buttons fully opaque and readable
+        var targetOpacity = launchVisible ? 1.0 : 0.6;
+        foreach (var panel in _allGlassPanels)
         {
-            foreach (var panel in _allGlassPanels)
+            if (_originalBrushes.TryGetValue(panel, out var orig))
             {
-                if (IsDescendantOf(panel, activeContainer))
-                {
-                    panel.Opacity = launchVisible ? 1.0 : 0.6;
-                }
+                panel.Opacity = 1.0;
+                panel.Background = AdjustBrushOpacity(orig.Bg, targetOpacity);
+                panel.BorderBrush = AdjustBrushOpacity(orig.Border, targetOpacity);
             }
         }
 
@@ -8315,10 +8553,10 @@ public sealed class MainWindow : Window
                     {
                         StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
                         EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                        GradientStops = { new GradientStop(Color.Parse("#FFE066"), 0.0), new GradientStop(Color.Parse("#FFB330"), 0.5), new GradientStop(Color.Parse("#FFE066"), 1.0) }
+                        GradientStops = { new GradientStop(Color.Parse("#FFE066"), 0.0), new GradientStop(Color.Parse("#38D6C4"), 0.5), new GradientStop(Color.Parse("#FFE066"), 1.0) }
                     };
                     card.BorderThickness = new Thickness(2);
-                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, 255, 224, 102), OffsetX = 0, OffsetY = 0 });
+                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(120, 56, 214, 196), OffsetX = 0, OffsetY = 0 });
                 }
                 else
                 {
@@ -8326,7 +8564,7 @@ public sealed class MainWindow : Window
                     {
                         StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
                         EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                        GradientStops = { new GradientStop(Color.Parse("#D4AF37"), 0.0), new GradientStop(Color.Parse("#AA7C11"), 1.0) }
+                        GradientStops = { new GradientStop(Color.Parse("#5B21B6"), 0.0), new GradientStop(Color.Parse("#3730A3"), 1.0) }
                     };
                     card.BorderThickness = new Thickness(1);
                     card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 0, Color = Colors.Transparent, OffsetX = 0, OffsetY = 0 });
@@ -8837,7 +9075,7 @@ public sealed class MainWindow : Window
         }
 
         _selectedProfile.Name = nextName;
-        _selectedProfile.GameDirectoryOverride = string.IsNullOrWhiteSpace(profileGameDirInput.Text) ? null : profileGameDirInput.Text.Trim();
+        _selectedProfile.GameDirectoryOverride = string.IsNullOrWhiteSpace(profileGameDirInput.Text) ? string.Empty : profileGameDirInput.Text.Trim();
         _profileStore.Save(_selectedProfile);
         RefreshProfiles(_selectedProfile);
         _instanceEditorOverlay.IsVisible = false;
@@ -9131,6 +9369,11 @@ public sealed class MainWindow : Window
             var projectType = modrinthProjectTypeCombo.SelectedItem?.ToString()?.ToLowerInvariant() ?? "mod";
             var gameVersion = string.IsNullOrWhiteSpace(modrinthVersionInput.Text) ? null : modrinthVersionInput.Text.Trim();
             var loader = NormalizeLoaderFilter();
+            if (projectType == "shader")
+            {
+                gameVersion = null;
+                loader = null;
+            }
             var source = "Modrinth";
             
             Task<IReadOnlyList<ModrinthProject>>? modrinthTask = null;
@@ -9400,6 +9643,233 @@ public sealed class MainWindow : Window
     }
 
     private Control BuildServerListScreen()
+    {
+        var accent = Color.Parse(_settings.AccentColor ?? "#8B5A2B");
+        var servers = _localServers ?? [];
+        var online = servers.Count(s => _serverProcesses.TryGetValue(s.Id, out var process) && !process.HasExited);
+        var storage = servers.Sum(s => GetServerStorageBytes(s.FolderPath));
+
+        Border Metric(string label, string value) => new()
+        {
+            Padding = new Thickness(16, 8),
+            BorderBrush = new SolidColorBrush(Color.Parse("#252536")), BorderThickness = new Thickness(0, 0, 1, 0),
+            Child = new StackPanel { Spacing = 2, Children = {
+                new TextBlock { Text = label.ToUpperInvariant(), FontSize = 10, FontWeight = FontWeight.SemiBold, Foreground = new SolidColorBrush(Color.Parse("#7E7C91")) },
+                new TextBlock { Text = value, FontSize = 17, FontWeight = FontWeight.Bold, Foreground = Brushes.White }
+            }}
+        };
+
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 12) };
+        header.Children.Add(new TextBlock { Text = "Servers", FontSize = 26, FontWeight = FontWeight.Bold, Foreground = Brushes.White });
+        header.Children.Add(new Border
+        {
+            CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(Color.Parse("#15141D")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#29273A")),
+            BorderThickness = new Thickness(1),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Children = { Metric("Total servers", servers.Count.ToString()), Metric("Online", online.ToString()), Metric("Storage", FormatServerStorage(storage)) }
+            }.With(column: 1)
+        }.With(column: 1));
+
+        var table = new StackPanel { Spacing = 0 };
+        table.Children.Add(new Grid { ColumnDefinitions = GetServerTableColumns(), Margin = new Thickness(18, 10), Children = {
+            new TextBlock { Text = "SERVER", FontSize = 10, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(Color.Parse("#777488")) },
+            new TextBlock { Text = "VERSION", FontSize = 10, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(Color.Parse("#777488")) }.With(column: 1),
+            new TextBlock { Text = "PORT", FontSize = 10, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(Color.Parse("#777488")) }.With(column: 2),
+            new TextBlock { Text = "LAST ONLINE", FontSize = 10, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(Color.Parse("#777488")) }.With(column: 3)
+        }});
+
+        foreach (var server in servers.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
+            table.Children.Add(CreateServerTableRow(server, accent));
+
+        if (servers.Count == 0)
+            table.Children.Add(new Border { Padding = new Thickness(24), Child = new TextBlock { Text = "No local servers yet. Use the tool below to create one.", Foreground = new SolidColorBrush(Color.Parse("#9693A6")), HorizontalAlignment = HorizontalAlignment.Center } });
+
+        var addBtn = CreatePrimaryButton("Create server", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+        addBtn.Height = 36; addBtn.MinWidth = 142; addBtn.Padding = new Thickness(14, 0); addBtn.CornerRadius = new CornerRadius(7);
+        addBtn.Click += (_, _) => { _activeServerScreen = "create"; RefreshLayoutSection(); };
+        var addTool = new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.Parse("#4A465E")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(9),
+            Padding = new Thickness(16, 12),
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(28, accent.R, accent.G, accent.B), 0),
+                    new GradientStop(Color.FromArgb(12, 20, 18, 28), 1)
+                }
+            },
+            Child = new Grid
+            {
+                Children =
+                {
+                    new Border
+                    {
+                        Padding = new Thickness(14, 10),
+                        Child = new Grid
+                        {
+                            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                            ColumnSpacing = 12,
+                            Children =
+                            {
+                                CreateNavigationIcon("plus", 20, new SolidColorBrush(accent)),
+                                (new StackPanel { Spacing = 2, Children = { new TextBlock { Text = "Add new server", FontWeight = FontWeight.Bold, Foreground = Brushes.White }, new TextBlock { Text = "Create a local Vanilla, Fabric, Forge, or Paper server.", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#9693A6")) } } }).With(column: 1),
+                                addBtn.With(column: 2)
+                            }
+                        }
+                    },
+                    new Avalonia.Controls.Shapes.Rectangle
+                    {
+                        Stroke = new SolidColorBrush(Color.Parse("#5D5970")),
+                        StrokeThickness = 1,
+                        StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 6, 4 },
+                        Fill = Brushes.Transparent,
+                        RadiusX = 8,
+                        RadiusY = 8,
+                        IsHitTestVisible = false
+                    }
+                }
+            }
+        };
+
+        var panel = new StackPanel { Spacing = 14, Children = {
+            header,
+            new Border { Background = new SolidColorBrush(Color.Parse("#111018")), BorderBrush = new SolidColorBrush(Color.Parse("#29273A")), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), ClipToBounds = true, Child = table },
+            addTool,
+            BuildFriendTunnelsSection()
+        }};
+        return CreateSectionScroller(panel);
+    }
+
+    private Border CreateServerTableRow(LocalServerMetadata server, Color accent)
+    {
+        var isOnline = _serverProcesses.TryGetValue(server.Id, out var process) && !process.HasExited;
+        var status = isOnline ? "Online" : "Offline";
+        var statusColor = isOnline ? Color.Parse("#4ADE80") : Color.Parse("#6F6B7C");
+        var row = new Border { Background = Brushes.Transparent, BorderBrush = new SolidColorBrush(Color.Parse("#252331")), BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(18, 10) };
+        row.DoubleTapped += (_, _) => OpenServerDashboard(server);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Right };
+        var start = CreatePrimaryButton(isOnline ? "Stop" : "Start", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+        start.Height = 30; start.CornerRadius = new CornerRadius(6); start.Padding = new Thickness(12, 0);
+        start.Click += async (_, _) => { if (isOnline) StopLocalServerAndTunnel(server.Id); else _ = StartLocalServerAsync(server, null, null, null, null, null); await Task.Delay(250); RefreshLayoutSection(); };
+        actions.Children.Add(start);
+        actions.Children.Add(CreateServerGhostAction("settings", "Manage", () => OpenServerDashboard(server)));
+        var delete = CreateServerGhostAction("trash", "Delete", async button => {
+            if (button.Tag as bool? != true) { button.Tag = true; button.Content = "Confirm delete"; button.Foreground = Brushes.White; button.Background = new SolidColorBrush(Color.Parse("#C24155")); return; }
+            await DeleteLocalServerAsync(server); RefreshLayoutSection();
+        });
+        actions.Children.Add(delete);
+        var folderName = string.IsNullOrWhiteSpace(server.FolderPath) ? server.Name : Path.GetFileName(server.FolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.IsNullOrWhiteSpace(folderName)) folderName = server.Name;
+        var info = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 9, Children = {
+            new Border { Width = 7, Height = 7, CornerRadius = new CornerRadius(4), Background = new SolidColorBrush(statusColor), VerticalAlignment = VerticalAlignment.Center },
+            (new StackPanel { Spacing = 2, Children = { new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7, Children = { new TextBlock { Text = server.Name, FontWeight = FontWeight.SemiBold, Foreground = Brushes.White }, new TextBlock { Text = status, FontSize = 11, Foreground = new SolidColorBrush(statusColor), VerticalAlignment = VerticalAlignment.Center } } }, new TextBlock { Text = $"{FormatLoaderName(server.Loader)} · {folderName}", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#888598")) } } }).With(column: 1)
+        }};
+        row.Child = new Grid { ColumnDefinitions = GetServerTableColumns(), VerticalAlignment = VerticalAlignment.Center, Children = { info, new TextBlock { Text = server.Version, FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#B9B6C5")), VerticalAlignment = VerticalAlignment.Center }.With(column: 1), new TextBlock { Text = server.Port, FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#B9B6C5")), VerticalAlignment = VerticalAlignment.Center }.With(column: 2), new TextBlock { Text = FormatServerLastOnline(server.LastOnline), FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#888598")), VerticalAlignment = VerticalAlignment.Center }.With(column: 3), actions.With(column: 4) } };
+        row.PointerEntered += (_, _) => row.Background = new SolidColorBrush(Color.Parse("#191722"));
+        row.PointerExited += (_, _) => row.Background = Brushes.Transparent;
+        return row;
+    }
+
+    private static ColumnDefinitions GetServerTableColumns() => new("*,92,70,120,150");
+
+    private void OpenServerDashboard(LocalServerMetadata server)
+    {
+        _selectedServerId = server.Id;
+        _activeServerScreen = "dashboard";
+        _activeDashboardTab = "overview";
+        RefreshLayoutSection();
+    }
+
+    private Button CreateServerGhostAction(string icon, string label, Action action) => CreateServerGhostAction(icon, label, _ => { action(); return Task.CompletedTask; });
+    private Button CreateServerGhostAction(string icon, string label, Func<Button, Task> action)
+    {
+        var muted = new SolidColorBrush(Color.Parse("#807D90"));
+        var button = new Button { Content = CreateNavigationIcon(icon, 15, muted), Height = 30, MinWidth = 30, Padding = new Thickness(8, 0), Background = Brushes.Transparent, Foreground = muted, BorderBrush = Brushes.Transparent, CornerRadius = new CornerRadius(6) };
+        button.PointerEntered += (_, _) => { if (button.Tag as bool? != true) { button.Content = label; button.Padding = new Thickness(9, 0); button.Foreground = Brushes.White; button.Background = new SolidColorBrush(Color.Parse("#272432")); } };
+        button.PointerExited += (_, _) => { if (button.Tag as bool? != true) { button.Content = CreateNavigationIcon(icon, 15, muted); button.Padding = new Thickness(8, 0); button.Foreground = muted; button.Background = Brushes.Transparent; } };
+        button.Click += async (_, _) => await action(button);
+        ToolTip.SetTip(button, label); return button;
+    }
+
+    private static long GetServerStorageBytes(string path) { try { return Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length) : 0; } catch { return 0; } }
+    private static string FormatServerStorage(long bytes) => bytes < 1024 * 1024 ? $"{bytes / 1024d:0.#} KB" : bytes < 1024L * 1024 * 1024 ? $"{bytes / 1024d / 1024:0.#} MB" : $"{bytes / 1024d / 1024 / 1024:0.#} GB";
+    private static string FormatServerLastOnline(DateTime? value) => value is null ? "Never" : value.Value.ToLocalTime().ToString("MMM d, HH:mm");
+    private static string FormatLoaderName(string loader)
+    {
+        if (string.IsNullOrWhiteSpace(loader)) return "Unknown";
+        if (loader.Equals("vanilla", StringComparison.OrdinalIgnoreCase)) return "Vanilla";
+        if (loader.Equals("paper", StringComparison.OrdinalIgnoreCase)) return "Paper";
+        if (loader.Equals("fabric", StringComparison.OrdinalIgnoreCase)) return "Fabric";
+        if (loader.Equals("forge", StringComparison.OrdinalIgnoreCase)) return "Forge";
+        if (loader.Equals("neoforge", StringComparison.OrdinalIgnoreCase)) return "NeoForge";
+        if (loader.Equals("quilt", StringComparison.OrdinalIgnoreCase)) return "Quilt";
+        return char.ToUpperInvariant(loader[0]) + loader[1..].ToLowerInvariant();
+    }
+    private async Task DeleteLocalServerAsync(LocalServerMetadata server)
+    {
+        StopLocalServerAndTunnel(server.Id, force: true);
+
+        var root = Path.Combine(AppRuntime.DataDirectory, "local-servers");
+        var folderCandidates = new[]
+        {
+            server.FolderPath,
+            Path.Combine(root, SanitizeServerFolderName(server.Name))
+        }.Where(path => !string.IsNullOrWhiteSpace(path))
+         .Distinct(StringComparer.OrdinalIgnoreCase)
+         .ToList();
+
+        for (var attempt = 0; attempt < 12; attempt++)
+        {
+            var allDeleted = true;
+            foreach (var candidate in folderCandidates)
+            {
+                if (!Directory.Exists(candidate)) continue;
+                allDeleted = false;
+                try
+                {
+                    Directory.Delete(candidate, recursive: true);
+                }
+                catch
+                {
+                    allDeleted = false;
+                }
+            }
+
+            if (allDeleted) break;
+            await Task.Delay(150);
+        }
+
+        _localServers?.RemoveAll(s => s.Id == server.Id);
+        if (_selectedServerId == server.Id) _selectedServerId = "";
+        SaveServers();
+    }
+    private static string SanitizeServerFolderName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var folder = new string((name ?? "").Trim().Select(c => invalid.Contains(c) ? '-' : c).ToArray()).Trim('.', ' ');
+        return string.IsNullOrWhiteSpace(folder) ? "Server" : folder;
+    }
+    private string GetServerFolderPath(string name)
+    {
+        var root = Path.Combine(AppRuntime.DataDirectory, "local-servers");
+        var folder = SanitizeServerFolderName(name);
+        var candidate = Path.Combine(root, folder);
+        var suffix = 2;
+        while (Directory.Exists(candidate) || _localServers?.Any(s => string.Equals(s.FolderPath, candidate, StringComparison.OrdinalIgnoreCase)) == true)
+            candidate = Path.Combine(root, $"{folder} {suffix++}");
+        return candidate;
+    }
+
+    private Control BuildLegacyServerListScreen()
     {
         var mainPanel = new StackPanel { Spacing = 20 };
 
@@ -9803,38 +10273,24 @@ public sealed class MainWindow : Window
 
     private Control BuildFriendTunnelsSection()
     {
-        var contentStack = new StackPanel { Spacing = 14 };
+        var contentStack = new StackPanel { Spacing = 12 };
+        var accent = Color.Parse(_settings.AccentColor ?? "#8B5A2B");
 
-        // Header Grid placing Title + Subtitle on the left and controls on the right
-        var headerGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 4) };
-
-        var titleBlock = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        titleBlock.Children.Add(new TextBlock
+        var actionsPanel = new Grid
         {
-            Text = "🎮 Friend Servers",
-            FontSize = 14,
-            FontWeight = FontWeight.Bold,
-            Foreground = Brushes.White
-        });
-        titleBlock.Children.Add(new TextBlock
-        {
-            Text = "Connect directly to active multiplayer servers hosted by your friends.",
-            FontSize = 11,
-            Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")),
-            TextWrapping = TextWrapping.Wrap
-        });
-        headerGrid.Children.Add(titleBlock.With(column: 0));
-
-        var actionsPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
+        };
 
         var resolveInput = new TextBox 
         { 
-            Watermark = "Enter Invite Code...", 
+            Watermark = "Enter invite code...", 
             MinWidth = 160, 
             Height = 34, 
             VerticalAlignment = VerticalAlignment.Center,
             Background = new SolidColorBrush(Color.FromArgb(30, 0, 0, 0)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(55, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(55, accent.R, accent.G, accent.B)),
             BorderThickness = new Thickness(1.5),
             CornerRadius = new CornerRadius(6),
             Foreground = Brushes.White,
@@ -9857,12 +10313,48 @@ public sealed class MainWindow : Window
         refreshBtn.Foreground = new SolidColorBrush(Color.Parse("#38D6C4"));
         refreshBtn.BorderBrush = new SolidColorBrush(Color.Parse("#38D6C4"));
 
-        actionsPanel.Children.Add(resolveInput);
-        actionsPanel.Children.Add(resolveBtn);
-        actionsPanel.Children.Add(refreshBtn);
+        actionsPanel.Children.Add(new Grid
+        {
+            Children =
+            {
+                new Border
+                {
+                    Padding = new Thickness(14, 10),
+                    Child = new Grid
+                    {
+                        ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                        ColumnSpacing = 10,
+                        Children =
+                        {
+                            CreateNavigationIcon("server", 18, new SolidColorBrush(accent)),
+                            (new StackPanel
+                            {
+                                Spacing = 2,
+                                Children =
+                                {
+                                    new TextBlock { Text = "Friend servers", FontWeight = FontWeight.Bold, Foreground = Brushes.White },
+                                    new TextBlock { Text = "Connect directly with an invite code.", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#9693A6")) }
+                                }
+                            }).With(column: 1),
+                            (new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { resolveInput, resolveBtn } }).With(column: 2)
+                        }
+                    }
+                },
+                new Avalonia.Controls.Shapes.Rectangle
+                {
+                    Stroke = new SolidColorBrush(Color.Parse("#5D5970")),
+                    StrokeThickness = 1,
+                    StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 6, 4 },
+                    Fill = Brushes.Transparent,
+                    RadiusX = 8,
+                    RadiusY = 8,
+                    IsHitTestVisible = false
+                }
+            }
+        }.With(column: 0));
+        actionsPanel.Children.Add(refreshBtn.With(column: 1));
 
-        headerGrid.Children.Add(actionsPanel.With(column: 1));
-        contentStack.Children.Add(headerGrid);
+        contentStack.Children.Add(actionsPanel);
 
         var listContainer = new StackPanel { Spacing = 10 };
         contentStack.Children.Add(listContainer);
@@ -10053,7 +10545,16 @@ public sealed class MainWindow : Window
         // Initial async load
         Task.Run(() => loadTunnels());
 
-        return CreateGlassBox("", contentStack);
+        var toolCard = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(60, 10, 12, 18)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(18),
+            Child = contentStack
+        };
+        return toolCard;
     }
 
     private async Task ImportWorldForServerAsync(LocalServerMetadata server)
@@ -10556,12 +11057,14 @@ public sealed class MainWindow : Window
 
     private Control BuildCreateServerScreen()
     {
-        var mainPanel = new StackPanel { Spacing = 20, MaxWidth = 640 };
+        var accent = Color.Parse(_settings.AccentColor ?? "#8B5A2B");
+        var mainPanel = new StackPanel { Spacing = 18, MaxWidth = 980 };
 
         // Back Button & Header
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(0, 0, 0, 10) };
         var backBtn = CreateSecondaryButton("← Back");
-        backBtn.Height = 44;
+        backBtn.Height = 42;
+        backBtn.Padding = new Thickness(16, 0);
         backBtn.CornerRadius = new CornerRadius(10);
         backBtn.Click += (_, _) =>
         {
@@ -10571,14 +11074,130 @@ public sealed class MainWindow : Window
         header.Children.Add(backBtn.With(column: 0));
         header.Children.Add(new TextBlock
         {
-            Text = "New Server",
-            FontSize = 24,
+            Text = "Create Server",
+            FontSize = 26,
             FontWeight = FontWeight.Bold,
             Foreground = Brushes.White,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(15, 0, 0, 0)
         }.With(column: 1));
         mainPanel.Children.Add(header);
+
+        var heroTitle = new TextBlock
+        {
+            Text = "Bring a new world online",
+            FontSize = 28,
+            FontWeight = FontWeight.Bold,
+            Foreground = Brushes.White,
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        var heroSubtitle = new TextBlock
+        {
+            Text = "Pick the runtime, invite path, and memory profile. Fugo prepares the folder, tunnel, and server config from this launch plan.",
+            FontSize = 13,
+            Foreground = new SolidColorBrush(Color.Parse("#B7B3C7")),
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 430
+        };
+
+        Border HeroChip(string label, string value) => new()
+        {
+            Background = new SolidColorBrush(Color.FromArgb(28, accent.R, accent.G, accent.B)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, accent.R, accent.G, accent.B)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10, 7),
+            Child = new StackPanel
+            {
+                Spacing = 1,
+                Children =
+                {
+                    new TextBlock { Text = label.ToUpperInvariant(), FontSize = 9, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(Color.Parse("#87849A")) },
+                    new TextBlock { Text = value, FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Brushes.White }
+                }
+            }
+        };
+
+        var heroPanel = new Border
+        {
+            CornerRadius = new CornerRadius(14),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, accent.R, accent.G, accent.B)),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(22),
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(70, accent.R, accent.G, accent.B), 0),
+                    new GradientStop(Color.Parse("#14121C"), 0.55),
+                    new GradientStop(Color.Parse("#0B0E15"), 1)
+                }
+            },
+            BoxShadow = new BoxShadows(new BoxShadow { Blur = 28, Color = Color.FromArgb(36, accent.R, accent.G, accent.B), OffsetX = 0, OffsetY = 10 }),
+            Child = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                ColumnSpacing = 18,
+                Children =
+                {
+                    new StackPanel
+                    {
+                        Spacing = 12,
+                        Children =
+                        {
+                            new Border
+                            {
+                                Width = 44,
+                                Height = 44,
+                                CornerRadius = new CornerRadius(12),
+                                Background = new SolidColorBrush(Color.FromArgb(40, accent.R, accent.G, accent.B)),
+                                BorderBrush = new SolidColorBrush(Color.FromArgb(90, accent.R, accent.G, accent.B)),
+                                BorderThickness = new Thickness(1),
+                                Child = CreateNavigationIcon("server", 22, new SolidColorBrush(accent))
+                            },
+                            heroTitle,
+                            heroSubtitle,
+                            new StackPanel
+                            {
+                                Orientation = Orientation.Horizontal,
+                                Spacing = 8,
+                                Children =
+                                {
+                                    HeroChip("Default port", "25565"),
+                                    HeroChip("Access", "Tunnel ready"),
+                                    HeroChip("Folder", "Named server")
+                                }
+                            }
+                        }
+                    },
+                    new Border
+                    {
+                        Width = 210,
+                        MinHeight = 150,
+                        CornerRadius = new CornerRadius(12),
+                        Background = new SolidColorBrush(Color.FromArgb(38, 255, 255, 255)),
+                        BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                        BorderThickness = new Thickness(1),
+                        Padding = new Thickness(18),
+                        Child = new StackPanel
+                        {
+                            Spacing = 10,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Children =
+                            {
+                                new TextBlock { Text = "READY", FontSize = 10, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(Color.Parse("#8C88A0")) },
+                                new TextBlock { Text = "Local host", FontSize = 22, FontWeight = FontWeight.Bold, Foreground = Brushes.White },
+                                new TextBlock { Text = "Shareable when tunnel is enabled", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#B7B3C7")), TextWrapping = TextWrapping.Wrap }
+                            }
+                        }
+                    }.With(column: 1)
+                }
+            }
+        };
+        mainPanel.Children.Add(heroPanel);
 
         // --- FORM FIELDS ---
         var nameInput = CreateTextBox();
@@ -10648,8 +11267,9 @@ public sealed class MainWindow : Window
             Margin = new Thickness(0, 4, 0, 8)
         };
 
-        var createBtn = CreatePrimaryButton("Create Server", "#38D6C4", Colors.Black);
-        createBtn.Height = 44;
+        var createBtn = CreatePrimaryButton("Create Server", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+        createBtn.Height = 48;
+        createBtn.Padding = new Thickness(18, 0);
         createBtn.CornerRadius = new CornerRadius(12);
         createBtn.FontWeight = FontWeight.Bold;
         createBtn.Click += async (_, _) =>
@@ -10693,7 +11313,7 @@ public sealed class MainWindow : Window
                 OnlineMode = onlineCheck.IsChecked ?? false,
                 EmptyTimeoutMinutes = 30.0,
                 PlayerTimeoutHours = double.TryParse(playerTimeoutInput.Text, out var ptVal) ? ptVal : 2.0,
-                FolderPath = Path.Combine(AppRuntime.DataDirectory, "local-servers", id),
+                FolderPath = GetServerFolderPath(name),
                 InviteCode = inviteInput.Text?.Trim() ?? "",
                 AllowedPlayers = allowedList,
                 AutoInvite = false
@@ -10726,22 +11346,22 @@ public sealed class MainWindow : Window
 
         var formCard = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(235, 10, 12, 18)),
+            Background = new SolidColorBrush(Color.FromArgb(235, 13, 12, 18)),
             BorderBrush = new LinearGradientBrush
             {
                 StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
                 EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
                 GradientStops =
                 {
-                    new GradientStop(Color.FromArgb(50, 56, 214, 196), 0),
+                    new GradientStop(Color.FromArgb(70, accent.R, accent.G, accent.B), 0),
                     new GradientStop(Color.FromArgb(10, 13, 17, 28), 1)
                 }
             },
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16),
+            CornerRadius = new CornerRadius(14),
             Padding = new Thickness(24),
             Child = formContent,
-            BoxShadow = new BoxShadows(new BoxShadow { Blur = 16, Color = Color.FromArgb(15, 56, 214, 196), OffsetX = 0, OffsetY = 4 })
+            BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(18, accent.R, accent.G, accent.B), OffsetX = 0, OffsetY = 6 })
         };
         mainPanel.Children.Add(formCard);
 
@@ -10750,6 +11370,20 @@ public sealed class MainWindow : Window
 
     private Control BuildServerDashboardScreen(LocalServerMetadata server)
     {
+        var isServerActive = _serverProcesses.TryGetValue(server.Id, out var activeProc) && !activeProc.HasExited;
+
+        var FormatLoader = new Func<string, string>(loader =>
+        {
+            if (string.IsNullOrEmpty(loader)) return "";
+            if (loader.Equals("vanilla", StringComparison.OrdinalIgnoreCase)) return "Vanilla";
+            if (loader.Equals("paper", StringComparison.OrdinalIgnoreCase)) return "Paper";
+            if (loader.Equals("fabric", StringComparison.OrdinalIgnoreCase)) return "Fabric";
+            if (loader.Equals("forge", StringComparison.OrdinalIgnoreCase)) return "Forge";
+            if (loader.Equals("neoforge", StringComparison.OrdinalIgnoreCase)) return "NeoForge";
+            if (loader.Equals("quilt", StringComparison.OrdinalIgnoreCase)) return "Quilt";
+            return char.ToUpper(loader[0]) + loader.Substring(1).ToLower();
+        });
+
         var mainPanel = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
 
         // Async retrieve public IP Address
@@ -10800,636 +11434,970 @@ public sealed class MainWindow : Window
         var isRunning = _serverProcesses.ContainsKey(server.Id) && !_serverProcesses[server.Id].HasExited;
         var statusLabelText = _serverStatuses.ContainsKey(server.Id) ? _serverStatuses[server.Id] : (isRunning ? "Running" : "Offline");
 
+        Color statusColor;
+        if (statusLabelText == "Running")
+        {
+            statusColor = Color.Parse("#00FF87");
+        }
+        else if (statusLabelText == "Starting...")
+        {
+            statusColor = Color.Parse("#FFB86C");
+        }
+        else
+        {
+            statusColor = Color.Parse("#FF5555");
+        }
+
         var statusLabel = new TextBlock
         {
             Text = statusLabelText.ToUpper(),
             FontWeight = FontWeight.Bold,
             FontSize = 10,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        Color statusColor;
-        if (statusLabelText == "Running") statusColor = Color.Parse("#00FF87");
-        else if (statusLabelText == "Starting...") statusColor = Color.Parse("#FFB86C");
-        else statusColor = Color.Parse("#FF5555");
-        statusLabel.Foreground = new SolidColorBrush(statusColor);
-
-        var statusIndicatorDot = new Border
-        {
-            Width = 8, Height = 8,
-            CornerRadius = new CornerRadius(4),
-            Background = statusLabel.Foreground,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        var statusBadge = new Border
-        {
-            Background = new SolidColorBrush(Color.FromArgb(20, statusColor.R, statusColor.G, statusColor.B)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(60, statusColor.R, statusColor.G, statusColor.B)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(10, 5),
+            Foreground = new SolidColorBrush(statusColor),
             VerticalAlignment = VerticalAlignment.Center,
-            Child = new StackPanel
+            LetterSpacing = 0.5
+        };
+
+        var statusBadge = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children =
             {
-                Orientation = Orientation.Horizontal,
-                Spacing = 6,
-                Children =
+                new Border
                 {
-                    statusIndicatorDot,
-                    statusLabel
-                }
+                    Width = 8,
+                    Height = 8,
+                    CornerRadius = new CornerRadius(4),
+                    Background = new SolidColorBrush(statusColor),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    BoxShadow = new BoxShadows(new BoxShadow
+                    {
+                        Blur = 6,
+                        Color = Color.FromArgb(120, statusColor.R, statusColor.G, statusColor.B),
+                        OffsetX = 0,
+                        OffsetY = 0
+                    })
+                },
+                statusLabel
             }
         };
 
-        var startBtn = CreatePrimaryButton("▶ Start", "#38D6C4", Colors.Black);
-        var stopBtn = CreateSecondaryButton("■ Stop");
+        Button primaryActionBtn;
+        if (statusLabelText == "Running")
+        {
+            primaryActionBtn = CreatePrimaryButton("■ Stop", "#FF5555", Colors.White);
+            primaryActionBtn.Background = new SolidColorBrush(Color.Parse("#FF5555"));
+            primaryActionBtn.BorderThickness = new Thickness(0);
+            primaryActionBtn.Foreground = Brushes.White;
+        }
+        else if (statusLabelText == "Starting...")
+        {
+            primaryActionBtn = CreatePrimaryButton("▲ Starting...", "#FFB86C", Colors.Black);
+            primaryActionBtn.IsEnabled = false;
+            primaryActionBtn.Background = new SolidColorBrush(Color.Parse("#FFB86C"));
+            primaryActionBtn.BorderThickness = new Thickness(0);
+            primaryActionBtn.Foreground = Brushes.Black;
+        }
+        else // Offline
+        {
+            primaryActionBtn = CreatePrimaryButton("▶ Start", "#8F70FF", Colors.White);
+            primaryActionBtn.Background = new SolidColorBrush(Color.Parse("#8F70FF"));
+            primaryActionBtn.BorderThickness = new Thickness(0);
+            primaryActionBtn.Foreground = Brushes.White;
+        }
+
+        primaryActionBtn.Height = 36;
+        primaryActionBtn.CornerRadius = new CornerRadius(8);
+        primaryActionBtn.FontWeight = FontWeight.Bold;
+        primaryActionBtn.MinWidth = 90;
+        primaryActionBtn.Padding = new Thickness(16, 0);
+
         var restartBtn = CreateSecondaryButton("↻ Restart");
-
-        startBtn.Height = 36;
-        startBtn.CornerRadius = new CornerRadius(8);
-        startBtn.FontWeight = FontWeight.Bold;
-        startBtn.MinWidth = 85;
-        startBtn.Padding = new Thickness(12, 0);
-
-        stopBtn.Height = 36;
-        stopBtn.CornerRadius = new CornerRadius(8);
-        stopBtn.FontWeight = FontWeight.Bold;
-        stopBtn.Foreground = new SolidColorBrush(Color.Parse("#FF5555"));
-        stopBtn.BorderBrush = new SolidColorBrush(Color.Parse("#FF5555"));
-        stopBtn.MinWidth = 85;
-        stopBtn.Padding = new Thickness(12, 0);
-
         restartBtn.Height = 36;
         restartBtn.CornerRadius = new CornerRadius(8);
         restartBtn.FontWeight = FontWeight.Bold;
         restartBtn.Foreground = new SolidColorBrush(Color.Parse("#FFB86C"));
         restartBtn.BorderBrush = new SolidColorBrush(Color.Parse("#FFB86C"));
-        restartBtn.MinWidth = 95;
-        restartBtn.Padding = new Thickness(12, 0);
-
-        startBtn.IsEnabled = statusLabelText == "Offline";
-        stopBtn.IsEnabled = statusLabelText == "Running";
+        restartBtn.BorderThickness = new Thickness(1.5);
+        restartBtn.Background = Brushes.Transparent;
+        restartBtn.MinWidth = 80;
+        restartBtn.Padding = new Thickness(16, 0);
         restartBtn.IsEnabled = statusLabelText == "Running";
+        restartBtn.IsVisible = statusLabelText == "Running";
 
-        startBtn.Click += (_, _) =>
+        primaryActionBtn.Click += (_, _) =>
         {
-            _ = StartLocalServerAsync(server, consoleTextBox, statusLabel, startBtn, stopBtn, restartBtn);
-        };
-
-        stopBtn.Click += (_, _) =>
-        {
-            StopLocalServerAndTunnel(server.Id);
+            if (statusLabelText == "Running")
+            {
+                StopLocalServerAndTunnel(server.Id);
+            }
+            else if (statusLabelText == "Offline")
+            {
+                _ = StartLocalServerAsync(server, consoleTextBox, statusLabel, primaryActionBtn, primaryActionBtn, restartBtn);
+            }
         };
 
         restartBtn.Click += async (_, _) =>
         {
             StopLocalServerAndTunnel(server.Id);
             await WaitForServerExitAsync(server.Id);
-            _ = StartLocalServerAsync(server, consoleTextBox, statusLabel, startBtn, stopBtn, restartBtn);
+            _ = StartLocalServerAsync(server, consoleTextBox, statusLabel, primaryActionBtn, primaryActionBtn, restartBtn);
         };
 
-        // --- NEW HORIZONTAL HEADER DOCK LAYOUT ---
-        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 0, 0, 14) };
-        var backBtn = CreateSecondaryButton("← Back");
-        backBtn.Height = 36;
-        backBtn.CornerRadius = new CornerRadius(8);
-        backBtn.MinWidth = 80;
-        backBtn.Padding = new Thickness(12, 0);
-        backBtn.Click += (_, _) =>
+        // ── HEADER ──────────────────────────────────────────────────────────
+        var backBtn = new Button
         {
-            _activeServerScreen = "list";
-            RefreshLayoutSection();
+            Content = "← Back",
+            Height = 32,
+            Padding = new Thickness(12, 0),
+            CornerRadius = new CornerRadius(6),
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
+            Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+            BorderThickness = new Thickness(0),
+            Cursor = new Cursor(StandardCursorType.Hand)
         };
-        header.Children.Add(backBtn.With(column: 0));
+        backBtn.PointerEntered += (s, e) => backBtn.Background = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
+        backBtn.PointerExited  += (s, e) => backBtn.Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255));
+        backBtn.Click += (_, _) => { _activeServerScreen = "list"; _activeDashboardTab = "overview"; RefreshLayoutSection(); };
 
-        var titleBlock = new StackPanel { Spacing = 4, Margin = new Thickness(15, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        var titleRow = new StackPanel
+        // Server icon block (coloured square with first letter)
+        var loaderColor = server.Loader.ToLowerInvariant() switch
         {
-            Orientation = Orientation.Horizontal,
-            Spacing = 12,
-            VerticalAlignment = VerticalAlignment.Center,
-            Children =
+            "paper"    => "#FF5555",
+            "spigot"   => "#FFB86C",
+            "purpur"   => "#BD93F9",
+            "fabric"   => "#50FA7B",
+            "forge"    => "#FF9E3E",
+            "neoforge" => "#FF6E27",
+            "quilt"    => "#8BE9FD",
+            _          => "#8F70FF"
+        };
+        var serverIconBlock = new Border
+        {
+            Width = 52, Height = 52,
+            CornerRadius = new CornerRadius(10),
+            Background = new SolidColorBrush(Color.FromArgb(35,
+                Color.Parse(loaderColor).R,
+                Color.Parse(loaderColor).G,
+                Color.Parse(loaderColor).B)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(60,
+                Color.Parse(loaderColor).R,
+                Color.Parse(loaderColor).G,
+                Color.Parse(loaderColor).B)),
+            BorderThickness = new Thickness(1),
+            Child = new TextBlock
             {
-                new TextBlock { Text = $"{server.Name}", FontSize = 22, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center },
-                statusBadge
+                Text = server.Name.Length > 0 ? server.Name[0].ToString().ToUpper() : "S",
+                FontSize = 22, FontWeight = FontWeight.Black,
+                Foreground = new SolidColorBrush(Color.Parse(loaderColor)),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
             }
         };
-        titleBlock.Children.Add(titleRow);
-        
-        var ipDisplay = _tunnelAddresses.TryGetValue(server.Id, out var tunnelAddr) 
-            ? tunnelAddr 
-            : (string.IsNullOrEmpty(_publicIpAddress) ? "fetching..." : $"{_publicIpAddress}:{server.Port}");
-        var tunnelString = server.UseTunnel ? $" | Tunnel: {(string.IsNullOrEmpty(tunnelAddr) ? "connecting..." : tunnelAddr)}" : "";
-        titleBlock.Children.Add(new TextBlock { Text = $"{server.Version} · {server.Loader}", FontSize = 12, FontWeight = FontWeight.Medium, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")), Margin = new Thickness(0, 4, 0, 2) });
-        titleBlock.Children.Add(new TextBlock { Text = $"Local: localhost:{server.Port}{tunnelString}  ·  Public: {ipDisplay}", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#66758F")) });
-        header.Children.Add(titleBlock.With(column: 1));
 
-        var importWorldBtn = CreateSecondaryButton("⤓ Import World");
-        importWorldBtn.Height = 36;
-        importWorldBtn.CornerRadius = new CornerRadius(8);
-        importWorldBtn.FontWeight = FontWeight.Bold;
-        importWorldBtn.Foreground = new SolidColorBrush(Color.Parse("#BD93F9"));
-        importWorldBtn.BorderBrush = new SolidColorBrush(Color.Parse("#BD93F9"));
-        importWorldBtn.MinWidth = 125;
-        importWorldBtn.Padding = new Thickness(12, 0);
-        importWorldBtn.IsEnabled = statusLabelText == "Offline";
-        importWorldBtn.Click += async (_, _) =>
+        string ipDisplay;
+        string tunnelString;
+        if (isRunning)
         {
-            await ImportWorldForServerAsync(server);
-        };
+            var tunnelAddr = _tunnelAddresses.TryGetValue(server.Id, out var addr) ? addr : "";
+            ipDisplay = !string.IsNullOrEmpty(tunnelAddr) ? tunnelAddr : (string.IsNullOrEmpty(_publicIpAddress) ? "fetching..." : $"{_publicIpAddress}:{server.Port}");
+            tunnelString = server.UseTunnel ? $" · Tunnel: {(string.IsNullOrEmpty(tunnelAddr) ? "connecting..." : tunnelAddr)}" : "";
+        }
+        else
+        {
+            ipDisplay    = "Available once server starts";
+            tunnelString = "";
+        }
 
-        // Copy invite code button (only shown if code is set)
-        var copyInviteBtn = CreatePrimaryButton("❐ Invite Code", _settings.AccentColor ?? "#8B5A2B", Colors.White);
-        copyInviteBtn.Height = 36;
-        copyInviteBtn.CornerRadius = new CornerRadius(8);
-        copyInviteBtn.FontWeight = FontWeight.Bold;
-        copyInviteBtn.MinWidth = 110;
-        copyInviteBtn.Padding = new Thickness(12, 0);
-        copyInviteBtn.IsVisible = !string.IsNullOrEmpty(server.InviteCode);
+        var titleInfo = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
+        // breadcrumb
+        var bc = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        bc.Children.Add(new TextBlock { Text = "Servers", FontSize = 10, Foreground = new SolidColorBrush(Color.Parse("#4E5B73")) });
+        bc.Children.Add(new TextBlock { Text = "›",       FontSize = 10, Foreground = new SolidColorBrush(Color.Parse("#4E5B73")) });
+        bc.Children.Add(new TextBlock { Text = server.Name, FontSize = 10, FontWeight = FontWeight.SemiBold, Foreground = new SolidColorBrush(Color.Parse("#66758F")) });
+        titleInfo.Children.Add(bc);
+
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
+        nameRow.Children.Add(new TextBlock { Text = server.Name, FontSize = 22, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center });
+        nameRow.Children.Add(statusBadge);
+        titleInfo.Children.Add(nameRow);
+        titleInfo.Children.Add(new TextBlock { Text = $"{server.Version} · {FormatLoader(server.Loader)}", FontSize = 11.5, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")) });
+        titleInfo.Children.Add(new TextBlock { Text = $"Local: localhost:{server.Port}  ·  Public: {ipDisplay}", FontSize = 10.5, Foreground = new SolidColorBrush(Color.Parse("#4E5B73")) });
+
+        var titleRow2 = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, VerticalAlignment = VerticalAlignment.Center };
+        titleRow2.Children.Add(serverIconBlock);
+        titleRow2.Children.Add(titleInfo);
+
+        // Action buttons
+        var importWorldBtn = new Button
+        {
+            Content = "⤓ Import", Height = 36, Padding = new Thickness(16, 0),
+            CornerRadius = new CornerRadius(8), FontSize = 12.5, FontWeight = FontWeight.SemiBold,
+            Foreground = new SolidColorBrush(Color.Parse("#8F70FF")),
+            Background = Brushes.Transparent,
+            BorderBrush = new SolidColorBrush(Color.Parse("#8F70FF")),
+            BorderThickness = new Thickness(1.5),
+            IsEnabled = statusLabelText == "Offline",
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        importWorldBtn.PointerEntered += (s, e) => { if (importWorldBtn.IsEnabled) importWorldBtn.Background = new SolidColorBrush(Color.FromArgb(18, 143, 112, 255)); };
+        importWorldBtn.PointerExited  += (s, e) => importWorldBtn.Background = Brushes.Transparent;
+        importWorldBtn.Click += async (_, _) => await ImportWorldForServerAsync(server);
+
+        var copyInviteBtn = new Button
+        {
+            Content = "❐ Invite", Height = 36, Padding = new Thickness(16, 0),
+            CornerRadius = new CornerRadius(8), FontSize = 12.5, FontWeight = FontWeight.SemiBold,
+            Foreground = new SolidColorBrush(Color.Parse("#8F70FF")),
+            Background = Brushes.Transparent,
+            BorderBrush = new SolidColorBrush(Color.Parse("#8F70FF")),
+            BorderThickness = new Thickness(1.5),
+            IsVisible = !string.IsNullOrEmpty(server.InviteCode),
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        copyInviteBtn.PointerEntered += (s, e) => copyInviteBtn.Background = new SolidColorBrush(Color.FromArgb(18, 143, 112, 255));
+        copyInviteBtn.PointerExited  += (s, e) => copyInviteBtn.Background = Brushes.Transparent;
         copyInviteBtn.Click += async (_, _) =>
         {
             CopyToClipboard(server.InviteCode);
             SetButtonText(copyInviteBtn, "✓ Copied!");
             await Task.Delay(1500);
-            SetButtonText(copyInviteBtn, "❐ Invite Code");
+            SetButtonText(copyInviteBtn, "❐ Invite");
         };
 
-        var horizontalControls = new StackPanel
+
+        restartBtn.PointerEntered += (s, e) => { if (restartBtn.IsEnabled) restartBtn.Background = new SolidColorBrush(Color.FromArgb(18, 255, 184, 108)); };
+        restartBtn.PointerExited  += (s, e) => restartBtn.Background = Brushes.Transparent;
+
+        var actionRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        actionRow.Children.Add(importWorldBtn);
+        actionRow.Children.Add(copyInviteBtn);
+        actionRow.Children.Add(restartBtn);
+        actionRow.Children.Add(primaryActionBtn);
+
+        var header = new Grid
         {
-            Orientation = Orientation.Horizontal,
-            Spacing = 10,
-            VerticalAlignment = VerticalAlignment.Center,
-            Children =
-            {
-                startBtn,
-                stopBtn,
-                restartBtn,
-                importWorldBtn,
-                copyInviteBtn
-            }
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            Margin = new Thickness(0, 0, 0, 16)
         };
-        header.Children.Add(horizontalControls.With(column: 2));
+        header.Children.Add(backBtn.With(column: 0));
+        header.Children.Add(titleRow2.With(column: 1));
+        header.Children.Add(actionRow.With(column: 2));
+        titleRow2.Margin = new Thickness(16, 0, 0, 0);
+
         mainPanel.Children.Add(header.With(row: 0));
 
-        // Sidebar Navigation and Control Grid (Spacious 230px left side)
-        var dashboardGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("230,*"), Margin = new Thickness(0) };
 
-        // Navigation tab buttons
-        var tabs = new List<(string, string)>
+        // Bottom Navigation Bar of the servers tab (Horizontal, Icon-only, theme accent colors)
+        var dashboardGrid = new Grid
         {
-            ("Overview", "overview"),
-            ("Console", "console"),
-            ("Performance", "performance"),
-            ("Properties", "properties"),
-            ("Grant Admin", "admin"),
-            ("Options", "settings"),
-            ("View Files", "files")
+            Margin = new Thickness(0)
         };
+
+        var accentColorStr = _settings.AccentColor ?? "#3B82F6";
+        var secondaryAccentColorStr = _settings.SecondaryAccentColor ?? "#8F70FF";
+        var accentColorParsed = Color.Parse(accentColorStr);
+        var secondaryAccentColorParsed = Color.Parse(secondaryAccentColorStr);
+
+        var CreateCustomColorfulIcon = new Func<string, string, Control>((tabKey, hexColor) =>
+        {
+            string pathData = tabKey switch
+            {
+                "overview" => "M4 4h6v8H4zm10 0h6v6h-6zm0 10h6v6h-6zM4 16h6v4H4z", // LayoutDashboard
+                "console" => "M4 17l6-6-6-6M12 19h8", // Terminal
+                "performance" => "M4 4h16v16H4zm5-4v4m6-4v4m5 5h4m-4 6h4M9 20v4m6-4v4M0 9h4m-4 6h4M9 9h6v6H9z", // Cpu
+                "properties" => "M4 21v-7M4 10V3m8 18v-9m0-5V3m8 18v-5m0-7V3M2 14h4m4-7h4m4 9h4", // Sliders
+                "admin" => "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 11l2 2 4-4", // ShieldCheck
+                "settings" => "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", // Settings
+                "files" => "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z", // Folder
+                "mods" => "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", // Package
+                _ => "M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2Z"
+            };
+
+            var brush = new SolidColorBrush(Color.Parse(hexColor));
+
+            var path = new Avalonia.Controls.Shapes.Path
+            {
+                Data = StreamGeometry.Parse(pathData),
+                Width = 20,
+                Height = 20,
+                Stretch = Stretch.Uniform,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                IsHitTestVisible = false
+            };
+
+            if (tabKey == "overview" || tabKey == "console" || tabKey == "performance" || tabKey == "properties" || tabKey == "admin" || tabKey == "files" || tabKey == "settings")
+            {
+                path.Stroke = brush;
+                path.StrokeThickness = 2.0;
+                path.Fill = Brushes.Transparent;
+            }
+            else
+            {
+                path.Fill = brush;
+                path.Stroke = brush;
+                path.StrokeThickness = 1.0;
+            }
+
+            return path;
+        });
+
+        // Navigation tab buttons with icons only
+        var tabs = new List<(string, string)>();
+        tabs.Add(("Overview", "overview"));
+        tabs.Add(("Console", "console"));
+        tabs.Add(("Performance", "performance"));
+        tabs.Add(("Properties", "properties"));
+        tabs.Add(("Grant Admin", "admin"));
+        tabs.Add(("Options", "settings"));
+        tabs.Add(("View Files", "files"));
         var supportsModsOrPlugins = server.Loader.ToLowerInvariant() != "vanilla";
         if (supportsModsOrPlugins)
         {
             tabs.Add(("Mods & Plugins", "mods"));
         }
-        var tabMenuStack = new StackPanel { Spacing = 6, Margin = new Thickness(0, 0, 0, 0) };
+
+        var tabMenuStack = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 12,
+            Margin = new Thickness(0)
+        };
+
         foreach (var tab in tabs)
         {
-            var btn = CreateSecondaryButton(tab.Item1);
-            btn.HorizontalAlignment = HorizontalAlignment.Stretch;
-            btn.Height = 40;
-            btn.CornerRadius = new CornerRadius(8);
-            btn.FontWeight = FontWeight.SemiBold;
-            btn.BorderThickness = new Thickness(0);
-            if (_activeDashboardTab == tab.Item2)
-            {
-                btn.Background = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B"));
-                btn.Foreground = Brushes.White;
-                btn.BorderBrush = Brushes.Transparent;
-            }
-            else
-            {
-                btn.Background = Brushes.Transparent;
-                btn.Foreground = new SolidColorBrush(Color.Parse("#8E96A8"));
-                btn.BorderBrush = Brushes.Transparent;
-            }
+            var isActive = _activeDashboardTab == tab.Item2;
             var targetTab = tab.Item2;
-            btn.Click += (_, _) =>
+
+            // Strict theme-only colors
+            string brandColor = accentColorStr;
+            string hoverColor = secondaryAccentColorStr;
+
+            string iconColor = isActive ? brandColor : "#6F85A2";
+            var iconControl = CreateCustomColorfulIcon(targetTab, iconColor);
+
+            var navBtn = new Button
             {
-                _activeDashboardTab = targetTab;
-                RefreshLayoutSection();
+                Width = 46,
+                Height = 46,
+                CornerRadius = new CornerRadius(12),
+                BorderThickness = new Thickness(isActive ? 1.5 : 1),
+                BorderBrush = isActive 
+                    ? new SolidColorBrush(Color.Parse(brandColor))
+                    : new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                Cursor = new Cursor(StandardCursorType.Hand),
+                Padding = new Thickness(0),
+                Background = isActive
+                    ? new SolidColorBrush(Color.FromArgb(25, Color.Parse(brandColor).R, Color.Parse(brandColor).G, Color.Parse(brandColor).B))
+                    : Brushes.Transparent,
+                Content = iconControl,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center
             };
-            tabMenuStack.Children.Add(btn);
+
+            ToolTip.SetTip(navBtn, tab.Item1);
+
+            if (!isActive)
+            {
+                navBtn.PointerEntered += (s, e) =>
+                {
+                    var hoverColorParsed = Color.Parse(hoverColor);
+                    navBtn.Background = new SolidColorBrush(Color.FromArgb(15, hoverColorParsed.R, hoverColorParsed.G, hoverColorParsed.B));
+                    navBtn.BorderBrush = new SolidColorBrush(Color.FromArgb(60, hoverColorParsed.R, hoverColorParsed.G, hoverColorParsed.B));
+                    if (navBtn.Content is Avalonia.Controls.Shapes.Path path)
+                    {
+                        var hoverBrush = new SolidColorBrush(hoverColorParsed);
+                        if (path.Stroke != null && path.Stroke != Brushes.Transparent) path.Stroke = hoverBrush;
+                        if (path.Fill != null && path.Fill != Brushes.Transparent) path.Fill = hoverBrush;
+                    }
+                };
+                navBtn.PointerExited += (s, e) =>
+                {
+                    navBtn.Background = Brushes.Transparent;
+                    navBtn.BorderBrush = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255));
+                    if (navBtn.Content is Avalonia.Controls.Shapes.Path path)
+                    {
+                        var dimBrush = new SolidColorBrush(Color.Parse("#6F85A2"));
+                        if (path.Stroke != null && path.Stroke != Brushes.Transparent) path.Stroke = dimBrush;
+                        if (path.Fill != null && path.Fill != Brushes.Transparent) path.Fill = dimBrush;
+                    }
+                };
+            }
+
+            navBtn.Click += (_, _) => { _activeDashboardTab = targetTab; RefreshLayoutSection(); };
+            tabMenuStack.Children.Add(navBtn);
         }
 
-        // Wrap Left Column in glass border
         var leftPanelWrapper = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(235, 8, 10, 16)),
+            Background = new SolidColorBrush(Color.FromArgb(150, 15, 20, 32)),
             BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(10),
-            Margin = new Thickness(0, 0, 16, 0),
-            Child = tabMenuStack,
-            BoxShadow = new BoxShadows(new BoxShadow
-            {
-                Blur = 16,
-                Color = Color.FromArgb(20, 0, 0, 0),
-                OffsetX = 0, OffsetY = 6
-            })
+            Padding = new Thickness(12, 8),
+            Margin = new Thickness(0, 0, 0, 10),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            ZIndex = 100,
+            IsHitTestVisible = true,
+            Child = tabMenuStack
         };
-        dashboardGrid.Children.Add(leftPanelWrapper.With(column: 0));
 
         // --- RIGHT COLUMN: ACTIVE TAB COMPONENT ---
-        var contentPanel = new StackPanel { Spacing = 14 };
-
+        var contentPanel = new StackPanel { Spacing = 14, Margin = new Thickness(0, 0, 0, 78) };
 
         if (_activeDashboardTab == "overview")
         {
-            // Real-Time Telemetry Retrieval
-            var isServerActive = _serverProcesses.TryGetValue(server.Id, out var activeProc) && !activeProc.HasExited;
-            
-            // A. RAM Usage
-            double ramUsedGb = 0.0;
-            if (isServerActive && activeProc != null)
+            if (!isServerActive)
             {
-                try
+                // ── OFFLINE HERO LAUNCH CARD ────────────────────────────────
+                // Accent stripe on left edge + content grid
+                var heroGrid = new Grid
                 {
-                    activeProc.Refresh();
-                    ramUsedGb = (double)activeProc.WorkingSet64 / (1024.0 * 1024.0 * 1024.0);
-                }
-                catch {}
-            }
-            
-            // B. CPU Usage
-            var cpuPct = 0;
-            if (isServerActive)
-            {
-                var sec = DateTime.Now.Second;
-                cpuPct = 12 + (sec % 7) + (sec % 3 == 0 ? 4 : 0); // realistic CPU telemetry fluctuation
-            }
-
-            // C. Uptime
-            var uptimeStr = "Offline";
-            if (isServerActive && _serverStartTimes.TryGetValue(server.Id, out var startTime))
-            {
-                var duration = DateTime.Now - startTime;
-                uptimeStr = $"{(int)duration.TotalHours}h {duration.Minutes}m {duration.Seconds}s";
-            }
-
-            // D. Active Players List
-            var activePlayersList = new List<string>();
-            lock (_serverActivePlayers)
-            {
-                if (_serverActivePlayers.TryGetValue(server.Id, out var plist))
-                    activePlayersList = plist.ToList();
-            }
-            var playerCount = activePlayersList.Count;
-
-            // E. TPS / MSPT
-            var tpsVal = isServerActive ? (19.85 + (DateTime.Now.Second % 5 == 0 ? 0.04 : 0.12)).ToString("F2") : "0.00";
-            var msptVal = isServerActive ? (24.2 + (DateTime.Now.Second % 4 == 0 ? 3.1 : 1.4)).ToString("F1") + " ms" : "0.0 ms";
-
-            // 1. Metadata Capsules (Horizontal WrapPanel)
-            var metadataRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
-
-            var CreateBadge = new Func<string, string, Border>((text, icon) =>
-            {
-                var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-                if (!string.IsNullOrEmpty(icon))
-                {
-                    content.Children.Add(new TextBlock { Text = icon, Foreground = new SolidColorBrush(Color.Parse("#38D6C4")), FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
-                }
-                content.Children.Add(new TextBlock { Text = text, Foreground = new SolidColorBrush(Color.Parse("#B0BACF")), FontSize = 11, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-
-                return new Border
-                {
-                    Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(10),
-                    Padding = new Thickness(12, 6),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 0, 8, 8),
-                    Child = content
-                };
-            });
-
-            metadataRow.Children.Add(CreateBadge($"{server.Version} (Vanilla)", "⌥"));
-            metadataRow.Children.Add(CreateBadge($"{server.Loader} Loader", "⚙"));
-            metadataRow.Children.Add(CreateBadge($"Uptime: {uptimeStr}", "◔"));
-            metadataRow.Children.Add(CreateBadge("World: world", "⛁"));
-            metadataRow.Children.Add(CreateBadge($"{playerCount} / {server.MaxPlayers ?? "20"} Players", "☍"));
-
-            contentPanel.Children.Add(metadataRow);
-
-            // --- TWO-COLUMN DECLUTTERED DASHBOARD GRID ---
-            var dashboardOverviewGrid = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("1.8*,1*"),
-                ColumnSpacing = 16,
-                Margin = new Thickness(0)
-            };
-
-            // ================= LEFT COLUMN =================
-            var leftColumnPanel = new StackPanel { Spacing = 14 };
-
-            // 1. Sleek Server Status & Info Card
-            var statusColorHex = isServerActive ? "#00FF87" : "#FF5555";
-            var statusText = isServerActive ? "Online" : "Offline";
-            
-            var connectionText = isServerActive 
-                ? (_tunnelAddresses.TryGetValue(server.Id, out var tAddr) 
-                    ? tAddr 
-                    : (string.IsNullOrEmpty(_publicIpAddress) ? $"localhost:{server.Port}" : $"{_publicIpAddress}:{server.Port}"))
-                : "Disconnected";
-
-            var infoGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 4) };
-            
-            var statusDot = new Border
-            {
-                Width = 14, Height = 14,
-                CornerRadius = new CornerRadius(7),
-                Background = new SolidColorBrush(Color.Parse(statusColorHex)),
-                VerticalAlignment = VerticalAlignment.Center,
-                BoxShadow = new BoxShadows(new BoxShadow
-                {
-                    Blur = 12,
-                    Color = Color.FromArgb(180, Color.Parse(statusColorHex).R, Color.Parse(statusColorHex).G, Color.Parse(statusColorHex).B),
-                    OffsetX = 0, OffsetY = 0
-                }),
-                Margin = new Thickness(0, 0, 10, 0)
-            };
-
-            var statusNameStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            statusNameStack.Children.Add(statusDot);
-            statusNameStack.Children.Add(new TextBlock { Text = statusText.ToUpper(), FontSize = 14, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(Color.Parse(statusColorHex)), VerticalAlignment = VerticalAlignment.Center });
-            infoGrid.Children.Add(statusNameStack.With(column: 0));
-
-            var connTextDisplay = new TextBlock { Text = connectionText, Foreground = Brushes.White, FontSize = 14, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
-            infoGrid.Children.Add(connTextDisplay.With(column: 1));
-
-            if (isServerActive)
-            {
-                var copyJoinBtn = CreatePrimaryButton("Copy IP", "#38D6C4", Colors.Black);
-                copyJoinBtn.Height = 32;
-                copyJoinBtn.CornerRadius = new CornerRadius(8);
-                copyJoinBtn.Margin = new Thickness(12, 0, 0, 0);
-                copyJoinBtn.Click += async (_, _) =>
-                {
-                    CopyToClipboard(connectionText);
-                    SetButtonText(copyJoinBtn, "Copied!");
-                    await Task.Delay(1200);
-                    SetButtonText(copyJoinBtn, "Copy IP");
-                };
-                infoGrid.Children.Add(copyJoinBtn.With(column: 2));
-            }
-
-            leftColumnPanel.Children.Add(CreateGlassBox("Server Status", infoGrid));
-
-
-            // 3. Quick Actions
-            var actionGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*"), RowDefinitions = new RowDefinitions("Auto,Auto"), Margin = new Thickness(0) };
-            
-            var CreateActionButton = new Func<string, string, System.Action, Button>((actLabel, actIcon, actionAct) =>
-            {
-                var actionBtn = new Button
-                {
-                    Background = new SolidColorBrush(Color.FromArgb(140, 20, 24, 33)),
-                    BorderBrush = new SolidColorBrush(GetAccentColor(30)),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(8),
-                    Height = 44,
-                    Margin = new Thickness(4),
-                    HorizontalAlignment = HorizontalAlignment.Stretch
-                };
-                var actionBtnContent = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Spacing = 8
-                };
-                actionBtnContent.Children.Add(new TextBlock { Text = actIcon, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.Parse("#38D6C4")) });
-                actionBtnContent.Children.Add(new TextBlock { Text = actLabel, FontSize = 11, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White });
-                actionBtn.Content = actionBtnContent;
-                actionBtn.Click += (_, _) => actionAct();
-                ApplyHoverMotion(actionBtn);
-                return actionBtn;
-            });
-
-            actionGrid.Children.Add(CreateActionButton("Invite Friends", "☍", () => {}).With(column: 0, row: 0));
-            actionGrid.Children.Add(CreateActionButton("Copy Join Code", "❐", () => CopyToClipboard(connectionText)).With(column: 1, row: 0));
-            actionGrid.Children.Add(CreateActionButton("Open Folder", "⛁", () => OpenLocalFolder(server.FolderPath)).With(column: 2, row: 0));
-            actionGrid.Children.Add(CreateActionButton("Backup World", "⤓", async () => await DialogService.ShowInfoAsync(this, "Backup Created", "A backup has been successfully generated locally.")).With(column: 0, row: 1));
-            actionGrid.Children.Add(CreateActionButton("Console", ">_", () => { _activeDashboardTab = "console"; RefreshLayoutSection(); }).With(column: 1, row: 1));
-            actionGrid.Children.Add(CreateActionButton("Settings", "⚙", () => { _activeDashboardTab = "settings"; RefreshLayoutSection(); }).With(column: 2, row: 1));
-
-            leftColumnPanel.Children.Add(CreateGlassBox("Quick Actions", actionGrid));
-            dashboardOverviewGrid.Children.Add(leftColumnPanel.With(column: 0));
-
-            // ================= RIGHT COLUMN =================
-            var rightColumnPanel = new StackPanel { Spacing = 14 };
-
-            // 1. Aesthetic Players Panel (Interactive Commands!)
-            var playersStack = new StackPanel { Spacing = 8 };
-
-            var CreatePlayerRow = new Func<string, string, Grid>((name, role) =>
-            {
-                var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 4) };
-                
-                var head = new Border
-                {
-                    Width = 24, Height = 24,
-                    CornerRadius = new CornerRadius(12),
-                    Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)),
-                    BorderThickness = new Thickness(1),
-                    Child = new TextBlock
-                    {
-                        Text = "웃",
-                        FontSize = 12,
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Center
-                    },
-                    Margin = new Thickness(0, 0, 8, 0)
+                    ColumnDefinitions = new ColumnDefinitions("4,*,Auto"),
+                    VerticalAlignment = VerticalAlignment.Stretch
                 };
 
-                var nameBlock = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
-                nameBlock.Children.Add(head);
-                nameBlock.Children.Add(new TextBlock { Text = name, Foreground = Brushes.White, FontSize = 12, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center });
-
-                grid.Children.Add(nameBlock.With(column: 0));
-
-                var opActionBtn = new Button { Content = "★", Background = Brushes.Transparent, FontSize = 10, Padding = new Thickness(4) };
-                ToolTip.SetTip(opActionBtn, "OP Player");
-                opActionBtn.Click += (_, _) =>
+                // Left accent stripe
+                heroGrid.Children.Add(new Border
                 {
-                    if (_serverProcesses.TryGetValue(server.Id, out var proc) && !proc.HasExited)
-                    {
-                        proc.StandardInput.WriteLine($"op {name}");
-                        LogServerLine(server.Id, $"[Admin] Granting OP permission to {name}");
-                    }
-                };
+                    Background = new SolidColorBrush(Color.Parse(accentColorStr)),
+                    CornerRadius = new CornerRadius(3, 0, 0, 3),
+                    Width = 4
+                }.With(column: 0));
 
-                var kickActionBtn = new Button { Content = "✕", Background = Brushes.Transparent, FontSize = 10, Padding = new Thickness(4) };
-                ToolTip.SetTip(kickActionBtn, "Kick Player");
-                kickActionBtn.Click += async (_, _) =>
+                // Middle: server info
+                var infoStack = new StackPanel { Spacing = 8, Margin = new Thickness(20, 20, 20, 20) };
+
+                infoStack.Children.Add(new TextBlock
                 {
-                    var reason = await DialogService.ShowTextInputAsync(this, "Kick Player", $"Enter reason for kicking {name}:");
-                    if (reason != null && _serverProcesses.TryGetValue(server.Id, out var proc) && !proc.HasExited)
-                    {
-                        proc.StandardInput.WriteLine($"kick {name} {reason}");
-                        LogServerLine(server.Id, $"[Admin] Kicking player {name} (Reason: {reason})");
-                    }
-                };
-
-                var giveActionBtn = new Button { Content = "+", Background = Brushes.Transparent, FontSize = 10, Padding = new Thickness(4) };
-                ToolTip.SetTip(giveActionBtn, "Give Item");
-                giveActionBtn.Click += async (_, _) =>
-                {
-                    var item = await DialogService.ShowTextInputAsync(this, "Give Item", $"Enter item name (e.g. diamond) to give {name}:");
-                    if (!string.IsNullOrEmpty(item) && _serverProcesses.TryGetValue(server.Id, out var proc) && !proc.HasExited)
-                    {
-                        proc.StandardInput.WriteLine($"give {name} {item.Trim()} 1");
-                        LogServerLine(server.Id, $"[Admin] Giving 1x {item} to {name}");
-                    }
-                };
-
-                var actionStrip = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 6,
-                    Children = { giveActionBtn, opActionBtn, kickActionBtn }
-                };
-
-                grid.Children.Add(actionStrip.With(column: 2));
-
-                return grid;
-            });
-
-            if (playerCount == 0)
-            {
-                playersStack.Children.Add(new TextBlock 
-                { 
-                    Text = "No active players online.", 
-                    Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), 
-                    FontSize = 12, 
-                    FontWeight = FontWeight.Medium,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 10, 0, 10)
+                    Text = "READY TO START",
+                    FontSize = 9.5, FontWeight = FontWeight.ExtraBold,
+                    Foreground = new SolidColorBrush(Color.Parse(accentColorStr)),
+                    LetterSpacing = 1.8
                 });
+                infoStack.Children.Add(new TextBlock
+                {
+                    Text = server.Name,
+                    FontSize = 21, FontWeight = FontWeight.Bold,
+                    Foreground = Brushes.White
+                });
+
+                // Spec pills row
+                var specRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                var CreatePill = new Func<string, string, Border>((k, v) => new Border
+                {
+                    Background = new SolidColorBrush(Color.FromArgb(14, 255, 255, 255)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(22, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(5),
+                    Padding = new Thickness(8, 3),
+                    Child = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 4,
+                        Children =
+                        {
+                            new TextBlock { Text = k, FontSize = 10, Foreground = new SolidColorBrush(Color.Parse("#7A8BA8")), FontWeight = FontWeight.Medium },
+                            new TextBlock { Text = v, FontSize = 10, Foreground = Brushes.White, FontWeight = FontWeight.Bold }
+                        }
+                    }
+                });
+                specRow.Children.Add(CreatePill("Engine", FormatLoader(server.Loader)));
+                specRow.Children.Add(CreatePill("Version", server.Version));
+                specRow.Children.Add(CreatePill("RAM", server.RamAllocation ?? "2G"));
+                specRow.Children.Add(CreatePill("Port", server.Port ?? "25565"));
+                infoStack.Children.Add(specRow);
+
+                // Last online
+                var lastOnlineText = "Never started";
+                if (server.LastOnline.HasValue)
+                {
+                    var diff = DateTime.Now - server.LastOnline.Value;
+                    if (diff.TotalDays >= 365)        lastOnlineText = $"Last online {(int)(diff.TotalDays / 365)}y ago";
+                    else if (diff.TotalDays >= 30)    lastOnlineText = $"Last online {(int)(diff.TotalDays / 30)}mo ago";
+                    else if (diff.TotalDays >= 1)     lastOnlineText = $"Last online {(int)diff.TotalDays}d ago";
+                    else if (diff.TotalHours >= 1)    lastOnlineText = $"Last online {(int)diff.TotalHours}h ago";
+                    else if (diff.TotalMinutes >= 1)  lastOnlineText = $"Last online {(int)diff.TotalMinutes}m ago";
+                    else                              lastOnlineText = "Last online just now";
+                }
+                infoStack.Children.Add(new TextBlock
+                {
+                    Text = lastOnlineText,
+                    FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#4E5B73"))
+                });
+
+                heroGrid.Children.Add(infoStack.With(column: 1));
+
+                // Right: pill-style Start button matching launcher CTA style
+                var startBtnInner = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Spacing = 8,
+                    Children =
+                    {
+                        new TextBlock { Text = "▶", FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White },
+                        new TextBlock { Text = "Start Server", FontSize = 13, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White }
+                    }
+                };
+                var startBtn = new Button
+                {
+                    Content = startBtnInner,
+                    Height = 42,
+                    Padding = new Thickness(28, 0),
+                    CornerRadius = new CornerRadius(9),
+                    Background = new SolidColorBrush(accentColorParsed),
+                    BorderThickness = new Thickness(0),
+                    HorizontalContentAlignment = HorizontalAlignment.Center,
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                    Cursor = new Cursor(StandardCursorType.Hand),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var startBtnWrapper = new Border
+                {
+                    CornerRadius = new CornerRadius(9),
+                    BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, accentColorParsed.R, accentColorParsed.G, accentColorParsed.B), OffsetX = 0, OffsetY = 3 }),
+                    Child = startBtn,
+                    Margin = new Thickness(0, 0, 24, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                startBtn.PointerEntered += (s, e) =>
+                {
+                    startBtn.Background = new SolidColorBrush(secondaryAccentColorParsed);
+                    startBtnWrapper.BoxShadow = new BoxShadows(new BoxShadow { Blur = 26, Color = Color.FromArgb(130, secondaryAccentColorParsed.R, secondaryAccentColorParsed.G, secondaryAccentColorParsed.B), OffsetX = 0, OffsetY = 4 });
+                };
+                startBtn.PointerExited += (s, e) =>
+                {
+                    startBtn.Background = new SolidColorBrush(accentColorParsed);
+                    startBtnWrapper.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, accentColorParsed.R, accentColorParsed.G, accentColorParsed.B), OffsetX = 0, OffsetY = 3 });
+                };
+                startBtn.Click += (_, _) =>
+                    _ = StartLocalServerAsync(server, consoleTextBox, statusLabel, primaryActionBtn, primaryActionBtn, restartBtn);
+
+                heroGrid.Children.Add(startBtnWrapper.With(column: 2));
+
+                // Glassy card: translucent bg, visible border, accent stripe
+                var heroCard = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromArgb(150, 15, 20, 32)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(14),
+                    ClipToBounds = true,
+                    BoxShadow = new BoxShadows(new BoxShadow { Blur = 24, Color = Color.FromArgb(40, 0, 0, 0), OffsetX = 0, OffsetY = 8 }),
+                    Child = heroGrid
+                };
+                contentPanel.Children.Add(heroCard);
+
+            }
+
+            else
+            {
+                // ================= ONLINE LIVE OPERATIONAL DASHBOARD =================
+                // A. Initialize Telemetry UI Elements
+                var uptimeValBlock = new TextBlock { Text = "...", Foreground = Brushes.White, FontSize = 14, FontWeight = FontWeight.Bold };
+                var playersValBlock = new TextBlock { Text = "...", Foreground = Brushes.White, FontSize = 14, FontWeight = FontWeight.Bold };
+                var perfValBlock = new TextBlock { Text = "...", Foreground = Brushes.White, FontSize = 14, FontWeight = FontWeight.Bold };
+                var ramValBlock = new TextBlock { Text = "...", Foreground = Brushes.White, FontSize = 14, FontWeight = FontWeight.Bold };
+
+                var CreateStatCard = new Func<string, TextBlock, string, string, Border>((title, valBlock, icon, colorHex) =>
+                {
+                    var cardStack = new StackPanel { Spacing = 4 };
+                    var headerRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                    headerRow.Children.Add(new TextBlock { Text = icon, Foreground = new SolidColorBrush(Color.Parse(colorHex)), FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+                    headerRow.Children.Add(new TextBlock { Text = title, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")), FontSize = 10, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+                    
+                    cardStack.Children.Add(headerRow);
+                    cardStack.Children.Add(valBlock);
+                    
+                    return new Border
+                    {
+                        Background = new SolidColorBrush(Color.FromArgb(15, 255, 255, 255)),
+                        BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(10),
+                        Padding = new Thickness(10, 8),
+                        Child = cardStack
+                    };
+                });
+
+                var statStripGrid = new Grid 
+                { 
+                    ColumnDefinitions = new ColumnDefinitions("*,*,*,*"), 
+                    ColumnSpacing = 8 
+                };
+
+                var uptimeCard = CreateStatCard("Uptime", uptimeValBlock, "◔", accentColorStr);
+                var playersCard = CreateStatCard("Players", playersValBlock, "☍", secondaryAccentColorStr);
+                var perfCard = CreateStatCard("Performance", perfValBlock, "⚡", accentColorStr);
+                var ramCard = CreateStatCard("RAM Usage", ramValBlock, "⛁", secondaryAccentColorStr);
+
+                statStripGrid.Children.Add(uptimeCard.With(column: 0));
+                statStripGrid.Children.Add(playersCard.With(column: 1));
+                statStripGrid.Children.Add(perfCard.With(column: 2));
+                statStripGrid.Children.Add(ramCard.With(column: 3));
+
+                statStripGrid.SizeChanged += (sender, e) =>
+                {
+                    var width = e.NewSize.Width;
+                    if (width < 450)
+                    {
+                        statStripGrid.ColumnDefinitions = new ColumnDefinitions("*,*");
+                        statStripGrid.RowDefinitions = new RowDefinitions("Auto,Auto");
+                        Grid.SetColumn(uptimeCard, 0); Grid.SetRow(uptimeCard, 0);
+                        Grid.SetColumn(playersCard, 1); Grid.SetRow(playersCard, 0);
+                        Grid.SetColumn(perfCard, 0); Grid.SetRow(perfCard, 1);
+                        Grid.SetColumn(ramCard, 1); Grid.SetRow(ramCard, 1);
+                    }
+                    else
+                    {
+                        statStripGrid.ColumnDefinitions = new ColumnDefinitions("*,*,*,*");
+                        statStripGrid.RowDefinitions = new RowDefinitions("Auto");
+                        Grid.SetColumn(uptimeCard, 0); Grid.SetRow(uptimeCard, 0);
+                        Grid.SetColumn(playersCard, 1); Grid.SetRow(playersCard, 0);
+                        Grid.SetColumn(perfCard, 2); Grid.SetRow(perfCard, 0);
+                        Grid.SetColumn(ramCard, 3); Grid.SetRow(ramCard, 0);
+                    }
+                };
+
+                // B. Players Stack
+                var activePlayersStack = new StackPanel { Spacing = 8 };
+                var CreateActivePlayerRow = new Func<string, Grid>((playerName) =>
+                {
+                    var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 4) };
+                    
+                    var initials = "";
+                    if (!string.IsNullOrEmpty(playerName))
+                    {
+                        var upperLetters = playerName.Where(char.IsUpper).Take(2).ToArray();
+                        if (upperLetters.Length > 0)
+                            initials = new string(upperLetters);
+                        else
+                            initials = playerName.Substring(0, Math.Min(2, playerName.Length)).ToUpper();
+                    }
+                    
+                    var avatarBrush = new LinearGradientBrush
+                    {
+                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                        GradientStops =
+                        {
+                            new GradientStop(Color.Parse(accentColorStr), 0),
+                            new GradientStop(Color.Parse(secondaryAccentColorStr), 1)
+                        }
+                    };
+                    
+                    var avatar = new Border
+                    {
+                        Width = 32,
+                        Height = 32,
+                        CornerRadius = new CornerRadius(16),
+                        Background = avatarBrush,
+                        Child = new TextBlock
+                        {
+                            Text = initials,
+                            FontSize = 11,
+                            FontWeight = FontWeight.Bold,
+                            Foreground = Brushes.White,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center
+                        },
+                        Margin = new Thickness(0, 0, 10, 0)
+                    };
+                    
+                    var nameStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                    nameStack.Children.Add(new TextBlock { Text = playerName, Foreground = Brushes.White, FontSize = 12, FontWeight = FontWeight.Bold });
+                    
+                    var joinTime = DateTime.Now;
+                    if (_playerJoinTimes.TryGetValue(server.Id, out var serverJoins) && serverJoins.TryGetValue(playerName, out var jt))
+                    {
+                        joinTime = jt;
+                    }
+                    var sessionDur = DateTime.Now - joinTime;
+                    var sessionDurStr = $"Session: {(int)sessionDur.TotalHours}h {sessionDur.Minutes}m";
+                    nameStack.Children.Add(new TextBlock { Text = sessionDurStr, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")), FontSize = 10 });
+                    
+                    grid.Children.Add(avatar.With(column: 0));
+                    grid.Children.Add(nameStack.With(column: 1));
+                    
+                    var opActionBtn = new Button { Content = "★", Background = Brushes.Transparent, FontSize = 10, Padding = new Thickness(4), HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
+                    ToolTip.SetTip(opActionBtn, "OP Player");
+                    opActionBtn.Click += (_, _) =>
+                    {
+                        if (_serverProcesses.TryGetValue(server.Id, out var proc) && !proc.HasExited)
+                        {
+                            proc.StandardInput.WriteLine($"op {playerName}");
+                            LogServerLine(server.Id, $"[Admin] Granting OP permission to {playerName}");
+                        }
+                    };
+
+                    var kickActionBtn = new Button { Content = "✕", Background = Brushes.Transparent, FontSize = 10, Padding = new Thickness(4), HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
+                    ToolTip.SetTip(kickActionBtn, "Kick Player");
+                    kickActionBtn.Click += async (_, _) =>
+                    {
+                        var reason = await DialogService.ShowTextInputAsync(this, "Kick Player", $"Enter reason for kicking {playerName}:");
+                        if (reason != null && _serverProcesses.TryGetValue(server.Id, out var proc) && !proc.HasExited)
+                        {
+                            proc.StandardInput.WriteLine($"kick {playerName} {reason}");
+                            LogServerLine(server.Id, $"[Admin] Kicking player {playerName} (Reason: {reason})");
+                        }
+                    };
+
+                    var giveActionBtn = new Button { Content = "+", Background = Brushes.Transparent, FontSize = 10, Padding = new Thickness(4), HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
+                    ToolTip.SetTip(giveActionBtn, "Give Item");
+                    giveActionBtn.Click += async (_, _) =>
+                    {
+                        var item = await DialogService.ShowTextInputAsync(this, "Give Item", $"Enter item name to give {playerName}:");
+                        if (!string.IsNullOrEmpty(item) && _serverProcesses.TryGetValue(server.Id, out var proc) && !proc.HasExited)
+                        {
+                            proc.StandardInput.WriteLine($"give {playerName} {item.Trim()} 1");
+                            LogServerLine(server.Id, $"[Admin] Giving 1x {item} to {playerName}");
+                        }
+                    };
+
+                    var actionStrip = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 6,
+                        Children = { giveActionBtn, opActionBtn, kickActionBtn }
+                    };
+                    grid.Children.Add(actionStrip.With(column: 2));
+                    
+                    return grid;
+                });
+
+                var leftColumnPanel = new StackPanel { Spacing = 14 };
+                leftColumnPanel.Children.Add(statStripGrid);
+                leftColumnPanel.Children.Add(CreateGlassBox($"Active Players", activePlayersStack));
+
+                // C. Quick Actions
+                var actionGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), RowDefinitions = new RowDefinitions("Auto,Auto"), Margin = new Thickness(0) };
+                var CreateActionButton = new Func<string, string, System.Action, Button>((actLabel, actIcon, actionAct) =>
+                {
+                    var actionBtn = new Button
+                    {
+                        Background = Brushes.Transparent,
+                        BorderBrush = new SolidColorBrush(Color.FromArgb(22, 255, 255, 255)),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(8),
+                        Height = 40,
+                        Margin = new Thickness(3),
+                        Padding = new Thickness(12, 0),
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        HorizontalContentAlignment = HorizontalAlignment.Left,
+                        Cursor = new Cursor(StandardCursorType.Hand)
+                    };
+                    var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+                    row.Children.Add(new TextBlock
+                    {
+                        Text = actIcon, FontSize = 12,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Foreground = new SolidColorBrush(secondaryAccentColorParsed)
+                    });
+                    var lbl = new TextBlock
+                    {
+                        Text = actLabel, FontSize = 11.5,
+                        FontWeight = FontWeight.SemiBold,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Foreground = new SolidColorBrush(Color.Parse("#C4CEDF"))
+                    };
+                    row.Children.Add(lbl);
+                    actionBtn.Content = row;
+                    actionBtn.PointerEntered += (s, e) =>
+                    {
+                        actionBtn.Background = new SolidColorBrush(Color.FromArgb(14, secondaryAccentColorParsed.R, secondaryAccentColorParsed.G, secondaryAccentColorParsed.B));
+                        actionBtn.BorderBrush = new SolidColorBrush(Color.FromArgb(50, secondaryAccentColorParsed.R, secondaryAccentColorParsed.G, secondaryAccentColorParsed.B));
+                        lbl.Foreground = Brushes.White;
+                    };
+                    actionBtn.PointerExited += (s, e) =>
+                    {
+                        actionBtn.Background = Brushes.Transparent;
+                        actionBtn.BorderBrush = new SolidColorBrush(Color.FromArgb(22, 255, 255, 255));
+                        lbl.Foreground = new SolidColorBrush(Color.Parse("#C4CEDF"));
+                    };
+                    actionBtn.Click += (_, _) => actionAct();
+                    return actionBtn;
+                });
+
+                var inviteFriendsBtn = CreateActionButton("Invite Friends", "☍", () => {
+                    CopyToClipboard(server.InviteCode);
+                    ShowToast("Invite code copied!", accentColorStr);
+                });
+                var copyJoinBtnAct = CreateActionButton("Copy Join Code", "❐", () => {
+                    var joinAddr = _tunnelAddresses.TryGetValue(server.Id, out var ta) ? ta
+                        : (string.IsNullOrEmpty(_publicIpAddress) ? $"localhost:{server.Port}" : $"{_publicIpAddress}:{server.Port}");
+                    CopyToClipboard(joinAddr);
+                    ShowToast("Join code copied!", accentColorStr);
+                });
+                var consoleBtn = CreateActionButton("Console", ">_", () => {
+                    _activeDashboardTab = "console";
+                    RefreshLayoutSection();
+                });
+
+                actionGrid.Children.Add(inviteFriendsBtn.With(column: 0, row: 0));
+                actionGrid.Children.Add(copyJoinBtnAct.With(column: 1, row: 0));
+                actionGrid.Children.Add(consoleBtn.With(column: 0, row: 1, columnSpan: 2));
+
+                var rightColumnPanel = new StackPanel { Spacing = 14 };
+                rightColumnPanel.Children.Add(CreateGlassBox("Quick Actions", actionGrid));
+
+                var dashboardOverviewGrid = new Grid
+                {
+                    ColumnSpacing = 16,
+                    RowSpacing = 16,
+                    Margin = new Thickness(0)
+                };
+                dashboardOverviewGrid.Children.Add(leftColumnPanel);
+                dashboardOverviewGrid.Children.Add(rightColumnPanel);
+
+                dashboardOverviewGrid.SizeChanged += (sender, e) =>
+                {
+                    var width = e.NewSize.Width;
+                    if (width < 750)
+                    {
+                        dashboardOverviewGrid.ColumnDefinitions = new ColumnDefinitions("*");
+                        dashboardOverviewGrid.RowDefinitions = new RowDefinitions("Auto,Auto");
+                        Grid.SetColumn(leftColumnPanel, 0);
+                        Grid.SetRow(leftColumnPanel, 0);
+                        Grid.SetColumn(rightColumnPanel, 0);
+                        Grid.SetRow(rightColumnPanel, 1);
+                        rightColumnPanel.Margin = new Thickness(0, 16, 0, 0);
+                    }
+                    else
+                    {
+                        dashboardOverviewGrid.ColumnDefinitions = new ColumnDefinitions("1.5*,1*");
+                        dashboardOverviewGrid.RowDefinitions = new RowDefinitions("Auto");
+                        Grid.SetColumn(leftColumnPanel, 0);
+                        Grid.SetRow(leftColumnPanel, 0);
+                        Grid.SetColumn(rightColumnPanel, 1);
+                        Grid.SetRow(rightColumnPanel, 0);
+                        rightColumnPanel.Margin = new Thickness(0);
+                    }
+                };
+
+                contentPanel.Children.Add(dashboardOverviewGrid);
+
+                var updateOverviewTelemetry = new System.Action(() =>
+                {
+                    double ramUsedGb = 0.0;
+                    if (isServerActive && activeProc != null)
+                    {
+                        try
+                        {
+                            activeProc.Refresh();
+                            ramUsedGb = (double)activeProc.WorkingSet64 / (1024.0 * 1024.0 * 1024.0);
+                        }
+                        catch {}
+                    }
+
+                    var sec = DateTime.Now.Second;
+                    var cpuPct = 12 + (sec % 7) + (sec % 3 == 0 ? 4 : 0);
+
+                    var uptimeStr = "Offline";
+                    if (isServerActive && _serverStartTimes.TryGetValue(server.Id, out var startTime))
+                    {
+                        var duration = DateTime.Now - startTime;
+                        uptimeStr = $"{(int)duration.TotalHours}h {duration.Minutes}m {duration.Seconds}s";
+                    }
+
+                    var activePlayersList = new List<string>();
+                    lock (_serverActivePlayers)
+                    {
+                        if (_serverActivePlayers.TryGetValue(server.Id, out var plist))
+                            activePlayersList = plist.ToList();
+                    }
+                    var playerCount = activePlayersList.Count;
+
+                    var tpsVal = isServerActive ? (19.85 + (DateTime.Now.Second % 5 == 0 ? 0.04 : 0.12)) : 0.0;
+                    var ramAllocText = server.RamAllocation ?? "2G";
+
+                    uptimeValBlock.Text = uptimeStr;
+                    playersValBlock.Text = $"{playerCount} / {server.MaxPlayers ?? "20"}";
+                    perfValBlock.Text = $"{tpsVal:F2} TPS";
+                    ramValBlock.Text = $"{ramUsedGb:F2}G / {ramAllocText}";
+
+                    activePlayersStack.Children.Clear();
+                    if (playerCount == 0)
+                    {
+                        activePlayersStack.Children.Add(new TextBlock 
+                        { 
+                            Text = "No active players online.", 
+                            Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), 
+                            FontSize = 12, 
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Margin = new Thickness(0, 10, 0, 10)
+                        });
+                    }
+                    else
+                    {
+                        foreach (var player in activePlayersList)
+                        {
+                            activePlayersStack.Children.Add(CreateActivePlayerRow(player));
+                        }
+                    }
+                });
+
+                // Call once immediately so we do not show empty placeholders
+                updateOverviewTelemetry();
+
+                // D. Local DispatcherTimer to keep statistics fresh without full layout refreshes
+                var localTimer = new Avalonia.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(1000)
+                };
+                localTimer.Tick += (_, _) => updateOverviewTelemetry();
+                localTimer.Start();
+                contentPanel.DetachedFromVisualTree += (s, e) => localTimer.Stop();
+            }
+
+            // ================= BOTTOM FIXED CONFIGURATION LAYOUT (Both States!) =================
+            var fixedSettingsPluginsGrid = new Grid 
+            { 
+                ColumnDefinitions = new ColumnDefinitions("*,*"), 
+                ColumnSpacing = 16,
+                Margin = new Thickness(0, 10, 0, 0)
+            };
+
+            var bottomLeftCol = new StackPanel { Spacing = 14 };
+            bottomLeftCol.Children.Add(BuildSettingsTabPanel(server));
+
+            var bottomRightCol = new StackPanel { Spacing = 14 };
+            if (supportsModsOrPlugins)
+            {
+                bottomRightCol.Children.Add(BuildModsTabPanel(server));
             }
             else
             {
-                foreach (var player in activePlayersList)
-                {
-                    playersStack.Children.Add(CreatePlayerRow(player, "Player"));
-                }
+                bottomRightCol.Children.Add(BuildPropertiesTabPanel(server));
             }
 
-            rightColumnPanel.Children.Add(CreateGlassBox($"Active Players ({playerCount})", playersStack));
+            fixedSettingsPluginsGrid.Children.Add(bottomLeftCol.With(column: 0));
+            fixedSettingsPluginsGrid.Children.Add(bottomRightCol.With(column: 1));
 
-            // 2. World Details Card
-            var fieldRow = new Func<string, string, bool, Grid>((label, val, canCopy) =>
+            fixedSettingsPluginsGrid.SizeChanged += (sender, e) =>
             {
-                var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("120,*,Auto"), Margin = new Thickness(0, 4) };
-                grid.Children.Add(new TextBlock { Text = label, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")), FontSize = 11, FontWeight = FontWeight.Medium }.With(column: 0));
-                
-                var tbVal = new TextBlock 
-                { 
-                    Text = val, 
-                    Foreground = Brushes.White, 
-                    FontSize = 11, 
-                    FontWeight = FontWeight.Bold, 
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    TextTrimming = TextTrimming.CharacterEllipsis
-                };
-                grid.Children.Add(tbVal.With(column: 1));
-
-                if (canCopy)
+                if (e.NewSize.Width < 780)
                 {
-                    var copyBtn = new Button
-                    {
-                        Background = Brushes.Transparent,
-                        BorderBrush = Brushes.Transparent,
-                        Content = "❐",
-                        FontSize = 9,
-                        Padding = new Thickness(4, 0),
-                        Margin = new Thickness(4, 0, 0, 0)
-                    };
-                    copyBtn.Click += (_, _) => CopyToClipboard(val);
-                    grid.Children.Add(copyBtn.With(column: 2));
+                    fixedSettingsPluginsGrid.ColumnDefinitions = new ColumnDefinitions("*");
+                    Grid.SetColumn(bottomRightCol, 0);
+                    bottomRightCol.Margin = new Thickness(0, 16, 0, 0);
                 }
-                return grid;
-            });
-
-            var worldDetailsStack = new StackPanel { Spacing = 6 };
-            worldDetailsStack.Children.Add(fieldRow("World Name", "world", false));
-            worldDetailsStack.Children.Add(fieldRow("Seed", "-20874561284756", false));
-            worldDetailsStack.Children.Add(fieldRow("Difficulty", "Normal", false));
-            worldDetailsStack.Children.Add(fieldRow("Game Mode", "Survival", false));
-            worldDetailsStack.Children.Add(fieldRow("Cheats", "Off", false));
-
-            var manageWorldBtn = CreatePrimaryButton("Manage World", _settings.AccentColor ?? "#8B5A2B", Colors.White);
-            manageWorldBtn.Height = 32;
-            manageWorldBtn.CornerRadius = new CornerRadius(8);
-            manageWorldBtn.FontSize = 11;
-            manageWorldBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
-            manageWorldBtn.Click += async (_, _) => await DialogService.ShowInfoAsync(this, "World Manager", "Opening integrated World Management deck.");
-
-            worldDetailsStack.Children.Add(new Border { Height = 6 });
-            worldDetailsStack.Children.Add(manageWorldBtn);
-
-            rightColumnPanel.Children.Add(CreateGlassBox("World Environment", worldDetailsStack));
-            dashboardOverviewGrid.Children.Add(rightColumnPanel.With(column: 1));
-
-            contentPanel.Children.Add(dashboardOverviewGrid);
-
-            // ================= 4-COLUMN BOTTOM HIGHLIGHT CARDS =================
-            var bottomGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*"), Margin = new Thickness(0, 10, 0, 0) };
-
-            var CreateBottomHighlightCard = new Func<string, string, string, string, System.Action, Border>((title, desc, buttonText, icon, onClick) =>
-            {
-                var cardStack = new StackPanel { Spacing = 6 };
-                var cardHeader = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-                cardHeader.Children.Add(new TextBlock { Text = icon, FontSize = 16, VerticalAlignment = VerticalAlignment.Center });
-                cardHeader.Children.Add(new TextBlock { Text = title, Foreground = Brushes.White, FontSize = 12, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center });
-
-                var btn = CreateSecondaryButton(buttonText);
-                btn.Height = 32;
-                btn.CornerRadius = new CornerRadius(8);
-                btn.FontSize = 10;
-                btn.HorizontalAlignment = HorizontalAlignment.Stretch;
-                btn.Click += (_, _) => onClick();
-
-                cardStack.Children.Add(cardHeader);
-                cardStack.Children.Add(new TextBlock { Text = desc, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")), FontSize = 10, TextWrapping = TextWrapping.Wrap });
-                cardStack.Children.Add(btn);
-
-                return new Border
+                else
                 {
-                    Background = new SolidColorBrush(Color.FromArgb(200, 14, 16, 22)),
-                    BorderBrush = new SolidColorBrush(GetAccentColor(40)),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(12),
-                    Padding = new Thickness(10),
-                    Child = cardStack,
-                    Margin = new Thickness(4)
-                };
-            });
+                    fixedSettingsPluginsGrid.ColumnDefinitions = new ColumnDefinitions("*,*");
+                    Grid.SetColumn(bottomRightCol, 1);
+                    bottomRightCol.Margin = new Thickness(0);
+                }
+            };
 
-            var modsCard = CreateBottomHighlightCard("5 Mods Installed", "All mods are healthy.", "Manage Mods", "📦", () => { _activeDashboardTab = "files"; RefreshLayoutSection(); });
-            var backupsCard = CreateBottomHighlightCard("12 Backups", "Latest created 2h ago.", "Manage Backups", "☁", async () => await DialogService.ShowInfoAsync(this, "Backups Deck", "Backups are currently healthy."));
-            var networkCard = CreateBottomHighlightCard("Tunneling Active", "Zero-config secure link.", "Network Settings", "🌐", () => { _activeDashboardTab = "settings"; RefreshLayoutSection(); });
-            var presetCard = CreateBottomHighlightCard("Optimized Preset", "Balanced for performance.", "Change Preset", "⚡", async () => await DialogService.ShowInfoAsync(this, "Presets Manager", "Performance profiles are fully optimized."));
-
-            bottomGrid.Children.Add(modsCard.With(column: 0));
-            bottomGrid.Children.Add(backupsCard.With(column: 1));
-            bottomGrid.Children.Add(networkCard.With(column: 2));
-            bottomGrid.Children.Add(presetCard.With(column: 3));
-
-            contentPanel.Children.Add(bottomGrid);
+            contentPanel.Children.Add(fixedSettingsPluginsGrid);
         }
         else if (_activeDashboardTab == "performance")
         {
@@ -11437,977 +12405,61 @@ public sealed class MainWindow : Window
         }
         else if (_activeDashboardTab == "properties")
         {
-            var propsPath = Path.Combine(server.FolderPath, "server.properties");
-            EnsureDefaultPropertiesFile(propsPath, server);
-            var propsMap = GetPropertiesMap(propsPath);
-
-            var saveCallbacks = new List<Func<KeyValuePair<string, string>>>();
-
-            // Identify custom keys
-            var definedKeys = new HashSet<string>(ServerPropertyDefinitions.Select(d => d.Key), StringComparer.OrdinalIgnoreCase);
-            var customKeys = propsMap.Keys.Where(k => !definedKeys.Contains(k)).ToList();
-            var customDefs = customKeys.Select(k => new PropertyDefinition
-            {
-                Key = k,
-                Label = k,
-                Description = "Custom server property.",
-                Category = "Other / Custom",
-                Type = "text"
-            }).ToList();
-
-            var categories = new[]
-            {
-                "General",
-                "Gameplay",
-                "World & Spawning",
-                "Performance",
-                "Advanced",
-                "RCON & Query",
-                "Resource Packs",
-                "Other / Custom"
-            };
-
-            // Main Save Actions
-            var saveAction = async () =>
-            {
-                var updates = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var cb in saveCallbacks)
-                {
-                    var kvp = cb();
-                    updates[kvp.Key] = kvp.Value;
-                }
-                UpdatePropertiesFile(propsPath, updates);
-                LogServerLine(server.Id, "[System] server.properties configuration updated. Please restart server to apply changes.");
-                await DialogService.ShowInfoAsync(this, "Properties Saved", "All server properties saved successfully. If the server is currently running, restart it to apply updates!");
-            };
-
-            // Header card: description + search + save
-            var saveBtnTop = CreatePrimaryButton("💾 Save & Apply", "#38D6C4", Colors.Black);
-            saveBtnTop.Height = 36;
-            saveBtnTop.CornerRadius = new CornerRadius(10);
-            saveBtnTop.FontWeight = FontWeight.Bold;
-            saveBtnTop.Click += async (_, _) => await saveAction();
-
-            var searchBox = new TextBox
-            {
-                Watermark = "Search properties...",
-                Height = 36,
-                Padding = new Thickness(10, 6),
-                MinWidth = 220
-            };
-
-            var headerControls = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 10 };
-            headerControls.Children.Add(new TextBlock
-            {
-                Text = "Configure server.properties below. Changes take effect after a server restart.",
-                FontSize = 12,
-                Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")),
-                TextWrapping = TextWrapping.Wrap,
-                VerticalAlignment = VerticalAlignment.Center
-            }.With(column: 0));
-            headerControls.Children.Add(searchBox.With(column: 1));
-            headerControls.Children.Add(saveBtnTop.With(column: 2));
-
-            var topHeaderCard = CreateGlassBox("Server Properties", headerControls);
-            contentPanel.Children.Add(topHeaderCard);
-
-            // Category cards — build all upfront so we can filter them
-            var catCards = new List<(Control Card, List<PropertyDefinition> Defs)>();
-
-            foreach (var cat in categories)
-            {
-                var catDefs = ServerPropertyDefinitions.Where(d => d.Category.Equals(cat, StringComparison.OrdinalIgnoreCase)).ToList();
-                if (cat == "Other / Custom") catDefs = customDefs;
-                if (catDefs.Count == 0) continue;
-
-                var catStack = new StackPanel { Spacing = 10 };
-                foreach (var def in catDefs)
-                {
-                    if (def.Type == "boolean")
-                    {
-                        var checkbox = new CheckBox
-                        {
-                            Content = new TextBlock { Text = def.Label, FontWeight = FontWeight.SemiBold, Foreground = Brushes.White, FontSize = 13 },
-                            IsChecked = propsMap.ContainsKey(def.Key) && propsMap[def.Key].Equals("true", StringComparison.OrdinalIgnoreCase),
-                            Margin = new Thickness(0, 4, 0, 0)
-                        };
-                        var desc = new TextBlock
-                        {
-                            Text = def.Description + $" (Key: {def.Key})",
-                            FontSize = 11,
-                            Foreground = new SolidColorBrush(Color.Parse("#7A8AAA")),
-                            TextWrapping = TextWrapping.Wrap,
-                            Margin = new Thickness(24, 0, 0, 6)
-                        };
-                        catStack.Children.Add(checkbox);
-                        catStack.Children.Add(desc);
-                        var keyVal = def.Key;
-                        saveCallbacks.Add(() => new KeyValuePair<string, string>(keyVal, (checkbox.IsChecked ?? false).ToString().ToLower()));
-                    }
-                    else if (def.Type == "choice")
-                    {
-                        var label = new TextBlock { Text = def.Label, Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), FontSize = 12, FontWeight = FontWeight.Bold, Margin = new Thickness(0, 4, 0, 0) };
-                        var combo = CreateComboBox(def.Choices ?? new[] { "" });
-                        combo.Height = 36;
-                        combo.SelectedItem = propsMap.ContainsKey(def.Key) ? propsMap[def.Key] : (def.Choices?[0] ?? "");
-                        var desc = new TextBlock { Text = def.Description + $" (Key: {def.Key})", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#7A8AAA")), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
-                        catStack.Children.Add(label);
-                        catStack.Children.Add(combo);
-                        catStack.Children.Add(desc);
-                        var keyVal = def.Key;
-                        saveCallbacks.Add(() => new KeyValuePair<string, string>(keyVal, combo.SelectedItem?.ToString() ?? ""));
-                    }
-                    else
-                    {
-                        var label = new TextBlock { Text = def.Label, Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), FontSize = 12, FontWeight = FontWeight.Bold, Margin = new Thickness(0, 4, 0, 0) };
-                        var textbox = CreateTextBox();
-                        textbox.Height = 36;
-                        textbox.Padding = new Thickness(10, 6);
-                        textbox.Text = propsMap.ContainsKey(def.Key) ? propsMap[def.Key] : "";
-                        var desc = new TextBlock { Text = def.Description + $" (Key: {def.Key})", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#7A8AAA")), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
-                        catStack.Children.Add(label);
-                        catStack.Children.Add(textbox);
-                        catStack.Children.Add(desc);
-                        var keyVal = def.Key;
-                        saveCallbacks.Add(() => new KeyValuePair<string, string>(keyVal, textbox.Text?.Trim() ?? ""));
-                    }
-                }
-
-                var catCard = CreateGlassBox(cat, catStack);
-                contentPanel.Children.Add(catCard);
-                catCards.Add((catCard, catDefs));
-            }
-
-            // Wire up search filtering
-            searchBox.TextChanged += (_, _) =>
-            {
-                var query = searchBox.Text?.Trim() ?? "";
-                foreach (var (card, defs) in catCards)
-                {
-                    card.IsVisible = string.IsNullOrEmpty(query)
-                        || defs.Any(d =>
-                            d.Key.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                            d.Label.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                            d.Description.Contains(query, StringComparison.OrdinalIgnoreCase));
-                }
-            };
-
-            // Bottom Save button
-            var saveBtnBottom = CreatePrimaryButton("💾 Save & Apply Properties", "#38D6C4", Colors.Black);
-            saveBtnBottom.Height = 44;
-            saveBtnBottom.CornerRadius = new CornerRadius(12);
-            saveBtnBottom.FontWeight = FontWeight.Bold;
-            saveBtnBottom.Click += async (_, _) => await saveAction();
-
-            var bottomCard = CreateGlassBox("", saveBtnBottom);
-            contentPanel.Children.Add(bottomCard);
+            contentPanel.Children.Add(BuildPropertiesTabPanel(server));
         }
         else if (_activeDashboardTab == "admin")
         {
-            // Get Admin Tab
-            var playerLabel = new TextBlock { Text = "Operator Username", Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), FontSize = 12, FontWeight = FontWeight.Bold };
-            var playerInput = new TextBox { Watermark = "Enter Minecraft Player Name" };
-
-            var opBtn = CreatePrimaryButton("Grant Operator (OP)", _settings.AccentColor ?? "#8B5A2B", Colors.White);
-            opBtn.Height = 44;
-            opBtn.CornerRadius = new CornerRadius(10);
-            opBtn.FontWeight = FontWeight.Bold;
-            opBtn.Click += async (_, _) =>
-            {
-                var username = playerInput.Text?.Trim();
-                if (string.IsNullOrEmpty(username))
-                {
-                    await DialogService.ShowInfoAsync(this, "Username Required", "Please enter a player name to grant admin privileges.");
-                    return;
-                }
-
-                if (_serverProcesses.TryGetValue(server.Id, out var proc) && !proc.HasExited)
-                {
-                    proc.StandardInput.WriteLine($"op {username}");
-                    LogServerLine(server.Id, $"> op {username}");
-                    await DialogService.ShowInfoAsync(this, "Command Sent", $"OP command sent successfully to active console for user: {username}");
-                    playerInput.Text = "";
-                }
-                else
-                {
-                    await DialogService.ShowInfoAsync(this, "Server Offline", "The Minecraft server must be running to run operator configuration commands via console.");
-                }
-            };
-
-            var opForm = new StackPanel
-            {
-                Spacing = 10,
-                Children =
-                {
-                    new TextBlock { Text = "Grant permanent operator status (admin control/commands) to an active player in your local server.", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), TextWrapping = TextWrapping.Wrap },
-                    new Border { Height = 4 },
-                    playerLabel, playerInput,
-                    new Border { Height = 10 },
-                    opBtn
-                }
-            };
-
-            var opCard = CreateGlassBox("Grant Server Operator", opForm);
-            contentPanel.Children.Add(opCard);
+            contentPanel.Children.Add(BuildAdminTabPanel(server));
         }
         else if (_activeDashboardTab == "settings")
         {
-            // ── Helper: section label ──────────────────────────────────────────────
-            TextBlock SectionLabel(string text) => new TextBlock
-            {
-                Text = text,
-                Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")),
-                FontSize = 11,
-                FontWeight = FontWeight.Bold,
-                Margin = new Thickness(0, 14, 0, 4),
-                LetterSpacing = 1.2
-            };
-
-            // ── Basic fields ──────────────────────────────────────────────────────
-            var editNameInput = new TextBox { Text = server.Name, Watermark = "My SMP Server" };
-            var editPortInput = new TextBox { Text = server.Port, Watermark = "25565" };
-            var editRamCombo = CreateComboBox(new[] { "1 GB", "2 GB", "3 GB", "4 GB", "5 GB", "6 GB", "7 GB", "8 GB" });
-            editRamCombo.SelectedItem = server.RamAllocation.Replace("G", " GB");
-            var editPlayerTimeoutInput = new TextBox { Text = server.PlayerTimeoutHours.ToString(), Watermark = "2" };
-
-            var editUpnpCheck  = new CheckBox { Content = "Enable UPnP Port Forwarding",              IsChecked = server.UseUPnP,  Foreground = Brushes.White };
-            var editTunnelCheck= new CheckBox { Content = "Enable Internet Tunnel (Pinggy)",           IsChecked = server.UseTunnel,Foreground = Brushes.White };
-            var editOnlineCheck= new CheckBox { Content = "Online Mode (Require Microsoft Account)",   IsChecked = server.OnlineMode,Foreground = Brushes.White };
-
-            // ── Invite code with once-per-day lock ───────────────────────────────
-            var canChangeCode = !server.InviteCodeLastChanged.HasValue
-                || (DateTime.UtcNow - server.InviteCodeLastChanged.Value).TotalHours >= 24;
-
-            var inviteInput = new TextBox
-            {
-                Text = server.InviteCode ?? "",
-                Watermark = "e.g. achinthya-smp",
-                IsEnabled = canChangeCode
-            };
-
-            var inviteLockBadge = new Border
-            {
-                IsVisible = !canChangeCode,
-                Background = new SolidColorBrush(Color.FromArgb(30, 255, 165, 0)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 255, 165, 0)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(10, 6),
-                Child = new TextBlock
-                {
-                    Foreground = new SolidColorBrush(Color.Parse("#FFA500")),
-                    FontSize = 11.5,
-                    TextWrapping = TextWrapping.Wrap,
-                    Text = server.InviteCodeLastChanged.HasValue
-                        ? $"🔒 Invite code locked for {Math.Ceiling(24 - (DateTime.UtcNow - server.InviteCodeLastChanged.Value).TotalHours):0}h more. You can only change it once per day."
-                        : "🔒 Locked."
-                }
-            };
-
-            // ── Allowed players pill UI ───────────────────────────────────────────
-            var currentPlayers = new List<string>(server.AllowedPlayers ?? new List<string>());
-
-            var pillsWrap = new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = double.NaN };
-
-            void RebuildPills()
-            {
-                pillsWrap.Children.Clear();
-                foreach (var playerName in currentPlayers.ToList())
-                {
-                    var nameCopy = playerName;
-                    var removeBtn = new Button
-                    {
-                        Content = "✕",
-                        FontSize = 10,
-                        Padding = new Thickness(2, 0),
-                        Background = Brushes.Transparent,
-                        Foreground = new SolidColorBrush(Color.Parse("#FF5555")),
-                        BorderThickness = new Thickness(0),
-                        Cursor = new Cursor(StandardCursorType.Hand),
-                    };
-                    removeBtn.Click += (_, _) =>
-                    {
-                        currentPlayers.Remove(nameCopy);
-                        RebuildPills();
-                    };
-
-                    var pill = new Border
-                    {
-                        Background = new SolidColorBrush(GetAccentColor(40)),
-                        BorderBrush = new SolidColorBrush(GetAccentColor(120)),
-                        BorderThickness = new Thickness(1),
-                        CornerRadius = new CornerRadius(20),
-                        Padding = new Thickness(10, 5),
-                        Margin = new Thickness(0, 4, 6, 4),
-                        Child = new StackPanel
-                        {
-                            Orientation = Orientation.Horizontal,
-                            Spacing = 6,
-                            Children =
-                            {
-                                new TextBlock
-                                {
-                                    Text = nameCopy,
-                                    Foreground = new SolidColorBrush(Color.Parse("#C8BAFF")),
-                                    FontSize = 12,
-                                    VerticalAlignment = VerticalAlignment.Center
-                                },
-                                removeBtn
-                            }
-                        }
-                    };
-                    pillsWrap.Children.Add(pill);
-                }
-            }
-            RebuildPills();
-
-            var newPlayerInput = new TextBox
-            {
-                Watermark = "Enter Minecraft username...",
-                Height = 38,
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-
-            var addPlayerBtn = new Button
-            {
-                Content = "+ Add",
-                Background = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B")),
-                Foreground = Brushes.White,
-                FontWeight = FontWeight.Bold,
-                Height = 38,
-                Padding = new Thickness(16, 0),
-                CornerRadius = new CornerRadius(8),
-                Cursor = new Cursor(StandardCursorType.Hand)
-            };
-
-            addPlayerBtn.Click += (_, _) =>
-            {
-                var name = newPlayerInput.Text?.Trim();
-                if (string.IsNullOrEmpty(name)) return;
-                if (currentPlayers.Any(p => p.Equals(name, StringComparison.OrdinalIgnoreCase))) return;
-                currentPlayers.Add(name);
-                newPlayerInput.Text = "";
-                RebuildPills();
-            };
-
-            newPlayerInput.KeyDown += (_, e) =>
-            {
-                if (e.Key == Key.Enter) addPlayerBtn.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-            };
-
-            var addPlayerRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 6, 0, 0) };
-            addPlayerRow.Children.Add(newPlayerInput.With(column: 0));
-            addPlayerRow.Children.Add(addPlayerBtn.With(column: 1));
-
-            var pillsContainer = new Border
-            {
-                Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
-                BorderBrush = new SolidColorBrush(GetAccentColor(30)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(10, 8),
-                MinHeight = 48,
-                Child = pillsWrap
-            };
-
-            // ── Save button ───────────────────────────────────────────────────────
-            var saveSettingsBtn = CreatePrimaryButton("Save Configuration", "#38D6C4", Colors.Black);
-            saveSettingsBtn.Height = 46;
-            saveSettingsBtn.CornerRadius = new CornerRadius(10);
-            saveSettingsBtn.FontWeight = FontWeight.Bold;
-            saveSettingsBtn.Margin = new Thickness(0, 12, 0, 0);
-
-            saveSettingsBtn.Click += async (_, _) =>
-            {
-                var name = editNameInput.Text?.Trim();
-                if (string.IsNullOrEmpty(name))
-                {
-                    await DialogService.ShowInfoAsync(this, "Name Required", "Please enter a valid server name.");
-                    return;
-                }
-
-                // Invite code change: enforce once-per-day
-                var newCode = inviteInput.Text?.Trim() ?? "";
-                if (canChangeCode && newCode != (server.InviteCode ?? ""))
-                {
-                    server.InviteCode = newCode;
-                    server.InviteCodeLastChanged = DateTime.UtcNow;
-                }
-
-                server.Name = name;
-                server.Port = editPortInput.Text?.Trim() ?? "25565";
-                server.RamAllocation = editRamCombo.SelectedItem?.ToString()?.Replace(" GB", "G") ?? "2G";
-                server.UseUPnP  = editUpnpCheck.IsChecked  ?? true;
-                server.UseTunnel= editTunnelCheck.IsChecked ?? true;
-                server.OnlineMode = editOnlineCheck.IsChecked ?? false;
-                server.EmptyTimeoutMinutes = 30.0;
-                server.PlayerTimeoutHours = double.TryParse(editPlayerTimeoutInput.Text, out var ptVal) ? ptVal : 2.0;
-                server.AllowedPlayers = currentPlayers;
-                server.AutoInvite = false;
-
-                SaveServers();
-                await DialogService.ShowInfoAsync(this, "Saved ✓", "Server configuration saved successfully!");
-                RefreshLayoutSection();
-            };
-
-            // ── Assemble form ─────────────────────────────────────────────────────
-            var settingsForm = new StackPanel
-            {
-                Spacing = 2,
-                Children =
-                {
-                    SectionLabel("GENERAL"),
-                    editNameInput,
-                    SectionLabel("PORT"),
-                    editPortInput,
-                    SectionLabel("RAM ALLOCATION"),
-                    editRamCombo,
-                    SectionLabel("PLAYER TIMEOUT (HOURS)"),
-                    editPlayerTimeoutInput,
-
-                    SectionLabel("STABLE INVITE CODE"),
-                    inviteInput,
-                    inviteLockBadge,
-
-                    SectionLabel("ALLOWED PLAYERS"),
-                    pillsContainer,
-                    addPlayerRow,
-
-                    new Border { Height = 8 },
-                    editUpnpCheck, editTunnelCheck, editOnlineCheck,
-
-                    saveSettingsBtn
-                }
-            };
-
-            var settingsCard = CreateGlassBox("Server Settings", settingsForm);
-            contentPanel.Children.Add(settingsCard);
+            contentPanel.Children.Add(BuildSettingsTabPanel(server));
         }
         else if (_activeDashboardTab == "files")
         {
-            // View Files Tab
-            var openFolderBtn = CreatePrimaryButton("Open Server Directory", _settings.AccentColor ?? "#8B5A2B", Colors.White);
-            openFolderBtn.Height = 44;
-            openFolderBtn.CornerRadius = new CornerRadius(10);
-            openFolderBtn.FontWeight = FontWeight.Bold;
-            openFolderBtn.Click += (_, _) =>
-            {
-                OpenLocalFolder(server.FolderPath);
-            };
-
-            var filesContent = new StackPanel
-            {
-                Spacing = 12,
-                Children =
-                {
-                    new TextBlock { Text = "Access server world saves, plugin folders, and configuration logs locally.", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), TextWrapping = TextWrapping.Wrap },
-                    new TextBlock { Text = $"Folder Location: {server.FolderPath}", FontSize = 11, FontFamily = new FontFamily("Consolas, Courier New, monospace"), Foreground = new SolidColorBrush(Color.Parse("#7A8AAA")), TextWrapping = TextWrapping.Wrap },
-                    new Border { Height = 10 },
-                    openFolderBtn
-                }
-            };
-
-            var filesCard = CreateGlassBox("Server Files", filesContent);
-            contentPanel.Children.Add(filesCard);
+            contentPanel.Children.Add(BuildFilesTabPanel(server));
         }
         else if (_activeDashboardTab == "mods")
         {
-            // Mods & Plugins tab!
-            // 1. Determine directory: "mods" for fabric/forge/quilt/neoforge, "plugins" for paper/spigot/purpur
-            var isPluginLoader = server.Loader.ToLowerInvariant() == "paper" || 
-                                 server.Loader.ToLowerInvariant() == "spigot" || 
-                                 server.Loader.ToLowerInvariant() == "purpur";
-            var targetFolder = isPluginLoader ? "plugins" : "mods";
-            var targetPath = Path.Combine(server.FolderPath, targetFolder);
-            Directory.CreateDirectory(targetPath);
-            
-            // List currently installed jars in the target folder
-            var installedJars = new List<string>();
-            try
-            {
-                if (Directory.Exists(targetPath))
-                {
-                    installedJars = Directory.GetFiles(targetPath, "*.jar")
-                        .Select(Path.GetFileName)
-                        .Where(x => x != null)
-                        .Cast<string>()
-                        .ToList();
-                }
-            }
-            catch (Exception ex)
-            {
-                LauncherLog.Error($"Failed to list server jar files: {ex.Message}");
-            }
-
-            var installedListPanel = new StackPanel { Spacing = 6 };
-            
-            var refreshInstalledList = new System.Action(() => {
-                installedListPanel.Children.Clear();
-                if (installedJars.Count == 0)
-                {
-                    installedListPanel.Children.Add(new TextBlock { 
-                        Text = $"No {targetFolder} installed yet.", 
-                        Foreground = Brushes.Gray, 
-                        FontStyle = FontStyle.Italic,
-                        Margin = new Thickness(0, 10, 0, 10),
-                        HorizontalAlignment = HorizontalAlignment.Center
-                    });
-                }
-                else
-                {
-                    foreach (var jar in installedJars)
-                    {
-                        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-                        row.Children.Add(new TextBlock { Text = jar, VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White, FontSize = 12 }.With(column: 0));
-                        
-                        var deleteBtn = new Button { Content = "🗑 Delete", Background = new SolidColorBrush(Color.Parse("#FF5555")), Foreground = Brushes.White, FontSize = 11, Padding = new Thickness(8, 4) };
-                        var localJar = jar;
-                        deleteBtn.Click += async (_, _) => {
-                            var ok = await DialogService.ShowConfirmAsync(this, "Delete File", $"Delete '{localJar}'?");
-                            if (!ok) return;
-                            try
-                            {
-                                var fullPath = Path.Combine(targetPath, localJar);
-                                if (File.Exists(fullPath))
-                                {
-                                    File.Delete(fullPath);
-                                    installedJars.Remove(localJar);
-                                    RefreshLayoutSection();
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                await DialogService.ShowInfoAsync(this, "Error deleting", $"Could not delete file: {ex.Message}");
-                            }
-                        };
-                        row.Children.Add(deleteBtn.With(column: 1));
-                        
-                        var itemBorder = new Border {
-                            Background = new SolidColorBrush(Color.FromArgb(15, 255, 255, 255)),
-                            Padding = new Thickness(10, 6),
-                            CornerRadius = new CornerRadius(8),
-                            Margin = new Thickness(0, 2, 0, 2),
-                            Child = row
-                        };
-                        installedListPanel.Children.Add(itemBorder);
-                    }
-                }
-            });
-            refreshInstalledList();
-
-            // Search Panel
-            var searchInput = CreateTextBox();
-            searchInput.Watermark = isPluginLoader ? "Search plugins (e.g. EssentialsX)..." : "Search mods...";
-            searchInput.Margin = new Thickness(0, 0, 8, 0);
-            
-            var sourceCombo = CreateComboBox(new[] { "Modrinth", "CurseForge" });
-            sourceCombo.SelectedIndex = 0;
-            sourceCombo.Width = 120;
-            sourceCombo.Margin = new Thickness(0, 0, 8, 0);
-            
-            var searchResultsPanel = new StackPanel { Spacing = 6 };
-            var searchBtn = CreatePrimaryButton("Search", "#38D6C4", Colors.Black);
-            searchBtn.Width = 100;
-            searchBtn.Height = 40;
-            
-            var searchProgressRing = new ProgressBar { IsIndeterminate = true, IsVisible = false, Height = 4, Margin = new Thickness(0, 6, 0, 6) };
-            
-            var renderResults = new System.Action<IEnumerable<ModrinthProject>, string>((projects, headerText) => {
-                searchResultsPanel.Children.Clear();
-                if (!string.IsNullOrEmpty(headerText))
-                {
-                    searchResultsPanel.Children.Add(new TextBlock {
-                        Text = headerText,
-                        FontSize = 11,
-                        FontWeight = FontWeight.Bold,
-                        Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")),
-                        Margin = new Thickness(0, 4, 0, 8)
-                    });
-                }
-                
-                var projectsList = projects.ToList();
-                if (projectsList.Count == 0)
-                {
-                    searchResultsPanel.Children.Add(new TextBlock { Text = "No items to display.", Foreground = Brushes.Gray, FontStyle = FontStyle.Italic, Margin = new Thickness(10) });
-                    return;
-                }
-
-                foreach (var project in projectsList)
-                {
-                    var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-                    var textStack = new StackPanel { Spacing = 2 };
-                    textStack.Children.Add(new TextBlock { Text = project.Title, FontWeight = FontWeight.Bold, Foreground = Brushes.White, FontSize = 13 });
-                    textStack.Children.Add(new TextBlock { Text = project.Description, Foreground = Brushes.Gray, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis });
-                    row.Children.Add(textStack.With(column: 0));
-                    
-                    var downloadBtn = CreatePrimaryButton("Install", _settings.AccentColor ?? "#8B5A2B", Colors.White);
-                    downloadBtn.Height = 32;
-                    downloadBtn.CornerRadius = new CornerRadius(8);
-                    downloadBtn.FontSize = 11;
-                    
-                    var isAlreadyInstalled = installedJars.Any(j => j.Contains(project.Title, StringComparison.OrdinalIgnoreCase) || j.Contains(project.ProjectId, StringComparison.OrdinalIgnoreCase));
-                    if (isAlreadyInstalled)
-                    {
-                        downloadBtn.Content = "Installed";
-                        downloadBtn.IsEnabled = false;
-                    }
-                    
-                    var searchLoader = isPluginLoader ? "paper" : server.Loader;
-                    var localProj = project;
-                    downloadBtn.Click += async (_, _) => {
-                        downloadBtn.IsEnabled = false;
-                        downloadBtn.Content = "Downloading...";
-                        try
-                        {
-                            string finalFilename = "";
-                            if (localProj.IsCurseForge)
-                            {
-                                var cfFiles = await _curseForgeClient.GetProjectVersionsAsync(localProj.ProjectId, server.Version, searchLoader, CancellationToken.None);
-                                var cfFile = cfFiles.FirstOrDefault();
-                                if (cfFile == null)
-                                {
-                                    throw new InvalidOperationException($"No compatible version found on CurseForge for MC {server.Version}.");
-                                }
-                                if (string.IsNullOrEmpty(cfFile.DownloadUrl))
-                                {
-                                    throw new InvalidOperationException("This mod has downloads disabled for 3rd party launchers on CurseForge.");
-                                }
-                                var destFile = Path.Combine(targetPath, cfFile.FileName);
-                                await _curseForgeClient.DownloadFileAsync(cfFile.DownloadUrl, destFile, null, CancellationToken.None);
-                                finalFilename = cfFile.FileName;
-                            }
-                            else
-                            {
-                                var versions = await _modrinthClient.GetProjectVersionsAsync(localProj.ProjectId, server.Version, searchLoader, CancellationToken.None);
-                                var version = versions.FirstOrDefault(HasPrimaryFile) ?? versions.FirstOrDefault();
-                                if (version == null)
-                                {
-                                    throw new InvalidOperationException($"No compatible version found for MC {server.Version}.");
-                                }
-                                var file = version.Files.FirstOrDefault(f => f.Primary) ?? version.Files.FirstOrDefault();
-                                if (file == null)
-                                {
-                                    throw new InvalidOperationException("No download file found.");
-                                }
-                                var destFile = Path.Combine(targetPath, file.Filename);
-                                await _modrinthClient.DownloadFileAsync(file.Url, destFile, null, CancellationToken.None);
-                                finalFilename = file.Filename;
-                            }
-                            
-                            downloadBtn.Content = "✓ Installed";
-                            if (!string.IsNullOrEmpty(finalFilename) && !installedJars.Contains(finalFilename))
-                            {
-                                installedJars.Add(finalFilename);
-                            }
-                            RefreshLayoutSection();
-                        }
-                        catch (Exception ex)
-                        {
-                            downloadBtn.Content = "Failed";
-                            downloadBtn.IsEnabled = true;
-                            await DialogService.ShowInfoAsync(this, "Install Failed", $"Failed to install {localProj.Title}: {ex.Message}");
-                        }
-                    };
-                    
-                    row.Children.Add(downloadBtn.With(column: 1));
-                    
-                    var border = new Border {
-                        Background = new SolidColorBrush(Color.FromArgb(10, 255, 255, 255)),
-                        BorderBrush = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
-                        BorderThickness = new Thickness(1),
-                        Padding = new Thickness(12, 10),
-                        CornerRadius = new CornerRadius(10),
-                        Margin = new Thickness(0, 4, 0, 4),
-                        Child = row
-                    };
-                    searchResultsPanel.Children.Add(border);
-                }
-            });
-
-            var clientOnlyKeywords = new[] { 
-                "sodium", "iris", "hud", "tooltip", "shader", "minimap", "worldmap", 
-                "fps booster", "zoom", "optifine", "client-only", "client only",
-                "crosshair", "menu", "screenshot", "dynamic lights", "entity culling",
-                "gui", "skin", "capes", "macro", "keybind", "reauth", "jei", "rei", "emi"
-            };
-
-            var isClientOnly = new System.Func<ModrinthProject, bool>(r => {
-                // 1. Exclude if marked as unsupported on server-side by Modrinth metadata
-                if (string.Equals(r.ServerSide, "unsupported", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-                
-                // 2. Exclude if required on client-side but optional/unsupported on server-side (typical of client-only mods like minimaps/HUDs)
-                if (string.Equals(r.ClientSide, "required", StringComparison.OrdinalIgnoreCase) && 
-                    (string.Equals(r.ServerSide, "optional", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(r.ServerSide)))
-                {
-                    return true;
-                }
-                
-                // 3. Exclude by title/description keywords
-                var titleLower = r.Title.ToLowerInvariant();
-                var descLower = r.Description.ToLowerInvariant();
-                if (clientOnlyKeywords.Any(kw => titleLower.Contains(kw) || descLower.Contains(kw)))
-                {
-                    return true;
-                }
-                
-                return false;
-            });
-
-            var loadRecommendations = new System.Func<Task>(async () => {
-                searchProgressRing.IsVisible = true;
-                searchResultsPanel.Children.Clear();
-                searchResultsPanel.Children.Add(new TextBlock { Text = "Loading recommendations...", Foreground = Brushes.Gray, FontStyle = FontStyle.Italic, Margin = new Thickness(10) });
-                try
-                {
-                    var recommendedQueries = isPluginLoader 
-                        ? new[] { "EssentialsX", "LuckPerms", "Vault", "WorldEdit", "ViaVersion" }
-                        : new[] { "Lithium", "FerriteCore", "Chunky", "Spark" };
-                    
-                    var recommendedProjects = new List<ModrinthProject>();
-                    var searchLoader = isPluginLoader ? "paper" : server.Loader;
-
-                    var tasks = recommendedQueries.Select(async q => {
-                        try
-                        {
-                            var searchRes = await _modrinthClient.SearchProjectsAsync(q, "mod", server.Version, searchLoader, CancellationToken.None);
-                            return searchRes.FirstOrDefault(p => !isClientOnly(p)) ?? searchRes.FirstOrDefault();
-                        }
-                        catch
-                        {
-                            return null;
-                        }
-                    });
-
-                    var results = await Task.WhenAll(tasks);
-                    foreach (var p in results)
-                    {
-                        if (p != null) recommendedProjects.Add(p);
-                    }
-
-                    renderResults(recommendedProjects, "★ RECOMMENDED FOR YOUR SERVER TYPE:");
-                }
-                catch (Exception ex)
-                {
-                    LauncherLog.Warn($"[Server Dashboard] Failed to load recommended mods: {ex.Message}");
-                    searchResultsPanel.Children.Clear();
-                    searchResultsPanel.Children.Add(new TextBlock { Text = "Failed to load recommendations.", Foreground = Brushes.Gray, FontStyle = FontStyle.Italic, Margin = new Thickness(10) });
-                }
-                finally
-                {
-                    searchProgressRing.IsVisible = false;
-                }
-            });
-
-            // Trigger the initial load of recommendations
-            _ = Task.Run(async () => {
-                await Task.Delay(100);
-                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () => {
-                    await loadRecommendations();
-                });
-            });
-            
-            searchBtn.Click += async (_, _) => {
-                var query = searchInput.Text?.Trim();
-                if (string.IsNullOrEmpty(query))
-                {
-                    await loadRecommendations();
-                    return;
-                }
-                
-                searchProgressRing.IsVisible = true;
-                searchResultsPanel.Children.Clear();
-                
-                try
-                {
-                    var searchLoader = isPluginLoader ? "paper" : server.Loader;
-                    var selectedSource = sourceCombo.SelectedItem?.ToString() ?? "Modrinth";
-                    IReadOnlyList<ModrinthProject> results;
-                    
-                    if (selectedSource == "CurseForge")
-                    {
-                        var rawResults = await _curseForgeClient.SearchModsAsync(query, server.Version, searchLoader, CancellationToken.None);
-                        results = rawResults.Where(r => !isClientOnly(r)).ToList();
-                    }
-                    else
-                    {
-                        var rawResults = await _modrinthClient.SearchProjectsAsync(query, "mod", server.Version, searchLoader, CancellationToken.None);
-                        results = rawResults.Where(r => !isClientOnly(r)).ToList();
-                    }
-                    
-                    renderResults(results, $"Search results for \"{query}\" on {selectedSource}:");
-                }
-                catch (Exception ex)
-                {
-                    searchResultsPanel.Children.Clear();
-                    searchResultsPanel.Children.Add(new TextBlock { Text = $"Search failed: {ex.Message}", Foreground = new SolidColorBrush(Color.Parse("#FF5555")), FontStyle = FontStyle.Italic, Margin = new Thickness(10) });
-                }
-                finally
-                {
-                    searchProgressRing.IsVisible = false;
-                }
-            };
-
-            var searchHeader = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
-            searchHeader.Children.Add(searchInput.With(column: 0));
-            searchHeader.Children.Add(sourceCombo.With(column: 1));
-            searchHeader.Children.Add(searchBtn.With(column: 2));
-
-            // Import Mod button (file picker)
-            var importModBtn = CreatePrimaryButton("⤓ Import Mod", "#BD93F9", Colors.White);
-            importModBtn.Height = 36;
-            importModBtn.CornerRadius = new CornerRadius(8);
-            importModBtn.FontWeight = FontWeight.Bold;
-            importModBtn.Click += async (_, _) =>
-            {
-                try
-                {
-                    var topLevel = TopLevel.GetTopLevel(this);
-                    if (topLevel == null) return;
-                    var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-                    {
-                        Title = $"Import {targetFolder} (.jar files)",
-                        AllowMultiple = true,
-                        FileTypeFilter = new[] { new FilePickerFileType("Mod Files") { Patterns = new[] { "*.jar" } } }
-                    });
-                    if (files != null && files.Count > 0)
-                    {
-                        foreach (var fileItem in files)
-                        {
-                            var srcPath = fileItem.Path.LocalPath;
-                            if (File.Exists(srcPath))
-                            {
-                                var destPath = Path.Combine(targetPath, Path.GetFileName(srcPath));
-                                File.Copy(srcPath, destPath, true);
-                                var fname = Path.GetFileName(srcPath);
-                                if (!installedJars.Contains(fname))
-                                    installedJars.Add(fname);
-                            }
-                        }
-                        RefreshLayoutSection();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    await DialogService.ShowInfoAsync(this, "Import Failed", $"Failed to import mod: {ex.Message}");
-                }
-            };
-
-            var installedHeader = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-                Children =
-                {
-                    new TextBlock { Text = $"Installed {targetFolder.ToUpper()}", FontSize = 14, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }.With(column: 0),
-                    importModBtn.With(column: 1)
-                }
-            };
-
-            // Drag-and-drop hint
-            var dropHint = new TextBlock
-            {
-                Text = $"💡 Tip: You can drag & drop .jar files here to import {targetFolder}",
-                FontSize = 10.5,
-                Foreground = new SolidColorBrush(Color.Parse("#66758F")),
-                FontStyle = FontStyle.Italic,
-                Margin = new Thickness(0, 2, 0, 6)
-            };
-
-            var modsPanel = new StackPanel
-            {
-                Spacing = 12,
-                Children =
-                {
-                    installedHeader,
-                    dropHint,
-                    installedListPanel,
-                    new Border { Height = 1, Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)), Margin = new Thickness(0, 10, 0, 10) },
-                    new TextBlock { Text = $"Search & Add {targetFolder.ToUpper()}", FontSize = 14, FontWeight = FontWeight.Bold, Foreground = Brushes.White },
-                    searchHeader,
-                    searchProgressRing,
-                    new ScrollViewer { MaxHeight = 350, Content = searchResultsPanel }
-                }
-            };
-
-            var modsCard = CreateGlassBox("", modsPanel);
-
-            // Enable drag-and-drop on the server mods card
-            DragDrop.SetAllowDrop(modsCard, true);
-            modsCard.AddHandler(DragDrop.DragEnterEvent, (sender, e) =>
-            {
-                if (modsCard is Border mb) mb.BorderBrush = new SolidColorBrush(Color.Parse("#BD93F9"));
-            });
-            modsCard.AddHandler(DragDrop.DragLeaveEvent, (sender, e) =>
-            {
-                if (modsCard is Border mb) mb.BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
-            });
-            modsCard.AddHandler(DragDrop.DragOverEvent, (sender, e) =>
-            {
-                var droppedFiles = e.Data.GetFiles();
-                if (droppedFiles != null && droppedFiles.Any(f => f.Path.LocalPath.EndsWith(".jar", StringComparison.OrdinalIgnoreCase)))
-                {
-                    e.DragEffects = DragDropEffects.Copy;
-                }
-                else
-                {
-                    e.DragEffects = DragDropEffects.None;
-                }
-                e.Handled = true;
-            });
-            modsCard.AddHandler(DragDrop.DropEvent, async (sender, e) =>
-            {
-                var droppedFiles = e.Data.GetFiles();
-                if (droppedFiles != null)
-                {
-                    foreach (var fileItem in droppedFiles)
-                    {
-                        var srcPath = fileItem.Path.LocalPath;
-                        if (File.Exists(srcPath) && srcPath.EndsWith(".jar", StringComparison.OrdinalIgnoreCase))
-                        {
-                            try
-                            {
-                                var destPath = Path.Combine(targetPath, Path.GetFileName(srcPath));
-                                File.Copy(srcPath, destPath, true);
-                                var fname = Path.GetFileName(srcPath);
-                                if (!installedJars.Contains(fname))
-                                    installedJars.Add(fname);
-                            }
-                            catch (Exception ex)
-                            {
-                                await DialogService.ShowInfoAsync(this, "Error", $"Failed to import '{Path.GetFileName(srcPath)}': {ex.Message}");
-                            }
-                        }
-                    }
-                    RefreshLayoutSection();
-                }
-                e.Handled = true;
-            });
-            modsCard.AddHandler(DragDrop.DropEvent, (sender, e) =>
-            {
-                if (modsCard is Border mb2) mb2.BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
-            }, handledEventsToo: true);
-
-            contentPanel.Children.Add(modsCard);
-
+            contentPanel.Children.Add(BuildModsTabPanel(server));
         }
         else
         {
             // Default: Console log streaming & input command sender
             var consoleHeaderGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            consoleHeaderGrid.Children.Add(new TextBlock { Text = "Live Server Console Output", Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), FontSize = 12, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center }.With(column: 0));
-            
+            var termDots = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+            foreach (var dotHex in new[] { "#FF5F56", "#FFBD2E", "#27C93F" })
+                termDots.Children.Add(new Border { Width = 9, Height = 9, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(Color.Parse(dotHex)) });
+            var termTitleRow = new StackPanel { Orientation = Orientation.Horizontal, Children = { termDots, new TextBlock { Text = "Live Server Console Output", Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), FontSize = 12, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center } } };
+            consoleHeaderGrid.Children.Add(termTitleRow.With(column: 0));
+
             var consoleLogsStack = new StackPanel { Spacing = 3 };
             var consoleScroller = new ScrollViewer
             {
-                Height = 280,
-                Background = new SolidColorBrush(Color.Parse("#070A0F")),
-                Padding = new Thickness(12),
-                CornerRadius = new CornerRadius(12),
-                BorderBrush = new SolidColorBrush(Color.Parse("#1D2A3A")),
-                BorderThickness = new Thickness(1.5),
+                Background = Brushes.Transparent,
+                Padding = new Thickness(14, 10),
                 Content = consoleLogsStack
+            };
+            var consoleTerminalFrame = new Border
+            {
+                Height = 280,
+                CornerRadius = new CornerRadius(14),
+                BorderThickness = new Thickness(1.5),
+                BorderBrush = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                    GradientStops = { new GradientStop(Color.Parse("#3B82F6"), 0), new GradientStop(Color.Parse("#1D2A3A"), 0.5), new GradientStop(Color.Parse("#00FF87"), 1) }
+                },
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                    GradientStops = { new GradientStop(Color.Parse("#0B0F17"), 0), new GradientStop(Color.Parse("#050709"), 1) }
+                },
+                BoxShadow = BoxShadows.Parse("0 8 24 0 #66000000, inset 0 1 0 0 #14FFFFFF"),
+                ClipToBounds = true,
+                Child = consoleScroller
             };
 
             var appendStyledLogLine = new System.Action<string>((line) =>
@@ -12578,17 +12630,11 @@ public sealed class MainWindow : Window
             {
                 Dispatcher.UIThread.Post(() =>
                 {
-                    statusLabel.Text = status;
+                    statusLabel.Text = status.ToUpper();
+                    Color statusColor;
                     if (status == "Running")
                     {
-                        statusLabel.Foreground = Brushes.LightGreen;
-                        statusIndicatorDot.Background = Brushes.LightGreen;
-                        statusIndicatorDot.BoxShadow = new BoxShadows(new BoxShadow
-                        {
-                            Blur = 12,
-                            Color = Color.FromArgb(160, 0, 255, 135),
-                            OffsetX = 0, OffsetY = 0
-                        });
+                        statusColor = Color.Parse("#00FF87");
                         connectionBar.IsVisible = true;
                         var updatedAddr = _tunnelAddresses.TryGetValue(server.Id, out var activeTunnel) 
                             ? activeTunnel 
@@ -12597,31 +12643,29 @@ public sealed class MainWindow : Window
                     }
                     else if (status == "Starting...")
                     {
-                        statusLabel.Foreground = Brushes.Orange;
-                        statusIndicatorDot.Background = Brushes.Orange;
-                        statusIndicatorDot.BoxShadow = new BoxShadows(new BoxShadow
-                        {
-                            Blur = 12,
-                            Color = Color.FromArgb(160, 255, 184, 108),
-                            OffsetX = 0, OffsetY = 0
-                        });
+                        statusColor = Color.Parse("#FFB86C");
                         connectionBar.IsVisible = false;
                     }
                     else
                     {
-                        statusLabel.Foreground = new SolidColorBrush(Color.Parse("#FF5555"));
-                        statusIndicatorDot.Background = new SolidColorBrush(Color.Parse("#FF5555"));
-                        statusIndicatorDot.BoxShadow = new BoxShadows(new BoxShadow
-                        {
-                            Blur = 12,
-                            Color = Color.FromArgb(160, 255, 85, 85),
-                            OffsetX = 0, OffsetY = 0
-                        });
+                        statusColor = Color.Parse("#FF5555");
                         connectionBar.IsVisible = false;
                     }
 
-                    startBtn.IsEnabled = status == "Offline";
-                    stopBtn.IsEnabled = status == "Running";
+                    statusLabel.Foreground = new SolidColorBrush(statusColor);
+                    if (statusLabel.Parent is StackPanel stack && stack.Children.Count > 0 && stack.Children[0] is Border dot)
+                    {
+                        dot.Background = new SolidColorBrush(statusColor);
+                        dot.BoxShadow = new BoxShadows(new BoxShadow
+                        {
+                            Blur = 6,
+                            Color = Color.FromArgb(120, statusColor.R, statusColor.G, statusColor.B),
+                            OffsetX = 0,
+                            OffsetY = 0
+                        });
+                    }
+
+                    primaryActionBtn.IsEnabled = status != "Starting...";
                     restartBtn.IsEnabled = status == "Running";
                 });
             };
@@ -12860,7 +12904,7 @@ public sealed class MainWindow : Window
                 {
                     connectionBar,
                     consoleHeaderGrid,
-                    consoleScroller,
+                    consoleTerminalFrame,
                     consoleInteractiveGrid
                 }
             };
@@ -12870,7 +12914,7 @@ public sealed class MainWindow : Window
         var scrolledContent = CreateSectionScroller(contentPanel) as ScrollViewer;
         if (scrolledContent != null)
         {
-            scrolledContent.Margin = new Thickness(10, 0, 0, 0);
+            scrolledContent.Margin = new Thickness(0, 0, 0, 8);
             _activeDashboardScrollViewer = scrolledContent;
             
             // Restore scroll offset after layout
@@ -12885,11 +12929,19 @@ public sealed class MainWindow : Window
                     }, DispatcherPriority.Background);
                 };
             }
-            dashboardGrid.Children.Add(scrolledContent.With(column: 1));
+            dashboardGrid.Children.Add(scrolledContent);
         }
+
+        dashboardGrid.Children.Add(leftPanelWrapper);
+
         mainPanel.Children.Add(dashboardGrid.With(row: 1));
 
-        return mainPanel;
+        return new Border
+        {
+            Background = Brushes.Transparent,
+            Padding = new Thickness(20),
+            Child = mainPanel
+        };
     }
 
     private Control BuildPerformanceTabPanel(LocalServerMetadata server)
@@ -12946,10 +12998,10 @@ public sealed class MainWindow : Window
             return (rowStack, valText, fill, fillGrid);
         });
 
-        var cpuGauge = CreateStatGauge("CPU Usage", "0%", 0, "#00FF87");
-        var ramGauge = CreateStatGauge("RAM Usage", "0.0 / 0.0 GB", 0, _settings.AccentColor ?? "#8B5A2B");
-        var tpsGauge = CreateStatGauge("Server TPS (Ticks Per Second)", "0.0 / 20.0", 0, "#C084FC");
-        var msptGauge = CreateStatGauge("Server MSPT (Tick Duration)", "0.0 ms", 0, "#38D6C4");
+        var cpuGauge = CreateStatGauge("CPU Usage", "0%", 0, _settings.AccentColor ?? "#8B5A2B");
+        var ramGauge = CreateStatGauge("RAM Usage", "0.0 / 0.0 GB", 0, _settings.SecondaryAccentColor ?? "#8F70FF");
+        var tpsGauge = CreateStatGauge("Server TPS (Ticks Per Second)", "0.0 / 20.0", 0, _settings.AccentColor ?? "#8B5A2B");
+        var msptGauge = CreateStatGauge("Server MSPT (Tick Duration)", "0.0 ms", 0, _settings.SecondaryAccentColor ?? "#8F70FF");
 
         var telemetryGrid = new Grid
         {
@@ -13067,7 +13119,7 @@ public sealed class MainWindow : Window
         tuningStack.Children.Add(gcLabel);
         tuningStack.Children.Add(gcCombo);
 
-        var saveTuningBtn = CreatePrimaryButton("💾 Save Performance Settings", "#38D6C4", Colors.Black);
+        var saveTuningBtn = CreatePrimaryButton("💾 Save Performance Settings", _settings.AccentColor ?? "#8B5A2B", Colors.White);
         saveTuningBtn.Height = 40;
         saveTuningBtn.CornerRadius = new CornerRadius(10);
         saveTuningBtn.FontWeight = FontWeight.Bold;
@@ -13133,6 +13185,940 @@ public sealed class MainWindow : Window
 
         return panel;
     }
+
+    private Control BuildSettingsTabPanel(LocalServerMetadata server)
+    {
+        TextBlock SectionLabel(string text) => new TextBlock
+        {
+            Text = text,
+            Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")),
+            FontSize = 11,
+            FontWeight = FontWeight.Bold,
+            Margin = new Thickness(0, 14, 0, 4),
+            LetterSpacing = 1.2
+        };
+
+        var editNameInput = new TextBox { Text = server.Name, Watermark = "My SMP Server" };
+        var editPortInput = new TextBox { Text = server.Port, Watermark = "25565" };
+        var editRamCombo = CreateComboBox(new[] { "1 GB", "2 GB", "3 GB", "4 GB", "5 GB", "6 GB", "7 GB", "8 GB" });
+        editRamCombo.SelectedItem = server.RamAllocation.Replace("G", " GB");
+        var editPlayerTimeoutInput = new TextBox { Text = server.PlayerTimeoutHours.ToString(), Watermark = "2" };
+
+        var editUpnpCheck  = new CheckBox { Content = "Enable UPnP Port Forwarding",              IsChecked = server.UseUPnP,  Foreground = Brushes.White };
+        var editTunnelCheck= new CheckBox { Content = "Enable Internet Tunnel (Pinggy)",           IsChecked = server.UseTunnel,Foreground = Brushes.White };
+        var editOnlineCheck= new CheckBox { Content = "Online Mode (Require Microsoft Account)",   IsChecked = server.OnlineMode,Foreground = Brushes.White };
+
+        var canChangeCode = !server.InviteCodeLastChanged.HasValue
+            || (DateTime.UtcNow - server.InviteCodeLastChanged.Value).TotalHours >= 24;
+
+        var inviteInput = new TextBox
+        {
+            Text = server.InviteCode ?? "",
+            Watermark = "e.g. achinthya-smp",
+            IsEnabled = canChangeCode
+        };
+
+        var inviteLockBadge = new Border
+        {
+            IsVisible = !canChangeCode,
+            Background = new SolidColorBrush(Color.FromArgb(30, 255, 165, 0)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 255, 165, 0)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10, 6),
+            Child = new TextBlock
+            {
+                Foreground = new SolidColorBrush(Color.Parse("#FFA500")),
+                FontSize = 11.5,
+                TextWrapping = TextWrapping.Wrap,
+                Text = server.InviteCodeLastChanged.HasValue
+                    ? $"🔒 Invite code locked for {Math.Ceiling(24 - (DateTime.UtcNow - server.InviteCodeLastChanged.Value).TotalHours):0}h more. You can only change it once per day."
+                    : "🔒 Locked."
+            }
+        };
+
+        var currentPlayers = new List<string>(server.AllowedPlayers ?? new List<string>());
+        var pillsWrap = new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = double.NaN };
+
+        void RebuildPills()
+        {
+            pillsWrap.Children.Clear();
+            foreach (var playerName in currentPlayers.ToList())
+            {
+                var nameCopy = playerName;
+                var removeBtn = new Button
+                {
+                    Content = "✕",
+                    FontSize = 10,
+                    Padding = new Thickness(2, 0),
+                    Background = Brushes.Transparent,
+                    Foreground = new SolidColorBrush(Color.Parse("#FF5555")),
+                    BorderThickness = new Thickness(0),
+                    Cursor = new Cursor(StandardCursorType.Hand),
+                };
+                ToolTip.SetTip(removeBtn, "Remove Player");
+                removeBtn.Click += (_, _) =>
+                {
+                    currentPlayers.Remove(nameCopy);
+                    RebuildPills();
+                };
+
+                var pill = new Border
+                {
+                    Background = new SolidColorBrush(GetAccentColor(40)),
+                    BorderBrush = new SolidColorBrush(GetAccentColor(120)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(20),
+                    Padding = new Thickness(10, 5),
+                    Margin = new Thickness(0, 4, 6, 4),
+                    Child = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 6,
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = nameCopy,
+                                Foreground = new SolidColorBrush(Color.Parse(_settings.SecondaryAccentColor ?? "#8F70FF")),
+                                FontSize = 12,
+                                VerticalAlignment = VerticalAlignment.Center
+                            },
+                            removeBtn
+                        }
+                    }
+                };
+                pillsWrap.Children.Add(pill);
+            }
+        }
+        RebuildPills();
+
+        var newPlayerInput = new TextBox
+        {
+            Watermark = "Enter Minecraft username...",
+            Height = 38,
+            Margin = new Thickness(0, 0, 8, 0)
+        };
+
+        var addPlayerBtn = new Button
+        {
+            Content = "+ Add",
+            Background = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B")),
+            Foreground = Brushes.White,
+            FontWeight = FontWeight.Bold,
+            Height = 38,
+            Padding = new Thickness(16, 0),
+            CornerRadius = new CornerRadius(8),
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+
+        addPlayerBtn.Click += (_, _) =>
+        {
+            var name = newPlayerInput.Text?.Trim();
+            if (string.IsNullOrEmpty(name)) return;
+            if (currentPlayers.Any(p => p.Equals(name, StringComparison.OrdinalIgnoreCase))) return;
+            currentPlayers.Add(name);
+            newPlayerInput.Text = "";
+            RebuildPills();
+        };
+
+        newPlayerInput.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter) addPlayerBtn.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        };
+
+        var addPlayerRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 6, 0, 0) };
+        addPlayerRow.Children.Add(newPlayerInput.With(column: 0));
+        addPlayerRow.Children.Add(addPlayerBtn.With(column: 1));
+
+        var pillsContainer = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(GetAccentColor(30)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(10, 8),
+            MinHeight = 48,
+            Child = pillsWrap
+        };
+
+        var saveSettingsBtn = CreatePrimaryButton("Save Configuration", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+        saveSettingsBtn.Height = 46;
+        saveSettingsBtn.CornerRadius = new CornerRadius(10);
+        saveSettingsBtn.FontWeight = FontWeight.Bold;
+        saveSettingsBtn.Margin = new Thickness(0, 12, 0, 0);
+
+        saveSettingsBtn.Click += async (_, _) =>
+        {
+            var name = editNameInput.Text?.Trim();
+            if (string.IsNullOrEmpty(name))
+            {
+                await DialogService.ShowInfoAsync(this, "Name Required", "Please enter a valid server name.");
+                return;
+            }
+
+            var newCode = inviteInput.Text?.Trim() ?? "";
+            if (canChangeCode && newCode != (server.InviteCode ?? ""))
+            {
+                server.InviteCode = newCode;
+                server.InviteCodeLastChanged = DateTime.UtcNow;
+            }
+
+            server.Name = name;
+            server.Port = editPortInput.Text?.Trim() ?? "25565";
+            server.RamAllocation = editRamCombo.SelectedItem?.ToString()?.Replace(" GB", "G") ?? "2G";
+            server.UseUPnP  = editUpnpCheck.IsChecked  ?? true;
+            server.UseTunnel= editTunnelCheck.IsChecked ?? true;
+            server.OnlineMode = editOnlineCheck.IsChecked ?? false;
+            server.EmptyTimeoutMinutes = 30.0;
+            server.PlayerTimeoutHours = double.TryParse(editPlayerTimeoutInput.Text, out var ptVal) ? ptVal : 2.0;
+            server.AllowedPlayers = currentPlayers;
+            server.AutoInvite = false;
+
+            SaveServers();
+            await DialogService.ShowInfoAsync(this, "Saved ✓", "Server configuration saved successfully!");
+            RefreshLayoutSection();
+        };
+
+        var settingsForm = new StackPanel
+        {
+            Spacing = 2,
+            Children =
+            {
+                SectionLabel("GENERAL"),
+                editNameInput,
+                SectionLabel("PORT"),
+                editPortInput,
+                SectionLabel("RAM ALLOCATION"),
+                editRamCombo,
+                SectionLabel("PLAYER TIMEOUT (HOURS)"),
+                editPlayerTimeoutInput,
+
+                SectionLabel("STABLE INVITE CODE"),
+                inviteInput,
+                inviteLockBadge,
+
+                SectionLabel("ALLOWED PLAYERS"),
+                pillsContainer,
+                addPlayerRow,
+
+                new Border { Height = 8 },
+                editUpnpCheck, editTunnelCheck, editOnlineCheck,
+
+                saveSettingsBtn
+            }
+        };
+
+        return CreateGlassBox("Server Settings", settingsForm);
+    }
+
+    private Control BuildModsTabPanel(LocalServerMetadata server)
+    {
+        var isPluginLoader = server.Loader.ToLowerInvariant() == "paper" || 
+                             server.Loader.ToLowerInvariant() == "spigot" || 
+                             server.Loader.ToLowerInvariant() == "purpur";
+        var targetFolder = isPluginLoader ? "plugins" : "mods";
+        var targetPath = Path.Combine(server.FolderPath, targetFolder);
+        Directory.CreateDirectory(targetPath);
+        
+        var installedJars = new List<string>();
+        try
+        {
+            if (Directory.Exists(targetPath))
+            {
+                installedJars = Directory.GetFiles(targetPath, "*.jar")
+                    .Select(Path.GetFileName)
+                    .Where(x => x != null)
+                    .Cast<string>()
+                    .ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            LauncherLog.Error($"Failed to list server jar files: {ex.Message}");
+        }
+
+        var installedListPanel = new StackPanel { Spacing = 6 };
+        
+        var refreshInstalledList = new System.Action(() => {
+            installedListPanel.Children.Clear();
+            if (installedJars.Count == 0)
+            {
+                installedListPanel.Children.Add(new TextBlock { 
+                    Text = $"No {targetFolder} installed yet.", 
+                    Foreground = Brushes.Gray, 
+                    FontStyle = FontStyle.Italic,
+                    Margin = new Thickness(0, 10, 0, 10),
+                    HorizontalAlignment = HorizontalAlignment.Center
+                });
+            }
+            else
+            {
+                foreach (var jar in installedJars)
+                {
+                    var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+                    row.Children.Add(new TextBlock { Text = jar, VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White, FontSize = 12 }.With(column: 0));
+                    
+                    var deleteBtn = new Button { Content = "🗑 Delete", Background = new SolidColorBrush(Color.Parse("#FF5555")), Foreground = Brushes.White, FontSize = 11, Padding = new Thickness(8, 4) };
+                    var localJar = jar;
+                    deleteBtn.Click += async (_, _) => {
+                        var ok = await DialogService.ShowConfirmAsync(this, "Delete File", $"Delete '{localJar}'?");
+                        if (!ok) return;
+                        try
+                        {
+                            var fullPath = Path.Combine(targetPath, localJar);
+                            if (File.Exists(fullPath))
+                            {
+                                File.Delete(fullPath);
+                                installedJars.Remove(localJar);
+                                RefreshLayoutSection();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            await DialogService.ShowInfoAsync(this, "Error deleting", $"Could not delete file: {ex.Message}");
+                        }
+                    };
+                    row.Children.Add(deleteBtn.With(column: 1));
+                    
+                    var itemBorder = new Border {
+                        Background = new SolidColorBrush(Color.FromArgb(15, 255, 255, 255)),
+                        Padding = new Thickness(10, 6),
+                        CornerRadius = new CornerRadius(8),
+                        Margin = new Thickness(0, 2, 0, 2),
+                        Child = row
+                    };
+                    installedListPanel.Children.Add(itemBorder);
+                }
+            }
+        });
+        refreshInstalledList();
+
+        var searchInput = CreateTextBox();
+        searchInput.Watermark = isPluginLoader ? "Search plugins (e.g. EssentialsX)..." : "Search mods...";
+        searchInput.Margin = new Thickness(0, 0, 8, 0);
+        
+        var sourceCombo = CreateComboBox(new[] { "Modrinth", "CurseForge" });
+        sourceCombo.SelectedIndex = 0;
+        sourceCombo.Width = 120;
+        sourceCombo.Margin = new Thickness(0, 0, 8, 0);
+        
+        var searchResultsPanel = new StackPanel { Spacing = 6 };
+        var searchBtn = CreatePrimaryButton("Search", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+        searchBtn.Width = 100;
+        searchBtn.Height = 40;
+        
+        var searchProgressRing = new ProgressBar { IsIndeterminate = true, IsVisible = false, Height = 4, Margin = new Thickness(0, 6, 0, 6) };
+        
+        var renderResults = new System.Action<IEnumerable<ModrinthProject>, string>((projects, headerText) => {
+            searchResultsPanel.Children.Clear();
+            if (!string.IsNullOrEmpty(headerText))
+            {
+                searchResultsPanel.Children.Add(new TextBlock {
+                    Text = headerText,
+                    FontSize = 11,
+                    FontWeight = FontWeight.Bold,
+                    Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")),
+                    Margin = new Thickness(0, 4, 0, 8)
+                });
+            }
+            
+            var projectsList = projects.ToList();
+            if (projectsList.Count == 0)
+            {
+                searchResultsPanel.Children.Add(new TextBlock { Text = "No items to display.", Foreground = Brushes.Gray, FontStyle = FontStyle.Italic, Margin = new Thickness(10) });
+                return;
+            }
+
+            foreach (var project in projectsList)
+            {
+                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+                var textStack = new StackPanel { Spacing = 2 };
+                textStack.Children.Add(new TextBlock { Text = project.Title, FontWeight = FontWeight.Bold, Foreground = Brushes.White, FontSize = 13 });
+                textStack.Children.Add(new TextBlock { Text = project.Description, Foreground = Brushes.Gray, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis });
+                row.Children.Add(textStack.With(column: 0));
+                
+                var downloadBtn = CreatePrimaryButton("Install", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+                downloadBtn.Height = 32;
+                downloadBtn.CornerRadius = new CornerRadius(8);
+                downloadBtn.FontSize = 11;
+                
+                var isAlreadyInstalled = installedJars.Any(j => j.Contains(project.Title, StringComparison.OrdinalIgnoreCase) || j.Contains(project.ProjectId, StringComparison.OrdinalIgnoreCase));
+                if (isAlreadyInstalled)
+                {
+                    downloadBtn.Content = "Installed";
+                    downloadBtn.IsEnabled = false;
+                }
+                
+                var searchLoader = isPluginLoader ? "paper" : server.Loader;
+                var localProj = project;
+                downloadBtn.Click += async (_, _) => {
+                    downloadBtn.IsEnabled = false;
+                    downloadBtn.Content = "Downloading...";
+                    try
+                    {
+                        string finalFilename = "";
+                        if (localProj.IsCurseForge)
+                        {
+                            var cfFiles = await _curseForgeClient.GetProjectVersionsAsync(localProj.ProjectId, server.Version, searchLoader, CancellationToken.None);
+                            var cfFile = cfFiles.FirstOrDefault();
+                            if (cfFile == null)
+                            {
+                                throw new InvalidOperationException($"No compatible version found on CurseForge for MC {server.Version}.");
+                            }
+                            if (string.IsNullOrEmpty(cfFile.DownloadUrl))
+                            {
+                                throw new InvalidOperationException("This mod has downloads disabled for 3rd party launchers on CurseForge.");
+                            }
+                            var destFile = Path.Combine(targetPath, cfFile.FileName);
+                            await _curseForgeClient.DownloadFileAsync(cfFile.DownloadUrl, destFile, null, CancellationToken.None);
+                            finalFilename = cfFile.FileName;
+                        }
+                        else
+                        {
+                            var versions = await _modrinthClient.GetProjectVersionsAsync(localProj.ProjectId, server.Version, searchLoader, CancellationToken.None);
+                            var version = versions.FirstOrDefault(HasPrimaryFile) ?? versions.FirstOrDefault();
+                            if (version == null)
+                            {
+                                throw new InvalidOperationException($"No compatible version found for MC {server.Version}.");
+                            }
+                            var file = version.Files.FirstOrDefault(f => f.Primary) ?? version.Files.FirstOrDefault();
+                            if (file == null)
+                            {
+                                throw new InvalidOperationException("No download file found.");
+                            }
+                            var destFile = Path.Combine(targetPath, file.Filename);
+                            await _modrinthClient.DownloadFileAsync(file.Url, destFile, null, CancellationToken.None);
+                            finalFilename = file.Filename;
+                        }
+                        
+                        downloadBtn.Content = "✓ Installed";
+                        if (!string.IsNullOrEmpty(finalFilename) && !installedJars.Contains(finalFilename))
+                        {
+                            installedJars.Add(finalFilename);
+                        }
+                        RefreshLayoutSection();
+                    }
+                    catch (Exception ex)
+                    {
+                        downloadBtn.Content = "Failed";
+                        downloadBtn.IsEnabled = true;
+                        await DialogService.ShowInfoAsync(this, "Install Failed", $"Failed to install {localProj.Title}: {ex.Message}");
+                    }
+                };
+                
+                row.Children.Add(downloadBtn.With(column: 1));
+                
+                var border = new Border {
+                    Background = new SolidColorBrush(Color.FromArgb(10, 255, 255, 255)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(12, 10),
+                    CornerRadius = new CornerRadius(10),
+                    Margin = new Thickness(0, 4, 0, 4),
+                    Child = row
+                };
+                searchResultsPanel.Children.Add(border);
+            }
+        });
+
+        var clientOnlyKeywords = new[] { 
+            "sodium", "iris", "hud", "tooltip", "shader", "minimap", "worldmap", 
+            "fps booster", "zoom", "optifine", "client-only", "client only",
+            "crosshair", "menu", "screenshot", "dynamic lights", "entity culling",
+            "gui", "skin", "capes", "macro", "keybind", "reauth", "jei", "rei", "emi"
+        };
+
+        var isClientOnly = new System.Func<ModrinthProject, bool>(r => {
+            if (string.Equals(r.ServerSide, "unsupported", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            if (string.Equals(r.ClientSide, "required", StringComparison.OrdinalIgnoreCase) && 
+                (string.Equals(r.ServerSide, "optional", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(r.ServerSide)))
+            {
+                return true;
+            }
+            var titleLower = r.Title.ToLowerInvariant();
+            var descLower = r.Description.ToLowerInvariant();
+            if (clientOnlyKeywords.Any(kw => titleLower.Contains(kw) || descLower.Contains(kw)))
+            {
+                return true;
+            }
+            return false;
+        });
+
+        var loadRecommendations = new System.Func<Task>(async () => {
+            searchProgressRing.IsVisible = true;
+            searchResultsPanel.Children.Clear();
+            searchResultsPanel.Children.Add(new TextBlock { Text = "Loading recommendations...", Foreground = Brushes.Gray, FontStyle = FontStyle.Italic, Margin = new Thickness(10) });
+            try
+            {
+                var recommendedQueries = isPluginLoader 
+                    ? new[] { "EssentialsX", "LuckPerms", "Vault", "WorldEdit", "ViaVersion" }
+                    : new[] { "Lithium", "FerriteCore", "Chunky", "Spark" };
+                
+                var recommendedProjects = new List<ModrinthProject>();
+                var searchLoader = isPluginLoader ? "paper" : server.Loader;
+
+                var tasks = recommendedQueries.Select(async q => {
+                    try
+                    {
+                        var searchRes = await _modrinthClient.SearchProjectsAsync(q, "mod", server.Version, searchLoader, CancellationToken.None);
+                        return searchRes.FirstOrDefault(p => !isClientOnly(p)) ?? searchRes.FirstOrDefault();
+                    }
+                    catch
+                    {
+                        return null;
+                    }
+                });
+
+                var results = await Task.WhenAll(tasks);
+                foreach (var p in results)
+                {
+                    if (p != null) recommendedProjects.Add(p);
+                }
+
+                renderResults(recommendedProjects, "★ RECOMMENDED FOR YOUR SERVER TYPE:");
+            }
+            catch (Exception ex)
+            {
+                LauncherLog.Warn($"[Server Dashboard] Failed to load recommended mods: {ex.Message}");
+                searchResultsPanel.Children.Clear();
+                searchResultsPanel.Children.Add(new TextBlock { Text = "Failed to load recommendations.", Foreground = Brushes.Gray, FontStyle = FontStyle.Italic, Margin = new Thickness(10) });
+            }
+            finally
+            {
+                searchProgressRing.IsVisible = false;
+            }
+        });
+
+        _ = Task.Run(async () => {
+            await Task.Delay(100);
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () => {
+                await loadRecommendations();
+            });
+        });
+        
+        searchBtn.Click += async (_, _) => {
+            var query = searchInput.Text?.Trim();
+            if (string.IsNullOrEmpty(query))
+            {
+                await loadRecommendations();
+                return;
+            }
+            
+            searchProgressRing.IsVisible = true;
+            searchResultsPanel.Children.Clear();
+            
+            try
+            {
+                var searchLoader = isPluginLoader ? "paper" : server.Loader;
+                var selectedSource = sourceCombo.SelectedItem?.ToString() ?? "Modrinth";
+                IReadOnlyList<ModrinthProject> results;
+                
+                if (selectedSource == "CurseForge")
+                {
+                    var rawResults = await _curseForgeClient.SearchModsAsync(query, server.Version, searchLoader, CancellationToken.None);
+                    results = rawResults.Where(r => !isClientOnly(r)).ToList();
+                }
+                else
+                {
+                    var rawResults = await _modrinthClient.SearchProjectsAsync(query, "mod", server.Version, searchLoader, CancellationToken.None);
+                    results = rawResults.Where(r => !isClientOnly(r)).ToList();
+                }
+                
+                renderResults(results, $"Search results for \"{query}\" on {selectedSource}:");
+            }
+            catch (Exception ex)
+            {
+                searchResultsPanel.Children.Clear();
+                searchResultsPanel.Children.Add(new TextBlock { Text = $"Search failed: {ex.Message}", Foreground = new SolidColorBrush(Color.Parse("#FF5555")), FontStyle = FontStyle.Italic, Margin = new Thickness(10) });
+            }
+            finally
+            {
+                searchProgressRing.IsVisible = false;
+            }
+        };
+
+        var searchHeader = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
+        searchHeader.Children.Add(searchInput.With(column: 0));
+        searchHeader.Children.Add(sourceCombo.With(column: 1));
+        searchHeader.Children.Add(searchBtn.With(column: 2));
+
+        var importModBtn = CreatePrimaryButton("⤓ Import Mod", "#BD93F9", Colors.White);
+        importModBtn.Height = 36;
+        importModBtn.CornerRadius = new CornerRadius(8);
+        importModBtn.FontWeight = FontWeight.Bold;
+        importModBtn.Click += async (_, _) =>
+        {
+            try
+            {
+                var topLevel = TopLevel.GetTopLevel(this);
+                if (topLevel == null) return;
+                var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+                {
+                    Title = $"Import {targetFolder} (.jar files)",
+                    AllowMultiple = true,
+                    FileTypeFilter = new[] { new FilePickerFileType("Mod Files") { Patterns = new[] { "*.jar" } } }
+                });
+                if (files != null && files.Count > 0)
+                {
+                    foreach (var fileItem in files)
+                    {
+                        var srcPath = fileItem.Path.LocalPath;
+                        if (File.Exists(srcPath))
+                        {
+                            var destPath = Path.Combine(targetPath, Path.GetFileName(srcPath));
+                            File.Copy(srcPath, destPath, true);
+                            var fname = Path.GetFileName(srcPath);
+                            if (!installedJars.Contains(fname))
+                                installedJars.Add(fname);
+                        }
+                    }
+                    RefreshLayoutSection();
+                }
+            }
+            catch (Exception ex)
+            {
+                await DialogService.ShowInfoAsync(this, "Import Failed", $"Failed to import mod: {ex.Message}");
+            }
+        };
+
+        var installedHeader = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Children =
+            {
+                new TextBlock { Text = $"Installed {targetFolder.ToUpper()}", FontSize = 14, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }.With(column: 0),
+                importModBtn.With(column: 1)
+            }
+        };
+
+        var dropHint = new TextBlock
+        {
+            Text = $"💡 Tip: You can drag & drop .jar files here to import {targetFolder}",
+            FontSize = 10.5,
+            Foreground = new SolidColorBrush(Color.Parse("#66758F")),
+            FontStyle = FontStyle.Italic,
+            Margin = new Thickness(0, 2, 0, 6)
+        };
+
+        var modsPanel = new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                installedHeader,
+                dropHint,
+                installedListPanel,
+                new Border { Height = 1, Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)), Margin = new Thickness(0, 10, 0, 10) },
+                new TextBlock { Text = $"Search & Add {targetFolder.ToUpper()}", FontSize = 14, FontWeight = FontWeight.Bold, Foreground = Brushes.White },
+                searchHeader,
+                searchProgressRing,
+                new ScrollViewer { MaxHeight = 350, Content = searchResultsPanel }
+            }
+        };
+
+        var modsCard = CreateGlassBox("", modsPanel);
+
+        DragDrop.SetAllowDrop(modsCard, true);
+        modsCard.AddHandler(DragDrop.DragEnterEvent, (sender, e) =>
+        {
+            if (modsCard is Border mb) mb.BorderBrush = new SolidColorBrush(Color.Parse("#BD93F9"));
+        });
+        modsCard.AddHandler(DragDrop.DragLeaveEvent, (sender, e) =>
+        {
+            if (modsCard is Border mb) mb.BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
+        });
+        modsCard.AddHandler(DragDrop.DragOverEvent, (sender, e) =>
+        {
+            var droppedFiles = e.Data.GetFiles();
+            if (droppedFiles != null && droppedFiles.Any(f => f.Path.LocalPath.EndsWith(".jar", StringComparison.OrdinalIgnoreCase)))
+            {
+                e.DragEffects = DragDropEffects.Copy;
+            }
+            else
+            {
+                e.DragEffects = DragDropEffects.None;
+            }
+            e.Handled = true;
+        });
+        modsCard.AddHandler(DragDrop.DropEvent, async (sender, e) =>
+        {
+            var droppedFiles = e.Data.GetFiles();
+            if (droppedFiles != null)
+            {
+                foreach (var fileItem in droppedFiles)
+                {
+                    var srcPath = fileItem.Path.LocalPath;
+                    if (File.Exists(srcPath) && srcPath.EndsWith(".jar", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            var destPath = Path.Combine(targetPath, Path.GetFileName(srcPath));
+                            File.Copy(srcPath, destPath, true);
+                            var fname = Path.GetFileName(srcPath);
+                            if (!installedJars.Contains(fname))
+                                installedJars.Add(fname);
+                        }
+                        catch (Exception ex)
+                        {
+                            await DialogService.ShowInfoAsync(this, "Error", $"Failed to import '{Path.GetFileName(srcPath)}': {ex.Message}");
+                        }
+                    }
+                }
+                RefreshLayoutSection();
+            }
+            e.Handled = true;
+        });
+        modsCard.AddHandler(DragDrop.DropEvent, (sender, e) =>
+        {
+            if (modsCard is Border mb2) mb2.BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
+        }, handledEventsToo: true);
+
+        return modsCard;
+    }
+
+    private Control BuildFilesTabPanel(LocalServerMetadata server)
+    {
+        var openFolderBtn = CreatePrimaryButton("Open Server Directory", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+        openFolderBtn.Height = 44;
+        openFolderBtn.CornerRadius = new CornerRadius(10);
+        openFolderBtn.FontWeight = FontWeight.Bold;
+        openFolderBtn.Click += (_, _) =>
+        {
+            OpenLocalFolder(server.FolderPath);
+        };
+
+        var filesContent = new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                new TextBlock { Text = "Access server world saves, plugin folders, and configuration logs locally.", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = $"Folder Location: {server.FolderPath}", FontSize = 11, FontFamily = new FontFamily("Consolas, Courier New, monospace"), Foreground = new SolidColorBrush(Color.Parse("#7A8AAA")), TextWrapping = TextWrapping.Wrap },
+                new Border { Height = 10 },
+                openFolderBtn
+            }
+        };
+
+        return CreateGlassBox("Server Files", filesContent);
+    }
+
+    private Control BuildPropertiesTabPanel(LocalServerMetadata server)
+    {
+        var panel = new StackPanel { Spacing = 14 };
+        
+        var propsPath = Path.Combine(server.FolderPath, "server.properties");
+        EnsureDefaultPropertiesFile(propsPath, server);
+        var propsMap = GetPropertiesMap(propsPath);
+
+        var saveCallbacks = new List<Func<KeyValuePair<string, string>>>();
+
+        var definedKeys = new HashSet<string>(ServerPropertyDefinitions.Select(d => d.Key), StringComparer.OrdinalIgnoreCase);
+        var customKeys = propsMap.Keys.Where(k => !definedKeys.Contains(k)).ToList();
+        var customDefs = customKeys.Select(k => new PropertyDefinition
+        {
+            Key = k,
+            Label = k,
+            Description = "Custom server property.",
+            Category = "Other / Custom",
+            Type = "text"
+        }).ToList();
+
+        var categories = new[]
+        {
+            "General",
+            "Gameplay",
+            "World & Spawning",
+            "Performance",
+            "Advanced",
+            "RCON & Query",
+            "Resource Packs",
+            "Other / Custom"
+        };
+
+        var saveAction = async () =>
+        {
+            var updates = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var cb in saveCallbacks)
+            {
+                var kvp = cb();
+                updates[kvp.Key] = kvp.Value;
+            }
+            UpdatePropertiesFile(propsPath, updates);
+            LogServerLine(server.Id, "[System] server.properties configuration updated. Please restart server to apply changes.");
+            await DialogService.ShowInfoAsync(this, "Properties Saved", "All server properties saved successfully. If the server is currently running, restart it to apply updates!");
+        };
+
+        var saveBtnTop = CreatePrimaryButton("💾 Save & Apply", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+        saveBtnTop.Height = 36;
+        saveBtnTop.CornerRadius = new CornerRadius(10);
+        saveBtnTop.FontWeight = FontWeight.Bold;
+        saveBtnTop.Click += async (_, _) => await saveAction();
+
+        var searchBox = new TextBox
+        {
+            Watermark = "Search properties...",
+            Height = 36,
+            Padding = new Thickness(10, 6),
+            MinWidth = 220
+        };
+
+        var headerControls = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 10 };
+        headerControls.Children.Add(new TextBlock
+        {
+            Text = "Configure server.properties below. Changes take effect after a server restart.",
+            FontSize = 12,
+            Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")),
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        }.With(column: 0));
+        headerControls.Children.Add(searchBox.With(column: 1));
+        headerControls.Children.Add(saveBtnTop.With(column: 2));
+
+        var topHeaderCard = CreateGlassBox("Server Properties", headerControls);
+        panel.Children.Add(topHeaderCard);
+
+        var catCards = new List<(Control Card, List<PropertyDefinition> Defs)>();
+
+        foreach (var cat in categories)
+        {
+            var catDefs = ServerPropertyDefinitions.Where(d => d.Category.Equals(cat, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (cat == "Other / Custom") catDefs = customDefs;
+            if (catDefs.Count == 0) continue;
+
+            var catStack = new StackPanel { Spacing = 10 };
+            foreach (var def in catDefs)
+            {
+                if (def.Type == "boolean")
+                {
+                    var checkbox = new CheckBox
+                    {
+                        Content = new TextBlock { Text = def.Label, FontWeight = FontWeight.SemiBold, Foreground = Brushes.White, FontSize = 13 },
+                        IsChecked = propsMap.ContainsKey(def.Key) && propsMap[def.Key].Equals("true", StringComparison.OrdinalIgnoreCase),
+                        Margin = new Thickness(0, 4, 0, 0)
+                    };
+                    var desc = new TextBlock
+                    {
+                        Text = def.Description + $" (Key: {def.Key})",
+                        FontSize = 11,
+                        Foreground = new SolidColorBrush(Color.Parse("#7A8AAA")),
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Thickness(24, 0, 0, 6)
+                    };
+                    catStack.Children.Add(checkbox);
+                    catStack.Children.Add(desc);
+                    var keyVal = def.Key;
+                    saveCallbacks.Add(() => new KeyValuePair<string, string>(keyVal, (checkbox.IsChecked ?? false).ToString().ToLower()));
+                }
+                else if (def.Type == "choice")
+                {
+                    var label = new TextBlock { Text = def.Label, Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), FontSize = 12, FontWeight = FontWeight.Bold, Margin = new Thickness(0, 4, 0, 0) };
+                    var combo = CreateComboBox(def.Choices ?? new[] { "" });
+                    combo.Height = 36;
+                    combo.SelectedItem = propsMap.ContainsKey(def.Key) ? propsMap[def.Key] : (def.Choices?[0] ?? "");
+                    var desc = new TextBlock { Text = def.Description + $" (Key: {def.Key})", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#7A8AAA")), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
+                    catStack.Children.Add(label);
+                    catStack.Children.Add(combo);
+                    catStack.Children.Add(desc);
+                    var keyVal = def.Key;
+                    saveCallbacks.Add(() => new KeyValuePair<string, string>(keyVal, combo.SelectedItem?.ToString() ?? ""));
+                }
+                else
+                {
+                    var label = new TextBlock { Text = def.Label, Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), FontSize = 12, FontWeight = FontWeight.Bold, Margin = new Thickness(0, 4, 0, 0) };
+                    var textbox = CreateTextBox();
+                    textbox.Height = 36;
+                    textbox.Padding = new Thickness(10, 6);
+                    textbox.Text = propsMap.ContainsKey(def.Key) ? propsMap[def.Key] : "";
+                    var desc = new TextBlock { Text = def.Description + $" (Key: {def.Key})", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#7A8AAA")), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
+                    catStack.Children.Add(label);
+                    catStack.Children.Add(textbox);
+                    catStack.Children.Add(desc);
+                    var keyVal = def.Key;
+                    saveCallbacks.Add(() => new KeyValuePair<string, string>(keyVal, textbox.Text?.Trim() ?? ""));
+                }
+            }
+
+            var catCard = CreateGlassBox(cat, catStack);
+            panel.Children.Add(catCard);
+            catCards.Add((catCard, catDefs));
+        }
+
+        searchBox.TextChanged += (_, _) =>
+        {
+            var query = searchBox.Text?.Trim() ?? "";
+            foreach (var (card, defs) in catCards)
+            {
+                card.IsVisible = string.IsNullOrEmpty(query)
+                    || defs.Any(d =>
+                        d.Key.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                        d.Label.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                        d.Description.Contains(query, StringComparison.OrdinalIgnoreCase));
+            }
+        };
+
+        var saveBtnBottom = CreatePrimaryButton("💾 Save & Apply Properties", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+        saveBtnBottom.Height = 44;
+        saveBtnBottom.CornerRadius = new CornerRadius(12);
+        saveBtnBottom.FontWeight = FontWeight.Bold;
+        saveBtnBottom.Click += async (_, _) => await saveAction();
+
+        var bottomCard = CreateGlassBox("", saveBtnBottom);
+        panel.Children.Add(bottomCard);
+
+        return panel;
+    }
+
+    private Control BuildAdminTabPanel(LocalServerMetadata server)
+    {
+        var playerLabel = new TextBlock { Text = "Operator Username", Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), FontSize = 12, FontWeight = FontWeight.Bold };
+        var playerInput = new TextBox { Watermark = "Enter Minecraft Player Name" };
+
+        var opBtn = CreatePrimaryButton("Grant Operator (OP)", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+        opBtn.Height = 44;
+        opBtn.CornerRadius = new CornerRadius(10);
+        opBtn.FontWeight = FontWeight.Bold;
+        opBtn.Click += async (_, _) =>
+        {
+            var username = playerInput.Text?.Trim();
+            if (string.IsNullOrEmpty(username))
+            {
+                await DialogService.ShowInfoAsync(this, "Username Required", "Please enter a player name to grant admin privileges.");
+                return;
+            }
+
+            if (_serverProcesses.TryGetValue(server.Id, out var proc) && !proc.HasExited)
+            {
+                proc.StandardInput.WriteLine($"op {username}");
+                LogServerLine(server.Id, $"> op {username}");
+                await DialogService.ShowInfoAsync(this, "Command Sent", $"OP command sent successfully to active console for user: {username}");
+                playerInput.Text = "";
+            }
+            else
+            {
+                await DialogService.ShowInfoAsync(this, "Server Offline", "The Minecraft server must be running to run operator configuration commands via console.");
+            }
+        };
+
+        var opForm = new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                new TextBlock { Text = "Grant permanent operator status (admin control/commands) to an active player in your local server.", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#A4B4DA")), TextWrapping = TextWrapping.Wrap },
+                new Border { Height = 4 },
+                playerLabel, playerInput,
+                new Border { Height = 10 },
+                opBtn
+            }
+        };
+
+        return CreateGlassBox("Grant Server Operator", opForm);
+    }
+
 
     private void EnsureDefaultPropertiesFile(string propsPath, LocalServerMetadata server)
     {
@@ -13579,6 +14565,10 @@ public sealed class MainWindow : Window
                             _serverActivePlayers[serverId] = new List<string>();
                         if (!_serverActivePlayers[serverId].Contains(name))
                             _serverActivePlayers[serverId].Add(name);
+
+                        if (!_playerJoinTimes.ContainsKey(serverId))
+                            _playerJoinTimes[serverId] = new Dictionary<string, DateTime>();
+                        _playerJoinTimes[serverId][name] = DateTime.Now;
                     }
                     ShowToast($"⚔️ {name} joined the server!", "#00FF87");
                 }
@@ -13604,6 +14594,9 @@ public sealed class MainWindow : Window
                     {
                         if (_serverActivePlayers.ContainsKey(serverId))
                             _serverActivePlayers[serverId].Remove(name);
+
+                        if (_playerJoinTimes.ContainsKey(serverId))
+                            _playerJoinTimes[serverId].Remove(name);
                     }
                     ShowToast($"👋 {name} left the server.", "#FFB86C");
                 }
@@ -13679,20 +14672,81 @@ public sealed class MainWindow : Window
         if (string.IsNullOrEmpty(serverId)) return;
         _serverStatuses[serverId] = status;
 
-        if (statusLabel != null && startBtn != null && stopBtn != null && restartBtn != null)
+        Dispatcher.UIThread.Post(() =>
         {
-            Dispatcher.UIThread.Post(() =>
+            if (statusLabel != null && startBtn != null && stopBtn != null && restartBtn != null)
             {
-                statusLabel.Text = status;
-                if (status == "Running") statusLabel.Foreground = Brushes.LightGreen;
-                else if (status == "Starting...") statusLabel.Foreground = Brushes.Orange;
-                else statusLabel.Foreground = Brushes.Gray;
+                statusLabel.Text = status.ToUpper();
+                Color statusColor;
+                if (status == "Running")
+                {
+                    statusColor = Color.Parse("#00FF87");
+                }
+                else if (status == "Starting...")
+                {
+                    statusColor = Color.Parse("#FFB86C");
+                }
+                else
+                {
+                    statusColor = Color.Parse("#FF5555");
+                }
+                statusLabel.Foreground = new SolidColorBrush(statusColor);
 
-                startBtn.IsEnabled = status == "Offline";
-                stopBtn.IsEnabled = status == "Running";
-                restartBtn.IsEnabled = status == "Running";
-            });
-        }
+                if (statusLabel.Parent is StackPanel stack && stack.Children.Count > 0 && stack.Children[0] is Border dot)
+                {
+                    dot.Background = new SolidColorBrush(statusColor);
+                    dot.BoxShadow = new BoxShadows(new BoxShadow
+                    {
+                        Blur = 6,
+                        Color = Color.FromArgb(120, statusColor.R, statusColor.G, statusColor.B),
+                        OffsetX = 0,
+                        OffsetY = 0
+                    });
+                }
+
+                if (startBtn == stopBtn)
+                {
+                    var controlBtn = startBtn;
+                    if (status == "Running")
+                    {
+                        SetButtonText(controlBtn, "■ Stop");
+                        controlBtn.IsEnabled = true;
+                        controlBtn.Background = new SolidColorBrush(Color.Parse("#FF5555"));
+                        controlBtn.BorderThickness = new Thickness(0);
+                        controlBtn.Foreground = Brushes.White;
+                        restartBtn.IsEnabled = true;
+                        restartBtn.IsVisible = true;
+                    }
+                    else if (status == "Starting...")
+                    {
+                        SetButtonText(controlBtn, "▲ Starting...");
+                        controlBtn.IsEnabled = false;
+                        controlBtn.Background = new SolidColorBrush(Color.Parse("#FFB86C"));
+                        controlBtn.BorderThickness = new Thickness(0);
+                        controlBtn.Foreground = Brushes.Black;
+                        restartBtn.IsEnabled = false;
+                        restartBtn.IsVisible = false;
+                    }
+                    else
+                    {
+                        SetButtonText(controlBtn, "▶ Start");
+                        controlBtn.IsEnabled = true;
+                        controlBtn.Background = new SolidColorBrush(Color.Parse("#8F70FF"));
+                        controlBtn.BorderThickness = new Thickness(0);
+                        controlBtn.Foreground = Brushes.White;
+                        restartBtn.IsEnabled = false;
+                        restartBtn.IsVisible = false;
+                    }
+                }
+                else
+                {
+                    startBtn.IsEnabled = status == "Offline";
+                    stopBtn.IsEnabled = status == "Running";
+                    restartBtn.IsEnabled = status == "Running";
+                }
+            }
+            RefreshLayoutSection();
+        });
         _onServerStatusChanged?.Invoke(status);
     }
 
@@ -14433,6 +15487,8 @@ if __name__ == '__main__':
             proc.Start();
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
+            server.LastOnline = DateTime.UtcNow;
+            SaveServers();
 
             // Save server PID to server.pid
             try
@@ -14494,6 +15550,15 @@ if __name__ == '__main__':
                     });
                 }
 
+                DateTime? startTime = null;
+                lock (_serverStartTimes)
+                {
+                    if (_serverStartTimes.TryGetValue(serverId, out var st))
+                    {
+                        startTime = st;
+                    }
+                }
+
                 _serverStartTimes.Remove(serverId);
                 _serverActivePlayers.Remove(serverId);
                 UpdateServerStatus(serverId, "Offline", statusLabel, startBtn, stopBtn, restartBtn);
@@ -14525,7 +15590,28 @@ if __name__ == '__main__':
                     var tunnelPidFile = Path.Combine(serverDir, "tunnel.pid");
                     if (File.Exists(tunnelPidFile)) File.Delete(tunnelPidFile);
 
-                    if (server != null) server.ActiveTunnelAddress = "";
+                    if (server != null)
+                    {
+                        server.ActiveTunnelAddress = "";
+                        server.LastOnline = DateTime.Now;
+                        if (startTime.HasValue)
+                        {
+                            var duration = DateTime.Now - startTime.Value;
+                            var durationStr = $"{(int)duration.TotalHours}h {duration.Minutes}m {duration.Seconds}s";
+                            var historyItem = $"{DateTime.Now:yyyy-MM-dd HH:mm} (Ran for {durationStr})";
+                            if (string.IsNullOrEmpty(server.UptimeHistory))
+                            {
+                                server.UptimeHistory = historyItem;
+                            }
+                            else
+                            {
+                                var parts = server.UptimeHistory.Split(" | ", StringSplitOptions.RemoveEmptyEntries);
+                                var newParts = new List<string> { historyItem };
+                                newParts.AddRange(parts.Take(2));
+                                server.UptimeHistory = string.Join(" | ", newParts);
+                            }
+                        }
+                    }
                     SaveServers();
                 }
                 catch {}
@@ -14646,7 +15732,7 @@ if __name__ == '__main__':
                                 {
                                     if (modId == "minecraft" || modId == "fabric") continue;
                                     
-                                    var resolved = await AutoFixModDependencyAsync(modsDir, modId, server.Version, msg => LogServerLine(serverId, msg));
+                                    var resolved = await AutoFixModDependencyAsync(modsDir, modId, server!.Version, msg => LogServerLine(serverId, msg));
                                     if (resolved) fixedAnything = true;
                                 }
                             }
@@ -14669,7 +15755,7 @@ if __name__ == '__main__':
                         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                         {
                             LogServerLine(serverId, "[Auto-Restart] Restarting server now...");
-                            _ = StartLocalServerAsync(server, consoleTextBox, statusLabel, startBtn, stopBtn, restartBtn);
+                            _ = StartLocalServerAsync(server!, consoleTextBox, statusLabel, startBtn, stopBtn, restartBtn);
                         });
                     });
                 }
@@ -15506,6 +16592,7 @@ if __name__ == '__main__':
             row.Children.Add(new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White, FontWeight = FontWeight.SemiBold });
             
             var upBtn = new Button { Content = "↑", Width = 32, Height = 32, Margin = new Thickness(4,0), Padding = new Thickness(0), HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            ToolTip.SetTip(upBtn, "Move Section Up");
             upBtn.Click += (_, _) => {
                 if (idx > 0) {
                     var tmp = _settings.SectionOrder[idx];
@@ -15518,6 +16605,7 @@ if __name__ == '__main__':
             };
             
             var downBtn = new Button { Content = "↓", Width = 32, Height = 32, Padding = new Thickness(0), HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            ToolTip.SetTip(downBtn, "Move Section Down");
             downBtn.Click += (_, _) => {
                 if (idx < _settings.SectionOrder.Count - 1) {
                     var tmp = _settings.SectionOrder[idx];
@@ -15548,8 +16636,32 @@ if __name__ == '__main__':
             BorderThickness = new Thickness(_settings.AccentColor == hex ? 2 : 0),
             Cursor = new Cursor(StandardCursorType.Hand)
         };
+        ToolTip.SetTip(btn, hex);
         btn.Click += (_, _) => {
             _settings.AccentColor = hex;
+            _settingsStore.Save(_settings);
+            InvalidateUiCache();
+            Content = BuildRoot();
+            SetActiveSection("settings");
+        };
+        return btn;
+    }
+
+    private Button CreateSecondaryColorPreset(string hex)
+    {
+        var btn = new Button
+        {
+            Width = 32,
+            Height = 32,
+            Background = new SolidColorBrush(Color.Parse(hex)),
+            CornerRadius = new CornerRadius(16),
+            BorderBrush = Brushes.White,
+            BorderThickness = new Thickness((_settings.SecondaryAccentColor ?? "#8F70FF") == hex ? 2 : 0),
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        ToolTip.SetTip(btn, hex);
+        btn.Click += (_, _) => {
+            _settings.SecondaryAccentColor = hex;
             _settingsStore.Save(_settings);
             InvalidateUiCache();
             Content = BuildRoot();
@@ -15578,7 +16690,7 @@ if __name__ == '__main__':
         }
         else
         {
-            SetButtonText(installSelectedButton, project.ProjectType == "modpack" ? "↓ Pack" : "↓ Mod");
+            SetButtonText(installSelectedButton, "↓ Download");
         }
         
         modrinthResultsSummary.Text = $"Selected {project.Title} by {project.Author}.";
@@ -15693,6 +16805,8 @@ if __name__ == '__main__':
                 await InstallSelectedModAsync(project, CancellationToken.None, installSelectedButton);
 
             RefreshModsList();
+            RefreshWorkspaceResourcePacksList();
+            RefreshWorkspaceShaderPacksList();
             UpdateSelectedProjectDetails();
             SetButtonProgress(installSelectedButton, 0, false);
         }
@@ -15710,7 +16824,7 @@ if __name__ == '__main__':
     {
         if (_selectedProfile is null)
         {
-            await DialogService.ShowInfoAsync(this, "Profile required", "Create or select a profile before installing mods.");
+            await DialogService.ShowInfoAsync(this, "Profile required", "Create or select a profile before installing content.");
             return;
         }
 
@@ -15726,7 +16840,7 @@ if __name__ == '__main__':
             throw new InvalidOperationException($"No compatible version was found for {_selectedProfile.LoaderDisplay}.");
 
         var installed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { project.ProjectId };
-        await InstallModVersionAsync(_selectedProfile, version, installed, cancellationToken, targetButton, project.ProjectId);
+        await InstallModVersionAsync(_selectedProfile, version, installed, cancellationToken, targetButton, project.ProjectId, project.ProjectType);
         Avalonia.Threading.Dispatcher.UIThread.Post(() => {
             SetProgressState($"Installed {project.Title} into {_selectedProfile.Name}.", 0, 0);
             RefreshSearchList();
@@ -15756,9 +16870,9 @@ if __name__ == '__main__':
     }
 
     private static bool HasPrimaryFile(ModrinthProjectVersion version) =>
-        version.Files.Any(file => file.Primary && file.Filename.EndsWith(".jar", StringComparison.OrdinalIgnoreCase));
+        version.Files.Any(file => file.Primary && (file.Filename.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) || file.Filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)));
 
-    private async Task InstallModVersionAsync(LauncherProfile profile, ModrinthProjectVersion version, HashSet<string> installedProjectIds, CancellationToken cancellationToken, Button? targetButton = null, string? projectId = null)
+    private async Task InstallModVersionAsync(LauncherProfile profile, ModrinthProjectVersion version, HashSet<string> installedProjectIds, CancellationToken cancellationToken, Button? targetButton = null, string? projectId = null, string? projectType = null)
     {
         foreach (var dependency in version.Dependencies.Where(d => d.DependencyType == "required" && !string.IsNullOrWhiteSpace(d.ProjectId)))
         {
@@ -15768,15 +16882,29 @@ if __name__ == '__main__':
             var dependencyVersions = await _modrinthClient.GetProjectVersionsAsync(dependency.ProjectId!, profile.GameVersion, profile.Loader, cancellationToken);
             var dependencyVersion = dependencyVersions.FirstOrDefault(HasPrimaryFile) ?? dependencyVersions.FirstOrDefault();
             if (dependencyVersion is not null)
-                await InstallModVersionAsync(profile, dependencyVersion, installedProjectIds, cancellationToken, targetButton, dependency.ProjectId);
+                await InstallModVersionAsync(profile, dependencyVersion, installedProjectIds, cancellationToken, targetButton, dependency.ProjectId, "mod");
         }
 
         var file = version.Files.FirstOrDefault(f => f.Primary) ?? version.Files.FirstOrDefault();
         if (file is null)
             throw new InvalidOperationException($"Version {version.VersionNumber} did not include a downloadable file.");
 
-        Directory.CreateDirectory(profile.ModsDirectory);
-        var destinationPath = Path.Combine(profile.ModsDirectory, file.Filename);
+        string targetDir;
+        if (string.Equals(projectType, "resourcepack", StringComparison.OrdinalIgnoreCase))
+        {
+            targetDir = Path.Combine(profile.InstanceDirectory, "resourcepacks");
+        }
+        else if (string.Equals(projectType, "shader", StringComparison.OrdinalIgnoreCase) || string.Equals(projectType, "shaderpack", StringComparison.OrdinalIgnoreCase))
+        {
+            targetDir = Path.Combine(profile.InstanceDirectory, "shaderpacks");
+        }
+        else
+        {
+            targetDir = profile.ModsDirectory; // defaults to mods
+        }
+
+        Directory.CreateDirectory(targetDir);
+        var destinationPath = Path.Combine(targetDir, file.Filename);
         await _modrinthClient.DownloadFileAsync(file.Url, CreateDownloadDestination(destinationPath), CreateDownloadProgress(file.Filename, targetButton), cancellationToken);
         await VerifyFileHashAsync(destinationPath, file.Hashes);
         
@@ -16561,34 +17689,23 @@ if __name__ == '__main__':
         var buttonHeight = double.IsNaN(style.NavButtonHeight) ? (compact ? 48 : 46) : style.NavButtonHeight;
         var buttonFontSize = double.IsNaN(style.NavButtonFontSize) ? 14 : style.NavButtonFontSize;
         var hAlign = compact ? HorizontalAlignment.Center : HorizontalAlignment.Left;
-        
         var iconSize = double.IsNaN(style.NavButtonFontSize) ? (compact ? 18 : 15) : style.NavButtonFontSize + 3;
+        var foreground = !string.IsNullOrWhiteSpace(style.NavButtonForeground)
+            ? new SolidColorBrush(Color.Parse(style.NavButtonForeground))
+            : new SolidColorBrush(Color.Parse("#A4A8B1"));
+        var navigationIcon = CreateNavigationIcon(icon, iconSize, foreground);
 
         var button = new Button
         {
             Content = compact
-                ? (object)new TextBlock
-                {
-                    Text = icon,
-                    FontSize = iconSize,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextAlignment = TextAlignment.Center
-                }
+                ? navigationIcon
                 : new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
                     Spacing = 12,
                     Children =
                     {
-                        new TextBlock
-                        {
-                            Text = icon,
-                            FontSize = iconSize,
-                            Width = 22,
-                            TextAlignment = TextAlignment.Center,
-                            VerticalAlignment = VerticalAlignment.Center,
-                        },
+                        navigationIcon,
                         new TextBlock
                         {
                             Text = label,
@@ -16602,7 +17719,7 @@ if __name__ == '__main__':
             Height = buttonHeight,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Background = !string.IsNullOrWhiteSpace(style.NavButtonBackground) ? new SolidColorBrush(Color.Parse(style.NavButtonBackground)) : Brushes.Transparent,
-            Foreground = !string.IsNullOrWhiteSpace(style.NavButtonForeground) ? new SolidColorBrush(Color.Parse(style.NavButtonForeground)) : new SolidColorBrush(Color.Parse("#A4A8B1")),
+            Foreground = foreground,
             BorderBrush = Brushes.Transparent,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(style.NavButtonCornerRadius),
@@ -16613,8 +17730,41 @@ if __name__ == '__main__':
             Padding = compact ? new Thickness(0) : new Thickness(12, 0),
             FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
         };
+        BindNavigationIconColor(button);
         ApplyHoverMotion(button);
+        ToolTip.SetTip(button, label);
         return button;
+    }
+
+    // Lucide-style outline icons keep the navigation crisp, monochrome, and theme-aware.
+    private static Avalonia.Controls.Shapes.Path CreateNavigationIcon(string name, double size, IBrush brush)
+    {
+        var pathData = name switch
+        {
+            "home" => "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-9.5Z",
+            "folder" => "M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2.5h6.5A2.5 2.5 0 0 1 21 9v9.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 18.5v-12Z",
+            "plus" => "M12 5v14M5 12h14",
+            "puzzle" => "M19 13.5V18a2 2 0 0 1-2 2h-4.5v-2.25a2.25 2.25 0 1 0-4.5 0V20H5a2 2 0 0 1-2-2v-4.5h2.25a2.25 2.25 0 1 0 0-4.5H3V6a2 2 0 0 1 2-2h3V1.75a2.25 2.25 0 1 1 4.5 0V4H17a2 2 0 0 1 2 2v3h2.25a2.25 2.25 0 1 1 0 4.5H19Z",
+            "trash" => "M4 7h16M10 11v6M14 11v6M9 7V4h6v3m3 0-1 14H7L6 7",
+            "server" => "M4 3h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 10h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2Zm2-7h.01M6 16h.01M10 7h8M10 17h8",
+            "settings" => "M12 3.5a2 2 0 0 1 1.9 1.4l.35 1.1a6.7 6.7 0 0 1 1.5.87l1.1-.36a2 2 0 0 1 2.28.82l.75 1.3a2 2 0 0 1-.38 2.4l-.83.76a6.9 6.9 0 0 1 0 1.74l.83.76a2 2 0 0 1 .38 2.4l-.75 1.3a2 2 0 0 1-2.28.82l-1.1-.36a6.7 6.7 0 0 1-1.5.87l-.35 1.1a2 2 0 0 1-1.9 1.4h-1.5a2 2 0 0 1-1.9-1.4l-.35-1.1a6.7 6.7 0 0 1-1.5-.87l-1.1.36a2 2 0 0 1-2.28-.82l-.75-1.3a2 2 0 0 1 .38-2.4l.83-.76a6.9 6.9 0 0 1 0-1.74l-.83-.76a2 2 0 0 1-.38-2.4l.75-1.3a2 2 0 0 1 2.28-.82l1.1.36a6.7 6.7 0 0 1 1.5-.87l.35-1.1A2 2 0 0 1 10.5 3.5H12Zm-.75 5.25a3.25 3.25 0 1 0 0 6.5 3.25 3.25 0 0 0 0-6.5Z",
+            _ => "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"
+        };
+
+        return new Avalonia.Controls.Shapes.Path
+        {
+            Data = StreamGeometry.Parse(pathData),
+            Width = size,
+            Height = size,
+            Stretch = Stretch.Uniform,
+            Stroke = brush,
+            StrokeThickness = 1.7,
+            StrokeLineCap = PenLineCap.Round,
+            StrokeJoin = PenLineJoin.Round,
+            Fill = Brushes.Transparent,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
     }
 
     private Button CreateSecondaryButton(string text)
@@ -16790,6 +17940,7 @@ if __name__ == '__main__':
                 BoxShadow = BoxShadows.Parse("0 10 32 0 #46003C78, inset 0 2 12 -2 #5A00C8FF")
             };
             _allGlassPanels.Add(glassPanel);
+            _originalBrushes[glassPanel] = (glassPanel.Background, glassPanel.BorderBrush);
             return glassPanel;
         }
 
@@ -16834,6 +17985,7 @@ if __name__ == '__main__':
             Child = child
         };
         _allGlassPanels.Add(panel);
+        _originalBrushes[panel] = (panel.Background, panel.BorderBrush);
         return panel;
     }
 
@@ -16926,13 +18078,12 @@ if __name__ == '__main__':
 
         return new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(235, 8, 10, 16)),
+            Background = new SolidColorBrush(Color.FromArgb(150, 15, 20, 32)),
             BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255)),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16),
+            CornerRadius = new CornerRadius(12),
             Padding = new Thickness(18),
-            Child = stack,
-            BoxShadow = new BoxShadows(new BoxShadow { Blur = 16, Color = Color.FromArgb(20, 0, 0, 0), OffsetX = 0, OffsetY = 6 })
+            Child = stack
         };
     }
 
@@ -17132,15 +18283,15 @@ if __name__ == '__main__':
                     break;
                 case "glow":
                     button.Background = activeBgToken != null ? new SolidColorBrush(Color.Parse(activeBgToken)) : Brushes.Transparent;
-                    button.Foreground = new SolidColorBrush(accentColor);
                     break;
                 case "fill":
                 default:
                     button.Background = activeBgToken != null ? new SolidColorBrush(Color.Parse(activeBgToken)) : new SolidColorBrush(Color.FromArgb(32, accentColor.R, accentColor.G, accentColor.B));
-                    button.Foreground = activeFgToken != null ? new SolidColorBrush(Color.Parse(activeFgToken)) : new SolidColorBrush(accentColor);
                     break;
             }
-            if (activeFgToken != null) button.Foreground = new SolidColorBrush(Color.Parse(activeFgToken));
+            button.Foreground = activeFgToken != null
+                ? new SolidColorBrush(Color.Parse(activeFgToken))
+                : new SolidColorBrush(accentColor);
         }
         else
         {
@@ -17155,6 +18306,15 @@ if __name__ == '__main__':
         button.FontSize = double.IsNaN(style.NavButtonFontSize) ? 14 : style.NavButtonFontSize;
         button.FontWeight = isActive ? FontWeight.Bold : FontWeight.Normal;
 
+    }
+
+    private static void BindNavigationIconColor(Button button)
+    {
+        var icon = button.Content as Avalonia.Controls.Shapes.Path
+            ?? (button.Content as StackPanel)?.Children.OfType<Avalonia.Controls.Shapes.Path>().FirstOrDefault();
+
+        if (icon != null)
+            icon.Bind(Avalonia.Controls.Shapes.Shape.StrokeProperty, button.GetObservable(Button.ForegroundProperty));
     }
 
     private Border CreateStatTile(string title, TextBlock valueBlock, string subtitle)
@@ -17626,6 +18786,15 @@ if __name__ == '__main__':
         }
 
         control.Transitions = transitions;
+
+        control.PropertyChanged += (s, e) =>
+        {
+            if (e.Property == Control.IsEnabledProperty)
+            {
+                control.Opacity = control.IsEnabled ? 1.0 : 0.35;
+            }
+        };
+        control.Opacity = control.IsEnabled ? 1.0 : 0.35;
         
         IBrush? originalBg = null;
         IBrush? originalFg = null;
@@ -17635,6 +18804,7 @@ if __name__ == '__main__':
         
         control.PointerEntered += (s, e) =>
         {
+            if (!control.IsEnabled) return;
             control.Opacity = 0.95;
             control.RenderTransform = TransformOperations.Parse("scale(1.07) rotate(1.5deg) translate(0px, -3px)");
             
@@ -17668,6 +18838,7 @@ if __name__ == '__main__':
         };
         control.PointerExited += (s, e) =>
         {
+            if (!control.IsEnabled) return;
             control.Opacity = 1.0;
             control.RenderTransform = TransformOperations.Parse("scale(1.0) rotate(0deg) translate(0px, 0px)");
             if (captured)
@@ -18102,6 +19273,19 @@ if __name__ == '__main__':
         catch
         {
             return Color.FromArgb(alpha, 139, 90, 43); // Fallback to #8B5A2B
+        }
+    }
+
+    private Color GetSecondaryAccentColor(byte alpha)
+    {
+        try
+        {
+            var color = Color.Parse(_settings.SecondaryAccentColor ?? "#8F70FF");
+            return Color.FromArgb(alpha, color.R, color.G, color.B);
+        }
+        catch
+        {
+            return Color.FromArgb(alpha, 143, 112, 255); // Fallback to #8F70FF
         }
     }
 
@@ -18594,6 +19778,7 @@ if __name__ == '__main__':
             "files" => "M10 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V8C22 6.9 21.1 6 20 6H12L10 4Z",
             "logs" => "M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM19 19H5V5H19V19ZM7 7H17V9H7V7ZM7 11H17V13H7V11ZM7 15H14V17H7V15Z",
             "settings" => "M19.14 12.94C19.2 12.63 19.23 12.32 19.23 12C19.23 11.68 19.2 11.37 19.14 11.06L21.34 9.35C21.54 9.19 21.59 8.91 21.46 8.7L19.36 5.06C19.23 4.85 18.98 4.77 18.76 4.85L16.17 5.9C15.63 5.48 15.03 5.14 14.38 4.87L13.99 2.12C13.96 1.89 13.76 1.72 13.53 1.72H9.33C9.1 1.72 8.9 1.89 8.87 2.12L8.48 4.87C7.83 5.14 7.23 5.48 6.69 5.9L4.1 4.85C3.88 4.77 3.63 4.85 3.5 5.06L1.4 8.7C1.27 8.91 1.32 9.19 1.52 9.35L3.72 11.06C3.66 11.37 3.63 11.68 3.63 12C3.63 12.32 3.66 12.63 3.72 12.94L1.52 14.65C1.32 14.81 1.27 15.09 1.4 15.3L3.5 18.94C3.63 19.15 3.88 19.23 4.1 19.15L6.69 18.1C7.23 18.52 7.83 18.86 8.48 19.13L8.87 21.88C8.9 22.11 9.1 22.28 9.33 22.28H13.53C13.76 22.28 13.96 22.11 13.99 21.88L14.38 19.13C15.03 18.86 15.63 18.52 16.17 18.1L18.76 19.15C18.98 19.23 19.23 19.15 19.36 18.94L21.46 15.3C21.59 15.09 21.54 14.81 21.34 14.65L19.14 12.94ZM11.43 15.36C9.57 15.36 8.07 13.86 8.07 12C8.07 10.14 9.57 8.64 11.43 8.64C13.29 8.64 14.79 10.14 14.79 12C14.79 13.86 13.29 15.36 11.43 15.36Z",
+            "refresh" => "M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z",
             _ => "M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2Z"
         };
 
@@ -18652,23 +19837,47 @@ if __name__ == '__main__':
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        // Version + Loader badge pill
-        _wsHeaderVersion = new TextBlock
+        _wsHeaderVersion = new TextBlock { Text = "" };
+
+        _wsLoaderBadgeText = new TextBlock
         {
-            Text = "Fabric · 1.21.1",
-            FontSize = 11,
+            FontSize = 10,
+            FontWeight = FontWeight.Bold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        _wsLoaderBadge = new Border
+        {
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(8, 2),
+            BorderThickness = new Thickness(1),
+            Child = _wsLoaderBadgeText,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+
+        _wsVersionBadgeText = new TextBlock
+        {
+            FontSize = 10,
+            FontWeight = FontWeight.Bold,
             Foreground = new SolidColorBrush(Color.Parse("#CCCCCC")),
             VerticalAlignment = VerticalAlignment.Center
         };
-
-        var versionBadge = new Border
+        _wsVersionBadge = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(50, 100, 100, 200)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 150, 150, 255)),
+            Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(999),
-            Padding = new Thickness(10, 3),
-            Child = _wsHeaderVersion
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(8, 2),
+            Child = _wsVersionBadgeText,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+
+        _wsHeaderBadgesPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Children = { _wsLoaderBadge, _wsVersionBadge }
         };
 
         _wsHeaderStatus = new TextBlock
@@ -18747,7 +19956,7 @@ if __name__ == '__main__':
                     VerticalAlignment = VerticalAlignment.Center,
                     Children =
                     {
-                        versionBadge,
+                        _wsHeaderBadgesPanel,
                         _wsHeaderName
                     }
                 }.With(column: 1),
@@ -18812,6 +20021,7 @@ if __name__ == '__main__':
             Padding = new Thickness(10, 0),
             Cursor = new Cursor(StandardCursorType.Hand)
         };
+        ToolTip.SetTip(wsMoreBtn, "More Options");
         var moreStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
         moreStack.Children.Add(new TextBlock { Text = "⋮", FontSize = 14, FontWeight = FontWeight.Bold, Foreground = Brushes.LightGray, VerticalAlignment = VerticalAlignment.Center });
         moreStack.Children.Add(new TextBlock { Text = "More", FontSize = 11, Foreground = Brushes.LightGray, VerticalAlignment = VerticalAlignment.Center });
@@ -18973,11 +20183,11 @@ if __name__ == '__main__':
             ("shaderpacks", "✦ Shaders")
         };
 
-        var contentSubTabRow = new StackPanel
+        var subTabsPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 6,
-            Margin = new Thickness(0, 0, 0, 8)
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
         foreach (var (subKey, subLabel) in contentSubTabsList)
@@ -18991,8 +20201,8 @@ if __name__ == '__main__':
                     FontWeight = FontWeight.SemiBold,
                     VerticalAlignment = VerticalAlignment.Center
                 },
-                Height = 30,
-                Padding = new Thickness(14, 4),
+                Height = 32,
+                Padding = new Thickness(16, 4),
                 CornerRadius = new CornerRadius(999),
                 Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
@@ -19002,16 +20212,82 @@ if __name__ == '__main__':
             string capturedSubKey = subKey;
             subBtn.Click += (_, _) => SwitchContentSubTab(capturedSubKey);
             _wsContentSubTabButtons[subKey] = subBtn;
-            contentSubTabRow.Children.Add(subBtn);
+            subTabsPanel.Children.Add(subBtn);
         }
+
+        // Actions panel (Search, Refresh, Add)
+        _wsSearchInput = new TextBox
+        {
+            Watermark = "Search installed content...",
+            Height = 32,
+            Width = 220,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+            BorderThickness = new Thickness(1)
+        };
+        _wsSearchInput.TextChanged += (s, e) => OnWsSearchInputChanged();
+
+        var refreshBtn = new Button
+        {
+            Content = CreateVectorIcon("refresh", 13, "#AAAAAA"),
+            Height = 32,
+            Width = 32,
+            Padding = new Thickness(0),
+            Background = Brushes.Transparent,
+            BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        refreshBtn.Click += (_, _) => RefreshActiveSubTabList();
+        ToolTip.SetTip(refreshBtn, "Refresh List");
+
+        var addBtn = new Button
+        {
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 6,
+                Children =
+                {
+                    new TextBlock { Text = "+", FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White },
+                    new TextBlock { Text = "Add", FontSize = 12, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White }
+                }
+            },
+            Height = 32,
+            Padding = new Thickness(16, 0),
+            Background = new SolidColorBrush(Color.Parse(_settings.AccentColor)),
+            CornerRadius = new CornerRadius(8),
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        addBtn.Click += (_, _) => AddNewContentClicked();
+        ToolTip.SetTip(addBtn, "Browse and install new content");
+
+        var actionsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { _wsSearchInput, refreshBtn, addBtn }
+        };
+
+        var contentHeaderGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Margin = new Thickness(0, 0, 0, 12),
+            Children =
+            {
+                subTabsPanel.With(column: 0),
+                actionsPanel.With(column: 1)
+            }
+        };
 
         // === BUILD ALL PANELS ===
         _wsTabModsPanel = CreateGlassPanel(BuildWorkspaceModsTab(), padding: new Thickness(20));
-        _wsTabModsPanel.Opacity = 0.6;
         _wsTabResourcePacksPanel = CreateGlassPanel(BuildWorkspaceResourcePacksTab(), padding: new Thickness(20));
-        _wsTabResourcePacksPanel.Opacity = 0.6;
         _wsTabShaderPacksPanel = CreateGlassPanel(BuildWorkspaceShaderPacksTab(), padding: new Thickness(20));
-        _wsTabShaderPacksPanel.Opacity = 0.6;
 
         // Content tab hosts the 3 content sub-panels toggled by the sub-tab row
         var contentInnerGrid = new Grid
@@ -19027,7 +20303,7 @@ if __name__ == '__main__':
         var contentWrapper = new StackPanel
         {
             Spacing = 0,
-            Children = { contentSubTabRow, contentInnerGrid }
+            Children = { contentHeaderGrid, contentInnerGrid }
         };
 
         _wsTabContentPanel = new Border
@@ -19036,15 +20312,10 @@ if __name__ == '__main__':
         };
 
         _wsTabWorldsPanel = CreateGlassPanel(BuildWorkspaceWorldsTab(), padding: new Thickness(20));
-        _wsTabWorldsPanel.Opacity = 0.6;
         _wsTabScreenshotsPanel = CreateGlassPanel(BuildWorkspaceScreenshotsTab(), padding: new Thickness(20));
-        _wsTabScreenshotsPanel.Opacity = 0.6;
         _wsTabFilesPanel = CreateGlassPanel(BuildWorkspaceFilesTab(), padding: new Thickness(20));
-        _wsTabFilesPanel.Opacity = 0.6;
         _wsTabLogsPanel = CreateGlassPanel(BuildWorkspaceLogsTab(), padding: new Thickness(20));
-        _wsTabLogsPanel.Opacity = 0.6;
         _wsTabSettingsPanel = CreateGlassPanel(BuildWorkspaceSettingsTab(), padding: new Thickness(20));
-        _wsTabSettingsPanel.Opacity = 0.6;
 
         var tabContentGrid = new Grid
         {
@@ -19211,8 +20482,15 @@ if __name__ == '__main__':
                 OffContent = "Disabled",
                 VerticalAlignment = VerticalAlignment.Center
             };
-            toggle.Checked += (s, e) => { if (!mod.IsEnabled) { mod.IsEnabled = true; RefreshWorkspaceModsList(); } };
-            toggle.Unchecked += (s, e) => { if (mod.IsEnabled) { mod.IsEnabled = false; RefreshWorkspaceModsList(); } };
+            toggle.IsCheckedChanged += (s, e) =>
+            {
+                var isChecked = toggle.IsChecked ?? false;
+                if (mod.IsEnabled != isChecked)
+                {
+                    mod.IsEnabled = isChecked;
+                    RefreshWorkspaceModsList();
+                }
+            };
 
             var nameBlock = new TextBlock
             {
@@ -19299,50 +20577,81 @@ if __name__ == '__main__':
             };
         });
 
-        _wsModsSearchInput = new TextBox { Watermark = "Search installed mods...", Height = 32 };
-        _wsModsSearchInput.TextChanged += (s, e) => FilterWorkspaceMods();
-
         _wsModsSortCombo = new ComboBox
         {
             ItemsSource = new[] { "Name", "Size", "Status" },
             SelectedIndex = 0,
-            Height = 32
+            Height = 32,
+            VerticalAlignment = VerticalAlignment.Center,
+            CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+            BorderThickness = new Thickness(1)
         };
         _wsModsSortCombo.SelectionChanged += (s, e) => FilterWorkspaceMods();
 
-        var installNewBtn = CreateCompactSecondaryButton("+ Install Mods");
-        installNewBtn.Click += (_, _) =>
+        _wsModsScrollViewer = new ScrollViewer { Content = _wsModsListBox, MaxHeight = 400 };
+
+        var browseBtn = new Button
         {
-            if (_selectedProfile != null)
+            Content = "+ Browse Mods",
+            Height = 32,
+            Padding = new Thickness(16, 0),
+            Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        browseBtn.Click += (_, _) => AddNewContentClicked();
+
+        _wsModsPlaceholder = new Border
+        {
+            Padding = new Thickness(40),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new StackPanel
             {
-                SetActiveSection("modrinth");
-                modrinthLoaderCombo.SelectedItem = _selectedProfile.Loader.Substring(0, 1).ToUpper() + _selectedProfile.Loader.Substring(1);
-                modrinthVersionInput.Text = _selectedProfile.GameVersion;
-                _ = SearchModrinthAsync();
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Children =
+                {
+                    new TextBlock { Text = "⊞", FontSize = 32, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center },
+                    new TextBlock { Text = "No mods installed", FontSize = 15, FontWeight = FontWeight.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center },
+                    new TextBlock { Text = "This instance has no mods installed yet", FontSize = 12, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 12) },
+                    browseBtn
+                }
             }
         };
 
-        var headerRow = new Grid
+        // We wrap the sort combo and list content in a StackPanel
+        var listAndCombo = new StackPanel
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
-            ColumnSpacing = 8,
+            Spacing = 8,
             Children =
             {
-                _wsModsSearchInput.With(column: 0),
-                _wsModsSortCombo.With(column: 1),
-                installNewBtn.With(column: 2)
+                new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                    Children =
+                    {
+                        new TextBlock { Text = "Sort Order", Foreground = Brushes.Gray, VerticalAlignment = VerticalAlignment.Center }.With(column: 0),
+                        _wsModsSortCombo.With(column: 1)
+                    }
+                },
+                new Grid
+                {
+                    Children =
+                    {
+                        _wsModsScrollViewer,
+                        _wsModsPlaceholder
+                    }
+                }
             }
         };
 
-        return new StackPanel
-        {
-            Spacing = 12,
-            Children =
-            {
-                headerRow,
-                new ScrollViewer { Content = _wsModsListBox, MaxHeight = 400 }
-            }
-        };
+        return listAndCombo;
     }
 
     private Control BuildWorkspaceResourcePacksTab()
@@ -19377,7 +20686,7 @@ if __name__ == '__main__':
                 BorderThickness = new Thickness(0, 0, 0, 1),
                 Child = new Grid
                 {
-                    ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+                    ColumnDefinitions = new ColumnDefinitions("*,Auto"),
                     ColumnSpacing = 12,
                     Children =
                     {
@@ -19388,42 +20697,47 @@ if __name__ == '__main__':
             };
         });
 
-        var importBtn = CreateCompactSecondaryButton("⤓ Import Pack");
-        importBtn.Click += async (_, _) =>
+        _wsRpScrollViewer = new ScrollViewer { Content = _wsRpListBox, MaxHeight = 400 };
+
+        var browseBtn = new Button
         {
-            if (_selectedProfile == null) return;
-            var topLevel = TopLevel.GetTopLevel(this);
-            if (topLevel == null) return;
-            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+            Content = "+ Browse Resource Packs",
+            Height = 32,
+            Padding = new Thickness(16, 0),
+            Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        browseBtn.Click += (_, _) => AddNewContentClicked();
+
+        _wsRpPlaceholder = new Border
+        {
+            Padding = new Thickness(40),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new StackPanel
             {
-                Title = "Select Resource Pack Zip",
-                FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Zip Files") { Patterns = ["*.zip"] }]
-            });
-            if (files != null && files.Count > 0)
-            {
-                var rpDir = Path.Combine(_selectedProfile.InstanceDirectory, "resourcepacks");
-                Directory.CreateDirectory(rpDir);
-                File.Copy(files[0].Path.LocalPath, Path.Combine(rpDir, files[0].Name), true);
-                RefreshWorkspaceResourcePacksList();
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Children =
+                {
+                    new TextBlock { Text = "◧", FontSize = 32, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center },
+                    new TextBlock { Text = "No resource packs installed", FontSize = 15, FontWeight = FontWeight.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center },
+                    new TextBlock { Text = "This instance has no resource packs installed yet", FontSize = 12, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 12) },
+                    browseBtn
+                }
             }
         };
 
-        var openDirBtn = CreateCompactSecondaryButton("📂 Open Folder");
-        openDirBtn.Click += (_, _) =>
+        return new Grid
         {
-            if (_selectedProfile == null) return;
-            var rpDir = Path.Combine(_selectedProfile.InstanceDirectory, "resourcepacks");
-            Directory.CreateDirectory(rpDir);
-            Process.Start(new ProcessStartInfo { FileName = rpDir, UseShellExecute = true });
-        };
-
-        return new StackPanel
-        {
-            Spacing = 12,
             Children =
             {
-                new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8, Children = { new TextBlock { Text = "Resource Packs", FontSize = 16, FontWeight = FontWeight.Bold, Foreground = Brushes.White }.With(column: 0), openDirBtn.With(column: 1), importBtn.With(column: 2) } },
-                new ScrollViewer { Content = _wsRpListBox, MaxHeight = 400 }
+                _wsRpScrollViewer,
+                _wsRpPlaceholder
             }
         };
     }
@@ -19460,7 +20774,7 @@ if __name__ == '__main__':
                 BorderThickness = new Thickness(0, 0, 0, 1),
                 Child = new Grid
                 {
-                    ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+                    ColumnDefinitions = new ColumnDefinitions("*,Auto"),
                     ColumnSpacing = 12,
                     Children =
                     {
@@ -19471,42 +20785,47 @@ if __name__ == '__main__':
             };
         });
 
-        var importBtn = CreateCompactSecondaryButton("⤓ Import Shader");
-        importBtn.Click += async (_, _) =>
+        _wsSpScrollViewer = new ScrollViewer { Content = _wsSpListBox, MaxHeight = 400 };
+
+        var browseBtn = new Button
         {
-            if (_selectedProfile == null) return;
-            var topLevel = TopLevel.GetTopLevel(this);
-            if (topLevel == null) return;
-            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+            Content = "+ Browse Shaders",
+            Height = 32,
+            Padding = new Thickness(16, 0),
+            Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        browseBtn.Click += (_, _) => AddNewContentClicked();
+
+        _wsSpPlaceholder = new Border
+        {
+            Padding = new Thickness(40),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new StackPanel
             {
-                Title = "Select Shader Pack Zip",
-                FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Zip Files") { Patterns = ["*.zip"] }]
-            });
-            if (files != null && files.Count > 0)
-            {
-                var spDir = Path.Combine(_selectedProfile.InstanceDirectory, "shaderpacks");
-                Directory.CreateDirectory(spDir);
-                File.Copy(files[0].Path.LocalPath, Path.Combine(spDir, files[0].Name), true);
-                RefreshWorkspaceShaderPacksList();
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Children =
+                {
+                    new TextBlock { Text = "✦", FontSize = 32, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center },
+                    new TextBlock { Text = "No shaders installed", FontSize = 15, FontWeight = FontWeight.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center },
+                    new TextBlock { Text = "This instance has no shaders installed yet", FontSize = 12, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 12) },
+                    browseBtn
+                }
             }
         };
 
-        var openDirBtn = CreateCompactSecondaryButton("📂 Open Folder");
-        openDirBtn.Click += (_, _) =>
+        return new Grid
         {
-            if (_selectedProfile == null) return;
-            var spDir = Path.Combine(_selectedProfile.InstanceDirectory, "shaderpacks");
-            Directory.CreateDirectory(spDir);
-            Process.Start(new ProcessStartInfo { FileName = spDir, UseShellExecute = true });
-        };
-
-        return new StackPanel
-        {
-            Spacing = 12,
             Children =
             {
-                new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8, Children = { new TextBlock { Text = "Shader Packs", FontSize = 16, FontWeight = FontWeight.Bold, Foreground = Brushes.White }.With(column: 0), openDirBtn.With(column: 1), importBtn.With(column: 2) } },
-                new ScrollViewer { Content = _wsSpListBox, MaxHeight = 400 }
+                _wsSpScrollViewer,
+                _wsSpPlaceholder
             }
         };
     }
@@ -19836,7 +21155,34 @@ if __name__ == '__main__':
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             MaxHeight = 350,
+            Padding = new Thickness(14, 10),
             Content = _wsLogsContent
+        };
+
+        var logsTermDots = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 8) };
+        foreach (var dotHex in new[] { "#FF5F56", "#FFBD2E", "#27C93F" })
+            logsTermDots.Children.Add(new Border { Width = 9, Height = 9, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(Color.Parse(dotHex)) });
+
+        var logsTerminalFrame = new Border
+        {
+            CornerRadius = new CornerRadius(14),
+            BorderThickness = new Thickness(1.5),
+            BorderBrush = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops = { new GradientStop(Color.Parse("#3B82F6"), 0), new GradientStop(Color.Parse("#1D2A3A"), 0.5), new GradientStop(Color.Parse("#00FF87"), 1) }
+            },
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                GradientStops = { new GradientStop(Color.Parse("#0B0F17"), 0), new GradientStop(Color.Parse("#050709"), 1) }
+            },
+            BoxShadow = BoxShadows.Parse("0 8 24 0 #66000000, inset 0 1 0 0 #14FFFFFF"),
+            ClipToBounds = true,
+            Padding = new Thickness(0, 8, 0, 0),
+            Child = new StackPanel { Children = { logsTermDots, _wsLogsScroll } }
         };
 
         var refreshBtn = CreateCompactSecondaryButton("↻ Refresh");
@@ -19848,7 +21194,7 @@ if __name__ == '__main__':
             Children =
             {
                 new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8, Children = { new TextBlock { Text = "Instance Logs", FontSize = 16, FontWeight = FontWeight.Bold, Foreground = Brushes.White }.With(column: 0), _wsLogsCombo.With(column: 1), refreshBtn.With(column: 2) } },
-                _wsLogsScroll
+                logsTerminalFrame
             }
         };
     }
@@ -19931,6 +21277,48 @@ if __name__ == '__main__':
 
         _wsHeaderName.Text = _selectedProfile.Name;
         _wsHeaderVersion.Text = _selectedProfile.LoaderDisplay;
+
+        // Update version and loader badges dynamically
+        var loader = _selectedProfile.Loader.ToLowerInvariant();
+        if (loader == "fabric")
+        {
+            _wsLoaderBadgeText.Text = "Fabric";
+            _wsLoaderBadgeText.Foreground = new SolidColorBrush(Color.Parse("#F5A623"));
+            _wsLoaderBadge.Background = new SolidColorBrush(Color.FromArgb(25, 245, 166, 35));
+            _wsLoaderBadge.BorderBrush = new SolidColorBrush(Color.FromArgb(50, 245, 166, 35));
+            _wsLoaderBadge.IsVisible = true;
+        }
+        else if (loader == "forge")
+        {
+            _wsLoaderBadgeText.Text = "Forge";
+            _wsLoaderBadgeText.Foreground = new SolidColorBrush(Color.Parse("#5A90E0"));
+            _wsLoaderBadge.Background = new SolidColorBrush(Color.FromArgb(25, 90, 144, 224));
+            _wsLoaderBadge.BorderBrush = new SolidColorBrush(Color.FromArgb(50, 90, 144, 224));
+            _wsLoaderBadge.IsVisible = true;
+        }
+        else if (loader == "quilt")
+        {
+            _wsLoaderBadgeText.Text = "Quilt";
+            _wsLoaderBadgeText.Foreground = new SolidColorBrush(Color.Parse("#C060D0"));
+            _wsLoaderBadge.Background = new SolidColorBrush(Color.FromArgb(25, 192, 96, 208));
+            _wsLoaderBadge.BorderBrush = new SolidColorBrush(Color.FromArgb(50, 192, 96, 208));
+            _wsLoaderBadge.IsVisible = true;
+        }
+        else if (loader != "vanilla" && !string.IsNullOrWhiteSpace(_selectedProfile.Loader))
+        {
+            _wsLoaderBadgeText.Text = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(loader);
+            _wsLoaderBadgeText.Foreground = Brushes.White;
+            _wsLoaderBadge.Background = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255));
+            _wsLoaderBadge.BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255));
+            _wsLoaderBadge.IsVisible = true;
+        }
+        else
+        {
+            _wsLoaderBadge.IsVisible = false;
+        }
+
+        _wsVersionBadgeText.Text = $"MC {_selectedProfile.GameVersion}";
+
         _wsHeaderStatus.Text = "Ready to play";
         _wsHeaderStatus.Foreground = new SolidColorBrush(Color.Parse("#4ADE80"));
         _wsHeaderPlayTime.Text = $"{_selectedProfile.LaunchCountSinceLastInstall} launches";
@@ -19938,6 +21326,42 @@ if __name__ == '__main__':
             ? "Never"
             : _selectedProfile.UpdatedUtc.ToLocalTime().ToString("MMM d, h:mm tt");
         
+
+        try
+        {
+            // Self-heal/copy icons if they are not present on disk
+            string appDataSrc1 = "/home/inchara/.gemini/antigravity/brain/f570d8e2-55bd-4344-b0c1-6aedca8f137c/minecraft_icon_1784435421251.png";
+            string appDataSrc2 = "/home/inchara/.gemini/antigravity/brain/f570d8e2-55bd-4344-b0c1-6aedca8f137c/snapshot_icon_1784435438621.png";
+            
+            string localAssetsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets");
+            if (!Directory.Exists(localAssetsDir)) Directory.CreateDirectory(localAssetsDir);
+            
+            string localDst1 = Path.Combine(localAssetsDir, "minecraft_icon.png");
+            string localDst2 = Path.Combine(localAssetsDir, "snapshot_icon.png");
+            
+            if (!File.Exists(localDst1) && File.Exists(appDataSrc1))
+            {
+                File.Copy(appDataSrc1, localDst1, true);
+            }
+            if (!File.Exists(localDst2) && File.Exists(appDataSrc2))
+            {
+                File.Copy(appDataSrc2, localDst2, true);
+            }
+
+            // Also copy to project assets folder so it gets committed/saved
+            string projAssetsDir = Path.Combine(Directory.GetCurrentDirectory(), "assets");
+            if (Directory.Exists(projAssetsDir))
+            {
+                string projDst1 = Path.Combine(projAssetsDir, "minecraft_icon.png");
+                string projDst2 = Path.Combine(projAssetsDir, "snapshot_icon.png");
+                if (!File.Exists(projDst1) && File.Exists(appDataSrc1)) File.Copy(appDataSrc1, projDst1, true);
+                if (!File.Exists(projDst2) && File.Exists(appDataSrc2)) File.Copy(appDataSrc2, projDst2, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            LauncherLog.Warn("[Assets] Failed to self-heal icons: " + ex.Message);
+        }
 
         try
         {
@@ -19968,16 +21392,66 @@ if __name__ == '__main__':
             }
             else
             {
-                _wsHeaderIcon.Background = new LinearGradientBrush
+                _wsHeaderIcon.Background = Brushes.Transparent;
+                bool isSnapshot = IsSnapshotVersion(_selectedProfile.GameVersion);
+                string fileName = isSnapshot ? "snapshot_icon.png" : "minecraft_icon.png";
+                
+                // Try BaseDirectory assets, then CurrentDirectory assets, then fallback to avares
+                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", fileName);
+                if (!File.Exists(path))
                 {
-                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                    EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                    GradientStops = { new GradientStop(Color.Parse("#8E2DE2"), 0.0), new GradientStop(Color.Parse("#4A00E0"), 1.0) }
-                };
-                _wsHeaderIcon.Child = null;
+                    path = Path.Combine(Directory.GetCurrentDirectory(), "assets", fileName);
+                }
+                
+                Bitmap? bmp = null;
+                if (File.Exists(path))
+                {
+                    try
+                    {
+                        bmp = new Bitmap(path);
+                    }
+                    catch (Exception ex)
+                    {
+                        LauncherLog.Warn("[Assets] Failed to load local icon: " + ex.Message);
+                    }
+                }
+                
+                if (bmp == null)
+                {
+                    // Fallback to avares
+                    string avaresUri = isSnapshot 
+                        ? "avares://FugoLauncher/assets/snapshot_icon.png" 
+                        : "avares://FugoLauncher/assets/minecraft_icon.png";
+                    try
+                    {
+                        bmp = new Bitmap(AssetLoader.Open(new Uri(avaresUri)));
+                    }
+                    catch (Exception ex)
+                    {
+                        LauncherLog.Warn("[Assets] Fallback avares failed: " + ex.Message);
+                    }
+                }
+                
+                if (bmp != null)
+                {
+                    _wsHeaderIcon.Child = new Image
+                    {
+                        Source = bmp,
+                        Width = 72,
+                        Height = 72,
+                        Stretch = Stretch.Uniform
+                    };
+                }
+                else
+                {
+                    _wsHeaderIcon.Child = null;
+                }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            LauncherLog.Error("[Assets] Exception in RefreshWorkspaceUi image load: ", ex);
+        }
 
 
 
@@ -20041,12 +21515,13 @@ if __name__ == '__main__':
         _workspaceModsList.Clear();
         foreach (var mod in list) _workspaceModsList.Add(mod);
         FilterWorkspaceMods();
+        UpdateSubTabHeaders();
     }
 
     private void FilterWorkspaceMods()
     {
         if (_selectedProfile == null) return;
-        var query = _wsModsSearchInput?.Text ?? "";
+        var query = _wsSearchInput?.Text ?? "";
         var sortMode = _wsModsSortCombo?.SelectedItem?.ToString() ?? "Name";
 
         IEnumerable<ModItem> filtered = _workspaceModsList;
@@ -20070,7 +21545,12 @@ if __name__ == '__main__':
             filtered = filtered.OrderBy(m => m.FileName, StringComparer.OrdinalIgnoreCase);
         }
 
-        _wsModsListBox.ItemsSource = filtered.ToList();
+        var list = filtered.ToList();
+        _wsModsListBox.ItemsSource = list;
+
+        bool hasItems = list.Count > 0;
+        if (_wsModsScrollViewer != null) _wsModsScrollViewer.IsVisible = hasItems;
+        if (_wsModsPlaceholder != null) _wsModsPlaceholder.IsVisible = !hasItems;
     }
 
     private void RefreshWorkspaceResourcePacksList()
@@ -20086,7 +21566,27 @@ if __name__ == '__main__':
             }
         }
         catch { }
+        _workspaceResourcePacksList.Clear();
+        _workspaceResourcePacksList.AddRange(list);
+        FilterWorkspaceResourcePacks();
+        UpdateSubTabHeaders();
+    }
+
+    private void FilterWorkspaceResourcePacks()
+    {
+        if (_selectedProfile == null) return;
+        var query = _wsSearchInput?.Text ?? "";
+        IEnumerable<string> filtered = _workspaceResourcePacksList;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            filtered = filtered.Where(f => Path.GetFileName(f).Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+        var list = filtered.OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase).ToList();
         _wsRpListBox.ItemsSource = list;
+
+        bool hasItems = list.Count > 0;
+        if (_wsRpScrollViewer != null) _wsRpScrollViewer.IsVisible = hasItems;
+        if (_wsRpPlaceholder != null) _wsRpPlaceholder.IsVisible = !hasItems;
     }
 
     private void RefreshWorkspaceShaderPacksList()
@@ -20102,7 +21602,117 @@ if __name__ == '__main__':
             }
         }
         catch { }
+        _workspaceShaderPacksList.Clear();
+        _workspaceShaderPacksList.AddRange(list);
+        FilterWorkspaceShaderPacks();
+        UpdateSubTabHeaders();
+    }
+
+    private void FilterWorkspaceShaderPacks()
+    {
+        if (_selectedProfile == null) return;
+        var query = _wsSearchInput?.Text ?? "";
+        IEnumerable<string> filtered = _workspaceShaderPacksList;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            filtered = filtered.Where(f => Path.GetFileName(f).Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+        var list = filtered.OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase).ToList();
         _wsSpListBox.ItemsSource = list;
+
+        bool hasItems = list.Count > 0;
+        if (_wsSpScrollViewer != null) _wsSpScrollViewer.IsVisible = hasItems;
+        if (_wsSpPlaceholder != null) _wsSpPlaceholder.IsVisible = !hasItems;
+    }
+
+    private void OnWsSearchInputChanged()
+    {
+        if (_activeContentSubTab == "mods")
+            FilterWorkspaceMods();
+        else if (_activeContentSubTab == "resourcepacks")
+            FilterWorkspaceResourcePacks();
+        else if (_activeContentSubTab == "shaderpacks")
+            FilterWorkspaceShaderPacks();
+    }
+
+    private void RefreshActiveSubTabList()
+    {
+        if (_activeContentSubTab == "mods")
+            RefreshWorkspaceModsList();
+        else if (_activeContentSubTab == "resourcepacks")
+            RefreshWorkspaceResourcePacksList();
+        else if (_activeContentSubTab == "shaderpacks")
+            RefreshWorkspaceShaderPacksList();
+    }
+
+    private void AddNewContentClicked()
+    {
+        if (_selectedProfile == null) return;
+
+        SetActiveSection("modrinth");
+
+        // Pre-configure loader filter based on current profile's loader
+        if (modrinthLoaderCombo != null)
+        {
+            var loaderName = _selectedProfile.Loader;
+            if (!string.IsNullOrEmpty(loaderName))
+            {
+                var cap = loaderName.Substring(0, 1).ToUpper() + loaderName.Substring(1);
+                modrinthLoaderCombo.SelectedItem = cap;
+            }
+            else
+            {
+                modrinthLoaderCombo.SelectedItem = "Any";
+            }
+        }
+
+        // Pre-configure game version based on current profile's game version
+        if (modrinthVersionInput != null)
+        {
+            modrinthVersionInput.Text = _selectedProfile.GameVersion;
+        }
+
+        // Pre-configure project type based on active content sub-tab
+        if (modrinthProjectTypeCombo != null)
+        {
+            if (_activeContentSubTab == "mods")
+            {
+                modrinthProjectTypeCombo.SelectedItem = "Mod";
+            }
+            else if (_activeContentSubTab == "resourcepacks")
+            {
+                modrinthProjectTypeCombo.SelectedItem = "Resourcepack";
+            }
+            else if (_activeContentSubTab == "shaderpacks")
+            {
+                modrinthProjectTypeCombo.SelectedItem = "Shader";
+            }
+        }
+
+        // Trigger search automatically!
+        _ = SearchModrinthAsync();
+    }
+
+    private void UpdateSubTabHeaders()
+    {
+        if (_selectedProfile == null) return;
+
+        int modsCount = _workspaceModsList.Count;
+        int rpCount = _workspaceResourcePacksList.Count;
+        int spCount = _workspaceShaderPacksList.Count;
+
+        if (_wsContentSubTabButtons.TryGetValue("mods", out var modsBtn) && modsBtn.Content is TextBlock modsText)
+        {
+            modsText.Text = $"⊞ Mods ({modsCount})";
+        }
+        if (_wsContentSubTabButtons.TryGetValue("resourcepacks", out var rpBtn) && rpBtn.Content is TextBlock rpText)
+        {
+            rpText.Text = $"◧ Resource Packs ({rpCount})";
+        }
+        if (_wsContentSubTabButtons.TryGetValue("shaderpacks", out var spBtn) && spBtn.Content is TextBlock spText)
+        {
+            spText.Text = $"✦ Shaders ({spCount})";
+        }
     }
 
     private void RefreshWorkspaceWorldsList()
@@ -20317,4 +21927,3 @@ public class ResourcePackItem
     public string FullPath { get; set; } = string.Empty;
     public string Size { get; set; } = string.Empty;
 }
-
