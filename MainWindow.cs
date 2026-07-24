@@ -272,9 +272,18 @@ public sealed class MainWindow : Window
     private Point _lastDragPoint;
     private double _dragVelocity = 0.0;
     private double _animationTime = 0.0;
+    private double _capeAnimationSeconds = 0.0;
+    private int _capeCurrentFrame = 0;
+    private int _capeTickCounter = 0;
+    private int _capeTicksPerFrame = 6; // Calculated at timer start: ceil(timer fps / 10)
+    private const double AnimatedCapeFramesPerSecond = 10.0;
+    private const int AnimatedCapeFrameTimeTicks = 2; // Minecraft animation metadata runs at 20 TPS; 2 ticks = 10 FPS.
     private Bitmap? _cachedSkinBitmap;
     private Bitmap? _cachedCapeBitmap;
-    private RenderTargetBitmap? _previewRtb;
+    private Bitmap? _pendingCapeBitmap; // Loading buffer to prevent flicker
+    private RenderTargetBitmap? _previewRtbA;
+    private RenderTargetBitmap? _previewRtbB;
+    private bool _useRtbA = true;
     private string? _cachedSkinPath;
     private string? _cachedCapePath;
     private bool _cachedIsSlim;
@@ -620,6 +629,20 @@ public sealed class MainWindow : Window
             _animationTime += 0.10 * dt;
             if (_animationTime > 1000.0) _animationTime = 0.0;
 
+            // Cape animation at exactly 10fps: use a tick counter instead of accumulating
+            // floating-point interval seconds, which causes flickering at frame boundaries
+            _capeTickCounter++;
+            if (_capeTickCounter >= _capeTicksPerFrame)
+            {
+                _capeTickCounter = 0;
+                _capeCurrentFrame++;
+                // Reset after 1 hour to keep the counter small
+                if (_capeCurrentFrame > 36000) _capeCurrentFrame = 0;
+            }
+            // Advance _capeAnimationSeconds once per cape frame change
+            _capeAnimationSeconds += _previewTimer.Interval.TotalSeconds;
+            if (_capeAnimationSeconds > 3600.0) _capeAnimationSeconds = 0.0;
+
             UpdateCharacterPreview();
         };
         _previewTimer.Start();
@@ -629,7 +652,9 @@ public sealed class MainWindow : Window
             _previewTimer?.Stop();
             _cachedSkinBitmap?.Dispose();
             _cachedCapeBitmap?.Dispose();
-            _previewRtb?.Dispose();
+            _pendingCapeBitmap?.Dispose();
+            _previewRtbA?.Dispose();
+            _previewRtbB?.Dispose();
             _searchCancellation?.Cancel();
             _searchCancellation?.Dispose();
             _modrinthClient.Dispose();
@@ -3156,23 +3181,13 @@ public sealed class MainWindow : Window
                     new GradientStop(Color.FromArgb(240, 5, 8, 14), 1.0)
                 }
             },
-            BorderBrush = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Color.FromArgb(30, 255, 255, 255), 0.0),
-                    new GradientStop(Color.FromArgb(160, 127, 229, 255), 0.5), // glowing Fugo-blue edge
-                    new GradientStop(Color.FromArgb(30, 255, 255, 255), 1.0)
-                }
-            },
-            BorderThickness = new Thickness(0, 1.5, 0, 0),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(42, 255, 255, 255)),
+            BorderThickness = new Thickness(0, 1, 0, 0),
             Padding = new Thickness(32, 20),
             IsVisible = false,
             Opacity = 0,
             Margin = new Thickness(0, 0, 0, -110),
-            BoxShadow = BoxShadows.Parse("0 -8 30 0 #1E7FE5FF"), // upward Fugo sky glow
+            BoxShadow = new BoxShadows(new BoxShadow { Blur = 24, Color = Color.FromArgb(42, 0, 0, 0), OffsetX = 0, OffsetY = -8 }),
             Transitions = new Transitions
             {
                 new DoubleTransition
@@ -3200,20 +3215,11 @@ public sealed class MainWindow : Window
                             statusLabel.With(tb => {
                                 tb.FontSize = 15;
                                 tb.FontWeight = FontWeight.Black;
-                                tb.Foreground = new LinearGradientBrush
-                                {
-                                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                                    EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-                                    GradientStops =
-                                    {
-                                        new GradientStop(Color.Parse("#FFFFFF"), 0.0),
-                                        new GradientStop(Color.Parse("#BCEEFF"), 1.0)
-                                    }
-                                };
+                                tb.Foreground = Brushes.White;
                             }),
                             installDetailsLabel.With(tb => {
                                 tb.FontSize = 12;
-                                tb.Foreground = new SolidColorBrush(Color.Parse("#7FA5C4"));
+                                tb.Foreground = new SolidColorBrush(Color.Parse("#8E96A8"));
                                 tb.Margin = new Thickness(0, 4, 0, 0);
                             })
                         }
@@ -3222,33 +3228,12 @@ public sealed class MainWindow : Window
                     {
                         CornerRadius = new CornerRadius(double.IsNaN(_settings.Style.ProgressBarRadius) ? 8 : _settings.Style.ProgressBarRadius),
                         Background = Brushes.Transparent,
-                        BoxShadow = new BoxShadows(new BoxShadow
-                        {
-                            Blur = 16,
-                            Color = Color.FromArgb(60, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B),
-                            OffsetX = 0,
-                            OffsetY = 0
-                        }),
                         Child = pbProgress.With(pb => {
-                            pb.Height = double.IsNaN(_settings.Style.ProgressBarHeight) ? 10 : _settings.Style.ProgressBarHeight;
-                            pb.CornerRadius = new CornerRadius(double.IsNaN(_settings.Style.ProgressBarRadius) ? 8 : _settings.Style.ProgressBarRadius);
-                            pb.Background = new SolidColorBrush(
-                                !string.IsNullOrWhiteSpace(_settings.Style.ProgressBarBackground)
-                                    ? Color.Parse(_settings.Style.ProgressBarBackground)
-                                    : Color.FromArgb(25, 255, 255, 255)
-                            );
+                            pb.Height = 8;
+                            pb.CornerRadius = new CornerRadius(6);
+                            pb.Background = new SolidColorBrush(Color.FromArgb(34, 255, 255, 255));
                             var accentColorVal = Color.Parse(_settings.AccentColor ?? "#8B5A2B");
-                            pb.Foreground = new LinearGradientBrush
-                            {
-                                StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
-                                EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
-                                GradientStops =
-                                {
-                                    new GradientStop(Color.Parse("#7FE5FF"), 0.0),
-                                    new GradientStop(Color.Parse("#FFFFFF"), 0.5),
-                                    new GradientStop(accentColorVal, 1.0)
-                                }
-                            };
+                            pb.Foreground = new SolidColorBrush(accentColorVal);
                             pb.Transitions = new Transitions
                             {
                                 new DoubleTransition
@@ -7867,22 +7852,28 @@ public sealed class MainWindow : Window
             _cachedSkinPath = null;
         }
 
-        // Update Cape Cache
+        // Update Cape Cache (only on path change, not on file timestamp changes to avoid flicker)
         if (hasCape && capePathToUse != null)
         {
-            var writeTime = File.GetLastWriteTime(capePathToUse);
-            if (capePathToUse != _cachedCapePath || writeTime != _cachedCapeWriteTime || _cachedCapeBitmap == null)
+            if (capePathToUse != _cachedCapePath || _cachedCapeBitmap == null)
             {
                 try
                 {
-                    _cachedCapeBitmap?.Dispose();
-                    _cachedCapeBitmap = PrepareCapeImage(capePathToUse);
+                    // Load into pending buffer first to avoid flicker
+                    var newBitmap = PrepareCapeImage(capePathToUse);
+
+                    // Swap atomically: old active becomes pending, new becomes active
+                    _pendingCapeBitmap?.Dispose();
+                    _pendingCapeBitmap = _cachedCapeBitmap;
+                    _cachedCapeBitmap = newBitmap;
                     _cachedCapePath = capePathToUse;
-                    _cachedCapeWriteTime = writeTime;
+                    _cachedCapeWriteTime = File.GetLastWriteTime(capePathToUse);
                 }
                 catch (Exception ex)
                 {
                     LauncherLog.Error($"[3DPreview] Cape load error: {ex.Message}");
+                    _pendingCapeBitmap?.Dispose();
+                    _pendingCapeBitmap = null;
                     _cachedCapeBitmap = null;
                 }
             }
@@ -7890,6 +7881,8 @@ public sealed class MainWindow : Window
         else
         {
             _cachedCapeBitmap = null;
+            _pendingCapeBitmap?.Dispose();
+            _pendingCapeBitmap = null;
             _cachedCapePath = null;
         }
 
@@ -7899,17 +7892,24 @@ public sealed class MainWindow : Window
             return;
         }
 
-        // Render 3D Model to RenderTargetBitmap
+        // Render 3D Model to RenderTargetBitmap (Double buffered)
         const int canvasWidth = 270;
         const int canvasHeight = 420;
 
-        if (_previewRtb == null || _previewRtb.PixelSize.Width != canvasWidth || _previewRtb.PixelSize.Height != canvasHeight)
+        if (_previewRtbA == null || _previewRtbA.PixelSize.Width != canvasWidth || _previewRtbA.PixelSize.Height != canvasHeight)
         {
-            _previewRtb?.Dispose();
-            _previewRtb = new RenderTargetBitmap(new PixelSize(canvasWidth, canvasHeight));
+            _previewRtbA?.Dispose();
+            _previewRtbB?.Dispose();
+            _previewRtbA = new RenderTargetBitmap(new PixelSize(canvasWidth, canvasHeight));
+            _previewRtbB = new RenderTargetBitmap(new PixelSize(canvasWidth, canvasHeight));
         }
 
-        using (var ctx = _previewRtb.CreateDrawingContext())
+        var targetRtb = _useRtbA ? _previewRtbA : _previewRtbB;
+        _useRtbA = !_useRtbA;
+
+        if (targetRtb == null) return;
+
+        using (var ctx = targetRtb.CreateDrawingContext())
         {
             // Build the character face list
             var quads = BuildCharacterQuads(_cachedIsSlim, _animationTime, _cachedCapeBitmap != null);
@@ -7947,16 +7947,19 @@ public sealed class MainWindow : Window
             visibleQuads.Sort((a, b) => a.CenterZ.CompareTo(b.CenterZ));
 
             // Animated Cape Frame Y Offset (pre-scaled height is 8x larger)
+            // Uses integer tick counter for precise 10fps without floating-point flicker
             int capeFrameYOffset = 0;
             if (_cachedCapeBitmap != null)
             {
-                double capeHeight = _cachedCapeBitmap.Size.Height;
-                double frameHeight = 32.0 * 8.0;
-                if (capeHeight > frameHeight && ((int)capeHeight % (int)frameHeight) == 0)
+                int capeWidth = (int)_cachedCapeBitmap.Size.Width;
+                int capeHeight = (int)_cachedCapeBitmap.Size.Height;
+                // Cape frames are always 2:1 aspect ratio, so frame height = width / 2
+                int frameHeight = capeWidth / 2;
+                if (capeHeight > frameHeight && (capeHeight % frameHeight) == 0)
                 {
-                    int frames = (int)capeHeight / (int)frameHeight;
-                    int currentFrame = (int)(_animationTime * 2.0) % frames; // Sync with _animationTime
-                    capeFrameYOffset = currentFrame * (int)frameHeight;
+                    int frames = capeHeight / frameHeight;
+                    int currentFrame = _capeCurrentFrame % frames;
+                    capeFrameYOffset = currentFrame * frameHeight;
                 }
             }
 
@@ -7996,8 +7999,7 @@ public sealed class MainWindow : Window
             }
         }
 
-        characterImage.Source = null;
-        characterImage.Source = _previewRtb;
+        characterImage.Source = targetRtb;
         // Use low quality on Windows for performance; high quality on Linux
         RenderOptions.SetBitmapInterpolationMode(characterImage, 
             OperatingSystem.IsWindows() 
@@ -17154,7 +17156,8 @@ if __name__ == '__main__':
             return;
         }
 
-        btnStart.IsEnabled = !isBusy && !string.IsNullOrWhiteSpace(usernameInput.Text);
+        if (btnStart != null) SetButtonProgress(btnStart, 0, false);
+        btnStart!.IsEnabled = !isBusy && !string.IsNullOrWhiteSpace(usernameInput.Text);
         if (isBusy)
         {
             btnStart.Content = "Cancel"; // Default busy state for launch
@@ -18593,7 +18596,7 @@ if __name__ == '__main__':
 
                 if (isGif || isAnimatedPng)
                 {
-                    var mcmeta = "{\"animation\":{\"interpolate\":false,\"frametime\":2}}";
+                    var mcmeta = $"{{\"animation\":{{\"interpolate\":false,\"frametime\":{AnimatedCapeFrameTimeTicks}}}}}";
                     WriteTextEntry(archive, "assets/minecraft/textures/entity/cape.png.mcmeta", mcmeta);
                     LauncherLog.Info($"[Cape] Generated .mcmeta for resource pack zip: isGif={isGif}, isAnimatedPng={isAnimatedPng}");
                 }
