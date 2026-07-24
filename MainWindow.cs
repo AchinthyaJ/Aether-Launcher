@@ -7951,10 +7951,8 @@ public sealed class MainWindow : Window
             int capeFrameYOffset = 0;
             if (_cachedCapeBitmap != null)
             {
-                int capeWidth = (int)_cachedCapeBitmap.Size.Width;
                 int capeHeight = (int)_cachedCapeBitmap.Size.Height;
-                // Cape frames are always 2:1 aspect ratio, so frame height = width / 2
-                int frameHeight = capeWidth / 2;
+                int frameHeight = 256; // Standard cape frame height (32px * 8x upscale)
                 if (capeHeight > frameHeight && (capeHeight % frameHeight) == 0)
                 {
                     int frames = capeHeight / frameHeight;
