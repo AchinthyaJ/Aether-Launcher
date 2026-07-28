@@ -208,19 +208,19 @@ public sealed class FirstRunAccountWindow : Window
         // Custom Rotating Logo
         var logoContainer = new Grid
         {
-            Width = 64,
-            Height = 64,
+            Width = 96,
+            Height = 96,
             HorizontalAlignment = HorizontalAlignment.Left
         };
         
         var logoBgGlow = new Border
         {
-            CornerRadius = new CornerRadius(32),
+            CornerRadius = new CornerRadius(48),
             Background = new RadialGradientBrush
             {
                 GradientStops =
                 {
-                    new GradientStop(Color.FromArgb(100, 59, 130, 246), 0),
+                    new GradientStop(Color.FromArgb(140, 59, 130, 246), 0),
                     new GradientStop(Color.FromArgb(0, 59, 130, 246), 1)
                 }
             }
@@ -229,17 +229,24 @@ public sealed class FirstRunAccountWindow : Window
 
         var logoBorder = new Border
         {
-            Width = 80,
-            Height = 80,
-            CornerRadius = new CornerRadius(14),
-            Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
-            BorderThickness = new Thickness(1),
+            Width = 96,
+            Height = 96,
+            CornerRadius = new CornerRadius(20),
+            Background = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)),
+            BorderThickness = new Thickness(1.5),
+            BoxShadow = new BoxShadows(new BoxShadow
+            {
+                Blur = 18,
+                Color = Color.FromArgb(100, 59, 130, 246),
+                OffsetX = 0,
+                OffsetY = 4
+            }),
             Child = new Image
             {
-                Width = 60,
-                Height = 60,
-                Source = new Bitmap(AssetLoader.Open(new Uri((Application.Current?.ActualThemeVariant == Avalonia.Styling.ThemeVariant.Light) ? "avares://FugoLauncher/assets/deathclient-taskbar-light.png" : "avares://FugoLauncher/assets/deathclient-taskbar.png"))),
+                Width = 76,
+                Height = 76,
+                Source = new Bitmap(AssetLoader.Open(new Uri("avares://FugoLauncher/assets/fugo-logo.png"))),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             }
@@ -249,7 +256,7 @@ public sealed class FirstRunAccountWindow : Window
         var brandTitle = new TextBlock
         {
             Text = "FUGO CLIENT",
-            FontSize = 22,
+            FontSize = 26,
             FontWeight = FontWeight.ExtraBold,
             Foreground = Brushes.White,
             FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")

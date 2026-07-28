@@ -38,7 +38,7 @@
     <None Include="node-skin-server\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="assets\video-background-frames\**\*">
+    <None Include="assets\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include=".env" Condition="Exists('.env')">

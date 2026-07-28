@@ -413,6 +413,7 @@ public sealed class MainWindow : Window
     public System.Collections.Generic.Dictionary<string, object> Fields { get; } = new();
     private Border _instanceEditorOverlay = null!;
     private Border _accountsOverlay = null!;
+    private Border _settingsOverlay = null!;
     private StackPanel _accountsListPanel = new();
     private MinecraftAuthenticationService _authService = new();
     private Border _playOverlay = null!;
@@ -441,6 +442,7 @@ public sealed class MainWindow : Window
     private CancellationTokenSource? _searchCancellation;
     private UserSettings _settings;
     private string _activeSection = "launch";
+    private string _activeSettingsTab = "Configuration";
     // Responsive UI state
     private bool _isNarrowMode;
     private bool _isGameLaunchedAndMinimized;
@@ -761,20 +763,13 @@ public sealed class MainWindow : Window
                         }
                     }.With(row: 0),
 
-                    // Accent Strip
-                    new Border
-                    {
-                        Height = double.IsNaN(style.AccentStripHeight) ? 2 : style.AccentStripHeight,
-                        Background = GetAccentStripBrush(),
-                        VerticalAlignment = VerticalAlignment.Top,
-                        ZIndex = 2000
-                    }.With(rowSpan: 2),
 
                     DetachFromParent(BuildTopNavigation())!.With(row: 0),
                     DetachFromParent(BuildContent())!.With(row: 1),
                     BuildExternalPlayButtonHost(topNavigation: true)!,
                     DetachFromParent(_instanceEditorOverlay)!.With(row: 0, rowSpan: 2, columnSpan: 1),
-                    DetachFromParent(_accountsOverlay)!.With(row: 0, rowSpan: 2, columnSpan: 2)
+                    DetachFromParent(_accountsOverlay)!.With(row: 0, rowSpan: 2, columnSpan: 2),
+                    DetachFromParent(_settingsOverlay)!.With(row: 0, rowSpan: 2, columnSpan: 2)
                 }
             }, topNavigation: true);
 
@@ -790,6 +785,12 @@ public sealed class MainWindow : Window
             Children =
             {
                 _backgroundBorder.With(columnSpan: 2),
+                // Accent color blanket overlay
+                new Border {
+                    Background = new SolidColorBrush(GetAccentColor(8)),
+                    IsHitTestVisible = false,
+                    ZIndex = 999
+                }.With(columnSpan: 2),
                 new Canvas
                 {
                     Children =
@@ -807,8 +808,8 @@ public sealed class MainWindow : Window
                                 RadiusY = new RelativeScalar(0.55, RelativeUnit.Relative),
                                 GradientStops =
                                 {
-                                    new GradientStop(Color.FromArgb(20, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B), 0),
-                                    new GradientStop(Color.FromArgb(0, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B), 1)
+                                    new GradientStop(GetAccentColor(20), 0),
+                                    new GradientStop(GetAccentColor(0), 1)
                                 }
                             },
                             [Canvas.LeftProperty] = -120d,
@@ -823,8 +824,8 @@ public sealed class MainWindow : Window
                             {
                                 GradientStops =
                                 {
-                                    new GradientStop(Color.FromArgb(15, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B), 0),
-                                    new GradientStop(Color.FromArgb(0, Color.Parse(_settings.AccentColor ?? "#8B5A2B").R, Color.Parse(_settings.AccentColor ?? "#8B5A2B").G, Color.Parse(_settings.AccentColor ?? "#8B5A2B").B), 1)
+                                    new GradientStop(GetAccentColor(15), 0),
+                                    new GradientStop(GetAccentColor(0), 1)
                                 }
                             },
                             [Canvas.RightProperty] = -180d,
@@ -836,7 +837,8 @@ public sealed class MainWindow : Window
                   sidebarOnRight ? DetachFromParent(BuildHeader())!.With(column: 1) : DetachFromParent(BuildContent())!.With(column: 1),
                                 BuildExternalPlayButtonHost(topNavigation: false)!,
                 DetachFromParent(_instanceEditorOverlay)!.With(columnSpan: 2),
-                DetachFromParent(_accountsOverlay)!.With(columnSpan: 2)
+                DetachFromParent(_accountsOverlay)!.With(columnSpan: 2),
+                DetachFromParent(_settingsOverlay)!.With(columnSpan: 2)
             }
         }, topNavigation: false);
     }
@@ -1284,45 +1286,76 @@ public sealed class MainWindow : Window
         var sidebarOnRight = IsSidebarOnRight();
         var cr = GetStyleCornerRadius();
         var compact = style.CompactMode;
+
+        var accentHex = !string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#8B5A2B";
+        Color accentColor;
+        try { accentColor = Color.Parse(accentHex); } catch { accentColor = Color.Parse("#8B5A2B"); }
+
         var brand = collapsed
             ? (Control)new Border
             {
-                Width = 40,
-                Height = 40,
-                CornerRadius = new CornerRadius(20),
-                Background = new SolidColorBrush(Color.Parse("#121722")),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Child = new TextBlock
+                Width = 46,
+                Height = 46,
+                CornerRadius = new CornerRadius(14),
+                Background = new SolidColorBrush(Color.FromArgb(35, accentColor.R, accentColor.G, accentColor.B)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(110, accentColor.R, accentColor.G, accentColor.B)),
+                BorderThickness = new Thickness(1.5),
+                BoxShadow = new BoxShadows(new BoxShadow
                 {
-                    Text = "☠",
-                    Foreground = Brushes.White,
-                    FontSize = 18,
-                    FontWeight = FontWeight.Bold,
+                    Blur = 14,
+                    Color = Color.FromArgb(70, accentColor.R, accentColor.G, accentColor.B),
+                    OffsetX = 0,
+                    OffsetY = 2
+                }),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Child = new Image
+                {
+                    Source = new Bitmap(AssetLoader.Open(new Uri(GetTaskbarIconUri()))),
+                    Width = 32,
+                    Height = 32,
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextAlignment = TextAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center
                 }
             }
             : new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 12,
-                Margin = new Thickness(4, 8, 4, 28),
+                Margin = new Thickness(4, 10, 4, 28),
                 VerticalAlignment = VerticalAlignment.Center,
                 Children =
                 {
-                    new Image
+                    new Border
                     {
-                        Source = new Bitmap(AssetLoader.Open(new Uri(GetTaskbarIconUri()))),
-                        Width = 28, Height = 28,
-                        VerticalAlignment = VerticalAlignment.Center
+                        Width = 46,
+                        Height = 46,
+                        CornerRadius = new CornerRadius(14),
+                        Background = new SolidColorBrush(Color.FromArgb(35, accentColor.R, accentColor.G, accentColor.B)),
+                        BorderBrush = new SolidColorBrush(Color.FromArgb(120, accentColor.R, accentColor.G, accentColor.B)),
+                        BorderThickness = new Thickness(1.5),
+                        BoxShadow = new BoxShadows(new BoxShadow
+                        {
+                            Blur = 16,
+                            Color = Color.FromArgb(80, accentColor.R, accentColor.G, accentColor.B),
+                            OffsetX = 0,
+                            OffsetY = 2
+                        }),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Child = new Image
+                        {
+                            Source = new Bitmap(AssetLoader.Open(new Uri(GetTaskbarIconUri()))),
+                            Width = 34,
+                            Height = 34,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center
+                        }
                     },
                     new TextBlock
                     {
                         Text = style.TitleText ?? "FUGO LAUNCHER",
                         Foreground = Brushes.White,
-                        FontSize = 18,
-                        FontWeight = FontWeight.Black,
+                        FontSize = 20,
+                        FontWeight = FontWeight.ExtraBold,
                         VerticalAlignment = VerticalAlignment.Center,
                         FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
                     }
@@ -1372,12 +1405,26 @@ public sealed class MainWindow : Window
         var sbBorder = !string.IsNullOrWhiteSpace(style.SidebarBorderColor) ? style.SidebarBorderColor : "#171B24";
         var sbPad = double.IsNaN(style.SidebarPadding) ? (collapsed ? new Thickness(10, 22, 10, 18) : new Thickness(18, 22, 18, 18)) : new Thickness(style.SidebarPadding);
 
+        Color sbColor;
+        try { sbColor = Color.Parse(sbBg); } catch { sbColor = Color.FromArgb(170, 9, 12, 18); }
+        if (sbColor.A > 185)
+        {
+            sbColor = Color.FromArgb(170, sbColor.R, sbColor.G, sbColor.B);
+        }
+
         var sidebarBody = new Border
         {
-            Background = new SolidColorBrush(Color.Parse(sbBg)),
-            BorderBrush = new SolidColorBrush(Color.Parse(sbBorder)),
-            BorderThickness = new Thickness(0, 0, 1, 0),
+            Background = new SolidColorBrush(sbColor),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, accentColor.R, accentColor.G, accentColor.B)),
+            BorderThickness = sidebarOnRight ? new Thickness(1, 0, 0, 0) : new Thickness(0, 0, 1, 0),
             Padding = sbPad,
+            BoxShadow = new BoxShadows(new BoxShadow
+            {
+                Blur = 24,
+                Color = Color.FromArgb(60, 0, 0, 0),
+                OffsetX = sidebarOnRight ? -4 : 4,
+                OffsetY = 0
+            }),
             Child = new StackPanel
             {
                 Spacing = collapsed ? 10 : 12,
@@ -1431,6 +1478,10 @@ public sealed class MainWindow : Window
             button.MinWidth = 80;
         }
 
+        var accentHex = !string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#8B5A2B";
+        Color accentColor;
+        try { accentColor = Color.Parse(accentHex); } catch { accentColor = Color.Parse("#8B5A2B"); }
+
         var brandBlock = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -1438,18 +1489,35 @@ public sealed class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                new Image
+                new Border
                 {
-                    Source = new Bitmap(AssetLoader.Open(new Uri(GetTaskbarIconUri()))),
-                    Width = 28, Height = 28,
-                    VerticalAlignment = VerticalAlignment.Center
+                    Width = 42,
+                    Height = 42,
+                    CornerRadius = new CornerRadius(12),
+                    Background = new SolidColorBrush(Color.FromArgb(35, accentColor.R, accentColor.G, accentColor.B)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(120, accentColor.R, accentColor.G, accentColor.B)),
+                    BorderThickness = new Thickness(1.5),
+                    BoxShadow = new BoxShadows(new BoxShadow
+                    {
+                        Blur = 14,
+                        Color = Color.FromArgb(80, accentColor.R, accentColor.G, accentColor.B),
+                        OffsetX = 0,
+                        OffsetY = 2
+                    }),
+                    Child = new Image
+                    {
+                        Source = new Bitmap(AssetLoader.Open(new Uri(GetTaskbarIconUri()))),
+                        Width = 30, Height = 30,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
                 },
                 new TextBlock
                 {
                     Text = "FUGO LAUNCHER",
                     Foreground = Brushes.White,
-                    FontSize = 18,
-                    FontWeight = FontWeight.Black,
+                    FontSize = 20,
+                    FontWeight = FontWeight.ExtraBold,
                     VerticalAlignment = VerticalAlignment.Center,
                     FontFamily = new FontFamily("SF Pro, Inter, Segoe UI")
                 }
@@ -1514,13 +1582,17 @@ public sealed class MainWindow : Window
         {
             accountsNavButton = new Button
             {
-                Background = new SolidColorBrush(Color.FromArgb(180, 26, 31, 46)),
+                Background = new SolidColorBrush(GetAccentColor(35)),
+                BorderBrush = new SolidColorBrush(GetAccentColor(80)),
+                BorderThickness = new Thickness(1),
                 Foreground = Brushes.White,
                 CornerRadius = new CornerRadius(20),
-                Padding = new Thickness(20, 10),
+                Padding = new Thickness(16, 0),
+                Height = 40,
                 MinWidth = 160,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 8, 0),
                 FontWeight = FontWeight.Bold,
                 ZIndex = 50
@@ -1844,6 +1916,7 @@ public sealed class MainWindow : Window
         _instanceEditorOverlay ??= BuildInstanceEditorOverlay();
         _accountsListPanel ??= new StackPanel();
         _accountsOverlay ??= BuildAccountsOverlay();
+        _settingsOverlay ??= BuildSettingsOverlay();
         PbProgress = pbProgress;
         ModrinthSearchInput = modrinthSearchInput;
         UpdateSelectedProjectDetails();
@@ -1987,6 +2060,39 @@ public sealed class MainWindow : Window
         if (accountsNavButton != null) accountsNavButton.IsVisible = false;
     }
 
+    private Bitmap? GetSkinBitmap(string? skinPath)
+    {
+        bool exists = !string.IsNullOrEmpty(skinPath) && File.Exists(skinPath);
+        if (!exists)
+        {
+            var steveFallback = Path.Combine(AppContext.BaseDirectory, "assets", "original-minecraft-skin-steve.png");
+            if (!File.Exists(steveFallback))
+                steveFallback = Path.Combine(Directory.GetCurrentDirectory(), "assets", "original-minecraft-skin-steve.png");
+
+            if (File.Exists(steveFallback))
+            {
+                skinPath = steveFallback;
+                exists = true;
+            }
+        }
+
+        if (!exists || skinPath == null)
+            return null;
+
+        try
+        {
+            using (var img = PrepareSkinImage(skinPath, out bool _))
+            {
+                return ImageSharpToAvaloniaBitmap(img);
+            }
+        }
+        catch (Exception ex)
+        {
+            LauncherLog.Error($"[AccountsOverlay] Skin load error for {skinPath}: {ex.Message}");
+            return null;
+        }
+    }
+
     private bool _isAuthenticating;
     private void RefreshAccountsList()
     {
@@ -1994,6 +2100,52 @@ public sealed class MainWindow : Window
         foreach (var account in _settings.Accounts.ToList())
         {
             var isSelected = account.Id == _settings.SelectedAccountId;
+
+            Control avatarControl;
+            var skinBmp = GetSkinBitmap(account.CustomSkinPath);
+            if (skinBmp != null)
+            {
+                var cropBase = new PixelRect(64, 64, 64, 64);
+                var croppedBase = new CroppedBitmap(skinBmp, cropBase);
+                
+                var cropHat = new PixelRect(320, 64, 64, 64);
+                var croppedHat = new CroppedBitmap(skinBmp, cropHat);
+                
+                var imgBase = new Image
+                {
+                    Source = croppedBase,
+                    Width = 28,
+                    Height = 28,
+                    Stretch = Stretch.Fill
+                };
+                RenderOptions.SetBitmapInterpolationMode(imgBase, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+                
+                var imgHat = new Image
+                {
+                    Source = croppedHat,
+                    Width = 28,
+                    Height = 28,
+                    Stretch = Stretch.Fill
+                };
+                RenderOptions.SetBitmapInterpolationMode(imgHat, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+                
+                avatarControl = new Grid
+                {
+                    Width = 28,
+                    Height = 28,
+                    Children = { imgBase, imgHat }
+                };
+            }
+            else
+            {
+                avatarControl = new TextBlock
+                {
+                    Text = "🧑",
+                    FontSize = 16,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+            }
 
             var avatarBorder = new Border
             {
@@ -2003,13 +2155,8 @@ public sealed class MainWindow : Window
                 Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
-                Child = new TextBlock
-                {
-                    Text = "🧑",
-                    FontSize = 16,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                },
+                ClipToBounds = true,
+                Child = avatarControl,
                 Margin = new Thickness(0, 0, 12, 0)
             };
 
@@ -2149,18 +2296,26 @@ public sealed class MainWindow : Window
     private bool IsUsingMicrosoftAccount()
         => string.Equals(GetSelectedAccount()?.Provider, "microsoft", StringComparison.OrdinalIgnoreCase);
 
+    private string GetSelectedAccountIdSafe()
+    {
+        if (string.IsNullOrEmpty(_settings.SelectedAccountId))
+        {
+            var activeUsername = GetActiveUsername();
+            return string.IsNullOrEmpty(activeUsername) ? "global" : activeUsername;
+        }
+        return _settings.SelectedAccountId;
+    }
+
     private bool HasManualSkinOverride()
     {
-        var manualSkinPath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "skin.png");
-        return string.Equals(_settings.CustomSkinPath, manualSkinPath, StringComparison.OrdinalIgnoreCase)
-            && File.Exists(manualSkinPath);
+        var skinPath = _settings.CustomSkinPath;
+        return !string.IsNullOrEmpty(skinPath) && File.Exists(skinPath);
     }
 
     private bool HasManualCapeOverride()
     {
-        var manualCapePath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "cape.png");
-        return string.Equals(_settings.CustomCapePath, manualCapePath, StringComparison.OrdinalIgnoreCase)
-            && File.Exists(manualCapePath);
+        var capePath = _settings.CustomCapePath;
+        return !string.IsNullOrEmpty(capePath) && File.Exists(capePath);
     }
 
     private async Task<MSession> BuildLaunchSessionAsync(CancellationToken cancellationToken)
@@ -2351,32 +2506,20 @@ public sealed class MainWindow : Window
 
         var panel = new Border
         {
-            Width = 400,
-            Background = new LinearGradientBrush
+            Width = 460,
+            MaxHeight = 560,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Color.FromArgb(248, 12, 16, 26)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(20),
+            BoxShadow = new BoxShadows(new BoxShadow
             {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Color.FromArgb(235, 12, 16, 32), 0),
-                    new GradientStop(Color.FromArgb(245, 6, 8, 16), 1)
-                }
-            },
-            BorderBrush = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Color.Parse("#38D6C4"), 0),
-                    new GradientStop(Color.Parse("#B655FF"), 0.5),
-                    new GradientStop(Color.FromArgb(0, 0, 0, 0), 1)
-                }
-            },
-            BorderThickness = new Thickness(1.5, 0, 0, 0),
-            CornerRadius = new CornerRadius(24, 0, 0, 24),
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Stretch,
+                Blur = 32,
+                OffsetY = 12,
+                Color = Color.FromArgb(160, 0, 0, 0)
+            }),
             Padding = new Thickness(24),
             Child = new Grid
             {
@@ -2386,9 +2529,9 @@ public sealed class MainWindow : Window
                     header.With(row: 0),
                     new ScrollViewer
                     {
-                        Margin = new Thickness(0, 24),
+                        Margin = new Thickness(0, 20),
                         VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-                        Content = _accountsListPanel.With(sp => sp.Spacing = 8)
+                        Content = _accountsListPanel.With(sp => sp.Spacing = 10)
                     }.With(row: 1),
                     footer.With(row: 2)
                 }
@@ -2398,7 +2541,7 @@ public sealed class MainWindow : Window
         return new Border
         {
             IsVisible = false,
-            Background = new SolidColorBrush(Color.FromArgb(160, 2, 4, 8)),
+            Background = new SolidColorBrush(Color.FromArgb(170, 2, 4, 8)),
             ZIndex = 100,
             Child = panel
         };
@@ -2410,7 +2553,7 @@ public sealed class MainWindow : Window
         {
             var activeName = GetSelectedAccount()?.Username;
             if (string.IsNullOrWhiteSpace(activeName))
-                activeName = string.IsNullOrWhiteSpace(usernameInput.Text) ? _settings.Username : usernameInput.Text;
+                activeName = (usernameInput == null || string.IsNullOrWhiteSpace(usernameInput.Text)) ? _settings.Username : usernameInput.Text;
             if (string.IsNullOrWhiteSpace(activeName))
                 activeName = "Accounts";
 
@@ -2418,6 +2561,51 @@ public sealed class MainWindow : Window
             var fg = !string.IsNullOrWhiteSpace(_settings.Style.NavButtonForeground) ? _settings.Style.NavButtonForeground : "#A4A8B1";
             var accent = !string.IsNullOrWhiteSpace(_settings.Style.AccentColor) ? _settings.Style.AccentColor! : (!string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#8B5A2B");
             
+            Control iconControl;
+            if (_cachedSkinBitmap != null)
+            {
+                var cropBase = new PixelRect(64, 64, 64, 64);
+                var croppedBase = new CroppedBitmap(_cachedSkinBitmap, cropBase);
+                
+                var cropHat = new PixelRect(320, 64, 64, 64);
+                var croppedHat = new CroppedBitmap(_cachedSkinBitmap, cropHat);
+                
+                var imgBase = new Image
+                {
+                    Source = croppedBase,
+                    Width = 18,
+                    Height = 18,
+                    Stretch = Stretch.Fill
+                };
+                RenderOptions.SetBitmapInterpolationMode(imgBase, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+                
+                var imgHat = new Image
+                {
+                    Source = croppedHat,
+                    Width = 18,
+                    Height = 18,
+                    Stretch = Stretch.Fill
+                };
+                RenderOptions.SetBitmapInterpolationMode(imgHat, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+                
+                iconControl = new Grid
+                {
+                    Width = 18,
+                    Height = 18,
+                    Children = { imgBase, imgHat }
+                };
+            }
+            else
+            {
+                iconControl = new TextBlock
+                {
+                    Text = "🧑",
+                    FontSize = 14,
+                    Foreground = new SolidColorBrush(Color.Parse(accent)),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                };
+            }
+
             accountsNavButton.Content = new StackPanel
             {
                 Orientation = Avalonia.Layout.Orientation.Horizontal,
@@ -2429,13 +2617,8 @@ public sealed class MainWindow : Window
                         Background = new SolidColorBrush(Color.FromArgb(40, Color.Parse(accent).R, Color.Parse(accent).G, Color.Parse(accent).B)),
                         CornerRadius = new CornerRadius(10),
                         Padding = new Thickness(6),
-                        Child = new TextBlock
-                        {
-                            Text = "🧑",
-                            FontSize = 14,
-                            Foreground = new SolidColorBrush(Color.Parse(accent)),
-                            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
-                        }
+                        ClipToBounds = true,
+                        Child = iconControl
                     },
                     new TextBlock
                     {
@@ -2727,6 +2910,7 @@ public sealed class MainWindow : Window
         // Overlays
         _instanceEditorOverlay = null!;
         _accountsOverlay = null!;
+        _settingsOverlay = null!;
         _playOverlay = new Border();
         
         // Navigation
@@ -2983,18 +3167,18 @@ public sealed class MainWindow : Window
 
         foreach (var c in actionsGroup.Children) ApplyHoverMotion(c as Control);
 
-        var skinContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center, Children = { new TextBlock { Text = "●", FontSize = 9, Foreground = Brushes.LightGray, VerticalAlignment = VerticalAlignment.Center }, new TextBlock { Text = "Skin", FontSize = 11, VerticalAlignment = VerticalAlignment.Center } } };
-        var skinBtn = new Button { Content = skinContent, Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)), CornerRadius = new CornerRadius(10), Height = 28, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var skinContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Children = { new TextBlock { Text = "●", FontSize = 10, Foreground = new SolidColorBrush(GetAccentColor(255)), VerticalAlignment = VerticalAlignment.Center }, new TextBlock { Text = "Skin", FontSize = 12, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center } } };
+        var skinBtn = new Button { Content = skinContent, Background = new SolidColorBrush(GetAccentColor(35)), BorderBrush = new SolidColorBrush(GetAccentColor(80)), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Height = 36, Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center };
         skinBtn.Click += async (_, _) => await ChangeSkinAsync();
         ApplyHoverMotion(skinBtn);
 
-        var capeContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center, Children = { new TextBlock { Text = "■", FontSize = 9, Foreground = Brushes.LightGray, VerticalAlignment = VerticalAlignment.Center }, new TextBlock { Text = "Cape", FontSize = 11, VerticalAlignment = VerticalAlignment.Center } } };
-        var capeBtn = new Button { Content = capeContent, Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)), CornerRadius = new CornerRadius(10), Height = 28, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var capeContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Children = { new TextBlock { Text = "■", FontSize = 10, Foreground = new SolidColorBrush(GetAccentColor(255)), VerticalAlignment = VerticalAlignment.Center }, new TextBlock { Text = "Cape", FontSize = 12, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center } } };
+        var capeBtn = new Button { Content = capeContent, Background = new SolidColorBrush(GetAccentColor(35)), BorderBrush = new SolidColorBrush(GetAccentColor(80)), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Height = 36, Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center };
         capeBtn.Click += async (_, _) => await ChangeCapeAsync();
         ApplyHoverMotion(capeBtn);
 
-        var resetContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center, Children = { new TextBlock { Text = "×", FontSize = 11, Foreground = Brushes.LightGray, VerticalAlignment = VerticalAlignment.Center }, new TextBlock { Text = "Reset", FontSize = 11, VerticalAlignment = VerticalAlignment.Center } } };
-        var resetBtn = new Button { Content = resetContent, Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)), CornerRadius = new CornerRadius(10), Height = 28, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var resetContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Children = { new TextBlock { Text = "×", FontSize = 13, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(GetAccentColor(255)), VerticalAlignment = VerticalAlignment.Center }, new TextBlock { Text = "Reset", FontSize = 12, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center } } };
+        var resetBtn = new Button { Content = resetContent, Background = new SolidColorBrush(GetAccentColor(35)), BorderBrush = new SolidColorBrush(GetAccentColor(80)), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Height = 36, Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center };
         resetBtn.Click += (_, _) => {
             _settings.CustomSkinPath = string.Empty;
             _settings.CustomCapePath = string.Empty;
@@ -4519,15 +4703,14 @@ public sealed class MainWindow : Window
             return card;
         });
 
-        var instancesPane = CreateGlassPanel(new Border
+        var exactWidth = (IsTopNavigationEnabled() || IsSidebarCollapsed()) ? (4 * 261) : (3 * 261);
+
+        var instancesPane = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(160, 10, 14, 26)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(22),
-            Padding = new Thickness(14),
+            Width = exactWidth,
+            HorizontalAlignment = HorizontalAlignment.Center,
             Child = profileListBox
-        });
+        };
 
 
 
@@ -5326,17 +5509,102 @@ public sealed class MainWindow : Window
 
     private Control BuildSettingsDeck()
     {
+        return new Border();
+    }
+
+    private Border BuildSettingsOverlay()
+    {
+        var closeButton = new Button
+        {
+            Width = 28,
+            Height = 28,
+            Content = "✕",
+            Background = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255)),
+            Foreground = Brushes.White,
+            FontSize = 12,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(14),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ToolTip.SetTip(closeButton, "Close Settings");
+        closeButton.Click += (_, _) => { _settingsOverlay.IsVisible = false; };
+
+        // ── Header ────────────────────────────────────────────────────────────
+        var header = new Border
+        {
+            Padding = new Thickness(20, 14, 16, 12),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(22, 255, 255, 255)),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                Children =
+                {
+                    new StackPanel
+                    {
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Children =
+                        {
+                            new TextBlock { Text = "Settings", FontSize = 16, FontWeight = FontWeight.Bold, Foreground = Brushes.White },
+                            new TextBlock { Text = "Launcher preferences and appearance", FontSize = 10, Foreground = new SolidColorBrush(Color.Parse("#5E6B85")), Margin = new Thickness(0, 2, 0, 0) }
+                        }
+                    },
+                    closeButton.With(column: 1)
+                }
+            }
+        };
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+        static Control FlatSection(string label) => new StackPanel
+        {
+            Margin = new Thickness(0, 18, 0, 10),
+            Spacing = 6,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = label.ToUpperInvariant(),
+                    FontSize = 9,
+                    FontWeight = FontWeight.Bold,
+                    Foreground = new SolidColorBrush(Color.Parse("#4A566E")),
+                    LetterSpacing = 1.2
+                },
+                new Border { Height = 1, Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)) }
+            }
+        };
+
+        static TextBlock FieldLabel(string text) => new TextBlock
+        {
+            Text = text,
+            FontSize = 11,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = new SolidColorBrush(Color.Parse("#8E99B0")),
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+
+        // ── TAB 1: Configuration ──────────────────────────────────────────────
         var totalRam = GetSystemRamMb();
-        var ramSlider = new Slider 
-        { 
-            Minimum = 512, 
-            Maximum = totalRam, 
+        var ramSlider = new Slider
+        {
+            Minimum = 512,
+            Maximum = totalRam,
             Value = _settings.MaxRamMb,
             SmallChange = 512,
-            LargeChange = 1024
+            LargeChange = 1024,
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        var ramLabel = new TextBlock { Text = $"{_settings.MaxRamMb} MB", VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.Bold, Foreground = Brushes.White };
-        ramSlider.ValueChanged += (_, e) => {
+        var ramLabel = new TextBlock
+        {
+            Text = $"{_settings.MaxRamMb} MB",
+            FontSize = 12,
+            FontWeight = FontWeight.Bold,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ramSlider.ValueChanged += (_, e) =>
+        {
             var val = (int)(e.NewValue / 512) * 512;
             _settings.MaxRamMb = val;
             ramLabel.Text = $"{val} MB";
@@ -5346,54 +5614,37 @@ public sealed class MainWindow : Window
         var jvmArgsInput = CreateTextBox();
         jvmArgsInput.Text = _settings.JvmArgs;
         jvmArgsInput.Watermark = "-Xmx2G -XX:+UseG1GC...";
-        jvmArgsInput.TextChanged += (_, _) => {
+        jvmArgsInput.HorizontalAlignment = HorizontalAlignment.Stretch;
+        jvmArgsInput.TextChanged += (_, _) =>
+        {
             _settings.JvmArgs = jvmArgsInput.Text ?? "";
             _settingsStore.Save(_settings);
         };
 
         var windowWidthInput = CreateTextBox();
         windowWidthInput.Text = _settings.WindowWidth.ToString();
-        windowWidthInput.TextChanged += (_, _) => {
-            if (int.TryParse(windowWidthInput.Text, out var val)) { _settings.WindowWidth = val; _settingsStore.Save(_settings); }
+        windowWidthInput.TextChanged += (_, _) =>
+        {
+            if (int.TryParse(windowWidthInput.Text, out var v)) { _settings.WindowWidth = v; _settingsStore.Save(_settings); }
         };
 
         var windowHeightInput = CreateTextBox();
         windowHeightInput.Text = _settings.WindowHeight.ToString();
-        windowHeightInput.TextChanged += (_, _) => {
-            if (int.TryParse(windowHeightInput.Text, out var val)) { _settings.WindowHeight = val; _settingsStore.Save(_settings); }
-        };
-        var performanceModeToggle = new ToggleSwitch
+        windowHeightInput.TextChanged += (_, _) =>
         {
-            Content = "Performance Mode (disables animations, simplifies theme gradients)",
-            IsChecked = _settings.PerformanceMode,
-            Foreground = Brushes.White,
-            FontWeight = FontWeight.SemiBold
-        };
-        performanceModeToggle.IsCheckedChanged += (_, _) =>
-        {
-            _settings.PerformanceMode = performanceModeToggle.IsChecked ?? false;
-            _settingsStore.Save(_settings);
-            
-            // Adjust preview timer speed based on performance mode
-            if (_previewTimer != null)
-            {
-                _previewTimer.Interval = TimeSpan.FromMilliseconds(IsPerformanceModeEnabled() ? 33 : 16);
-            }
-            
-            ApplySelectedPresetStyle();
-            RebuildUiFromLayoutState(_activeSection);
+            if (int.TryParse(windowHeightInput.Text, out var v)) { _settings.WindowHeight = v; _settingsStore.Save(_settings); }
         };
 
-        var behaviorOptions = new List<string> { "Close Launcher", "Minimize Launcher", "Run Launcher in Background" };
+        var behaviorOptions = new List<string> { "Close Launcher", "Minimize Launcher", "Run in Background" };
         var behaviorComboBox = CreateComboBox(behaviorOptions);
-        
+        behaviorComboBox.HorizontalAlignment = HorizontalAlignment.Left;
+        behaviorComboBox.Width = 240;
         behaviorComboBox.SelectedIndex = _settings.AfterLaunchBehavior switch
         {
-            "minimize" => 1,
+            "minimize"   => 1,
             "background" => 2,
-            _ => 0
+            _            => 0
         };
-
         behaviorComboBox.SelectionChanged += (_, _) =>
         {
             _settings.AfterLaunchBehavior = behaviorComboBox.SelectedIndex switch
@@ -5405,65 +5656,80 @@ public sealed class MainWindow : Window
             _settingsStore.Save(_settings);
         };
 
-        var title = CreateSectionTitle("Settings", "Grouped launcher, system, and appearance controls.");
-        var runtimeCard = CreateSubCard("Launch Runtime", new StackPanel
+        var changeDirBtn = new Button
         {
-            Spacing = 20,
-            Children =
-            {
-                new StackPanel
-                {
-                    Spacing = 8,
-                    Children =
-                    {
-                        new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Children = { CreatePanelEyebrow("RAM Allocation"), ramLabel.With(column: 1) } },
-                        ramSlider
-                    }
-                },
-                new StackPanel { Spacing = 8, Children = { CreatePanelEyebrow("Extra JVM Arguments"), jvmArgsInput } }
-            }
-        }, "#1A2035");
+            Content = "Change Directory",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Height = 34,
+            Padding = new Thickness(16, 0),
+            Background = new SolidColorBrush(Color.FromArgb(70, 100, 140, 220)),
+            Foreground = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 100, 160, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center
+        };
+        changeDirBtn.Click += async (_, _) => await ChangeBaseDirectoryAsync();
 
-        var sessionCard = CreateSubCard("Window & Session", new StackPanel
+        var configPane = new ScrollViewer
         {
-            Spacing = 20,
-            Children =
+            Padding = new Thickness(24, 8, 20, 20),
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            Content = new StackPanel
             {
-                new Grid
+                Spacing = 4,
+                Children =
                 {
-                    ColumnDefinitions = new ColumnDefinitions("*,*"),
-                    ColumnSpacing = 16,
-                    Children =
+                    FlatSection("Launch Runtime"),
+                    new StackPanel
                     {
-                        new StackPanel { Spacing = 8, Children = { CreatePanelEyebrow("Window Width"), windowWidthInput } },
-                        new StackPanel { Spacing = 8, Children = { CreatePanelEyebrow("Window Height"), windowHeightInput } }.With(column: 1)
-                    }
-                },
-                performanceModeToggle,
-                new Separator { Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)) },
-                new StackPanel { Spacing = 8, Children = { CreatePanelEyebrow("When Minecraft is Launched"), behaviorComboBox } },
-                new Separator { Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)) },
-                new StackPanel
-                {
-                    Spacing = 8,
-                    Children =
+                        Spacing = 6,
+                        Children =
+                        {
+                            new Grid
+                            {
+                                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                                Children =
+                                {
+                                    FieldLabel("RAM Allocation"),
+                                    ramLabel.With(column: 1)
+                                }
+                            },
+                            ramSlider
+                        }
+                    },
+                    new StackPanel { Margin = new Thickness(0, 10, 0, 0), Spacing = 6, Children = { FieldLabel("Extra JVM Arguments"), jvmArgsInput } },
+
+                    FlatSection("Window & Session"),
+                    new Grid
                     {
-                        CreatePanelEyebrow("Installation Directory"),
-                        new TextBlock { Text = _defaultMinecraftPath.BasePath, Foreground = Brushes.Gray, FontSize = 12, TextWrapping = TextWrapping.Wrap },
-                        CreateSecondaryButton("Change Directory").With(btn => btn.Click += async (_, _) => await ChangeBaseDirectoryAsync())
-                    }
+                        ColumnDefinitions = new ColumnDefinitions("*,16,*"),
+                        Children =
+                        {
+                            new StackPanel { Spacing = 6, Children = { FieldLabel("Window Width"),  windowWidthInput  } }.With(column: 0),
+                            new StackPanel { Spacing = 6, Children = { FieldLabel("Window Height"), windowHeightInput } }.With(column: 2)
+                        }
+                    },
+                    new StackPanel { Margin = new Thickness(0, 10, 0, 0), Spacing = 6, Children = { FieldLabel("When Minecraft Launches"), behaviorComboBox } },
+                    new StackPanel { Margin = new Thickness(0, 10, 0, 24), Spacing = 8, Children =
+                    {
+                        FieldLabel("Installation Directory"),
+                        new TextBlock { Text = _defaultMinecraftPath.BasePath, FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#5E6B85")), TextWrapping = TextWrapping.Wrap },
+                        changeDirBtn
+                    }}
                 }
             }
-        }, "#1A2035");
-
-        var presetsComboBox = new ComboBox
-        {
-            Width = 200,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Items = { "None", "Liquid Glass", "Mountains", "Clear Blue Sky" },
-            SelectedItem = _settings.SelectedPreset ?? "None"
         };
 
+        // ── TAB 2: UI Layout & Presets ────────────────────────────────────────
+        var presetsComboBox = CreateComboBox(new List<string> { "None", "Liquid Glass", "Mountains", "Clear Blue Sky" });
+        presetsComboBox.Width = 240;
+        presetsComboBox.HorizontalAlignment = HorizontalAlignment.Left;
+        presetsComboBox.SelectedItem = _settings.SelectedPreset ?? "None";
         presetsComboBox.SelectionChanged += (_, _) =>
         {
             var selected = presetsComboBox.SelectedItem as string;
@@ -5473,38 +5739,37 @@ public sealed class MainWindow : Window
             RebuildUiFromLayoutState(_activeSection);
         };
 
-        var resetLayoutBtn = CreateSecondaryButton("Reset UI Layout");
-        resetLayoutBtn.Height = 36;
-        resetLayoutBtn.HorizontalAlignment = HorizontalAlignment.Left;
+        var resetLayoutBtn = new Button
+        {
+            Content = "Reset UI Layout",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Height = 34,
+            Padding = new Thickness(16, 0),
+            Background = new SolidColorBrush(Color.FromArgb(70, 100, 140, 220)),
+            Foreground = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 100, 160, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center
+        };
         resetLayoutBtn.Click += async (_, _) => await ResetLayoutAsync();
 
-        // Navigation Position
-        var navPosComboBox = new ComboBox
-        {
-            Width = 200,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Items = { "Sidebar", "Top" },
-            SelectedItem = string.Equals(_settings.Style.NavPosition, "top", StringComparison.OrdinalIgnoreCase) ? "Top" : "Sidebar"
-        };
-        navPosComboBox.SelectionChanged += (_, _) =>
-        {
-            var selected = navPosComboBox.SelectedItem as string;
-            _settings.Style.NavPosition = selected?.ToLowerInvariant() ?? "sidebar";
-            _settingsStore.Save(_settings);
-            RebuildUiFromLayoutState(_activeSection);
-        };
+        var navPosComboBox = CreateComboBox(new List<string> { "Sidebar", "Top" });
+        navPosComboBox.Width = 240;
+        navPosComboBox.HorizontalAlignment = HorizontalAlignment.Left;
+        navPosComboBox.SelectedItem = string.Equals(_settings.Style.NavPosition, "top", StringComparison.OrdinalIgnoreCase) ? "Top" : "Sidebar";
 
         bool isSidebarActive = !string.Equals(_settings.Style.NavPosition, "top", StringComparison.OrdinalIgnoreCase);
 
-        // Sidebar Side
-        var sidebarSideComboBox = new ComboBox
-        {
-            Width = 200,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Items = { "Left", "Right" },
-            SelectedItem = string.Equals(_settings.Style.SidebarSide, "right", StringComparison.OrdinalIgnoreCase) ? "Right" : "Left",
-            IsEnabled = isSidebarActive
-        };
+        var sidebarSideComboBox = CreateComboBox(new List<string> { "Left", "Right" });
+        sidebarSideComboBox.Width = 240;
+        sidebarSideComboBox.HorizontalAlignment = HorizontalAlignment.Left;
+        sidebarSideComboBox.SelectedItem = string.Equals(_settings.Style.SidebarSide, "right", StringComparison.OrdinalIgnoreCase) ? "Right" : "Left";
+        sidebarSideComboBox.IsEnabled = isSidebarActive;
+
         sidebarSideComboBox.SelectionChanged += (_, _) =>
         {
             var selected = sidebarSideComboBox.SelectedItem as string;
@@ -5513,13 +5778,13 @@ public sealed class MainWindow : Window
             RebuildUiFromLayoutState(_activeSection);
         };
 
-        // Sidebar Collapsed
         var sidebarCollapsedToggle = new ToggleSwitch
         {
             Content = "Collapsed Sidebar",
             IsChecked = _settings.Style.SidebarCollapsed,
-            Foreground = Brushes.White,
-            FontWeight = FontWeight.SemiBold,
+            Foreground = new SolidColorBrush(Color.Parse("#C8D0E0")),
+            OnContent = "On",
+            OffContent = "Off",
             IsEnabled = isSidebarActive
         };
         sidebarCollapsedToggle.IsCheckedChanged += (_, _) =>
@@ -5529,7 +5794,6 @@ public sealed class MainWindow : Window
             RebuildUiFromLayoutState(_activeSection);
         };
 
-        // Sidebar Width
         var sidebarWidthSlider = new Slider
         {
             Minimum = 160,
@@ -5537,11 +5801,18 @@ public sealed class MainWindow : Window
             Value = _settings.Style.SidebarWidth > 0 ? _settings.Style.SidebarWidth : 240,
             SmallChange = 10,
             LargeChange = 20,
-            Width = 200,
+            Width = 240,
             HorizontalAlignment = HorizontalAlignment.Left,
             IsEnabled = isSidebarActive
         };
-        var sidebarWidthLabel = new TextBlock { Text = $"{(int)sidebarWidthSlider.Value} px", VerticalAlignment = VerticalAlignment.Center, Foreground = isSidebarActive ? Brushes.White : Brushes.Gray };
+        var sidebarWidthLabel = new TextBlock
+        {
+            Text = $"{(int)sidebarWidthSlider.Value} px",
+            FontSize = 11,
+            FontWeight = FontWeight.Bold,
+            Foreground = isSidebarActive ? Brushes.White : Brushes.Gray,
+            VerticalAlignment = VerticalAlignment.Center
+        };
         sidebarWidthSlider.ValueChanged += (_, e) =>
         {
             var val = (int)e.NewValue;
@@ -5551,7 +5822,6 @@ public sealed class MainWindow : Window
             RebuildUiFromLayoutState(_activeSection);
         };
 
-        // Sidebar Padding
         var sidebarPaddingSlider = new Slider
         {
             Minimum = 0,
@@ -5559,11 +5829,18 @@ public sealed class MainWindow : Window
             Value = _settings.Style.SidebarPadding,
             SmallChange = 2,
             LargeChange = 5,
-            Width = 200,
+            Width = 240,
             HorizontalAlignment = HorizontalAlignment.Left,
             IsEnabled = isSidebarActive
         };
-        var sidebarPaddingLabel = new TextBlock { Text = $"{(int)sidebarPaddingSlider.Value} px", VerticalAlignment = VerticalAlignment.Center, Foreground = isSidebarActive ? Brushes.White : Brushes.Gray };
+        var sidebarPaddingLabel = new TextBlock
+        {
+            Text = $"{(int)sidebarPaddingSlider.Value} px",
+            FontSize = 11,
+            FontWeight = FontWeight.Bold,
+            Foreground = isSidebarActive ? Brushes.White : Brushes.Gray,
+            VerticalAlignment = VerticalAlignment.Center
+        };
         sidebarPaddingSlider.ValueChanged += (_, e) =>
         {
             var val = (int)e.NewValue;
@@ -5573,94 +5850,85 @@ public sealed class MainWindow : Window
             RebuildUiFromLayoutState(_activeSection);
         };
 
-        var editorSliders = CreateSubCard("🎨 UI Layout & Presets", new StackPanel
+        void UpdateSidebarControls(bool active)
         {
-            Spacing = 16,
-            Children =
+            sidebarSideComboBox.IsEnabled = active;
+            sidebarCollapsedToggle.IsEnabled = active;
+            sidebarWidthSlider.IsEnabled = active;
+            sidebarPaddingSlider.IsEnabled = active;
+            sidebarWidthLabel.Foreground = active ? Brushes.White : Brushes.Gray;
+            sidebarPaddingLabel.Foreground = active ? Brushes.White : Brushes.Gray;
+        }
+
+        navPosComboBox.SelectionChanged += (_, _) =>
+        {
+            var selected = navPosComboBox.SelectedItem as string;
+            var active = !string.Equals(selected, "Top", StringComparison.OrdinalIgnoreCase);
+            _settings.Style.NavPosition = selected?.ToLowerInvariant() ?? "sidebar";
+            _settingsStore.Save(_settings);
+            UpdateSidebarControls(active);
+            RebuildUiFromLayoutState(_activeSection);
+        };
+
+        var uiPane = new ScrollViewer
+        {
+            Padding = new Thickness(24, 8, 20, 20),
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            Content = new StackPanel
             {
-                new TextBlock
+                Spacing = 4,
+                Children =
                 {
-                    Text = "Choose a layout preset, customize positioning, or reset all styles to default.",
-                    Foreground = new SolidColorBrush(Color.Parse("#B0BACF")),
-                    FontSize = 13,
-                    TextWrapping = TextWrapping.Wrap
-                },
-                new StackPanel
-                {
-                    Spacing = 8,
-                    Children =
+                    FlatSection("Preset Layout"),
+                    new StackPanel
                     {
-                        CreatePanelEyebrow("Preset Layout"),
-                        presetsComboBox
-                    }
-                },
-                resetLayoutBtn,
-                new Separator { Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)) },
-                new TextBlock
-                {
-                    Text = "Navigation Settings",
-                    Foreground = new SolidColorBrush(Color.Parse("#B0BACF")),
-                    FontSize = 14,
-                    FontWeight = FontWeight.Bold
-                },
-                new StackPanel
-                {
-                    Spacing = 8,
-                    Children =
+                        Spacing = 8,
+                        Children =
+                        {
+                            new TextBlock { Text = "Choose a layout preset or reset all styles to default.", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#5E6B85")), Margin = new Thickness(0, 0, 0, 4) },
+                            presetsComboBox,
+                            resetLayoutBtn
+                        }
+                    },
+                    FlatSection("Navigation Placement"),
+                    new StackPanel
                     {
-                        CreatePanelEyebrow("Navigation Placement"),
-                        navPosComboBox
-                    }
-                },
-                new Separator { Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)) },
-                new TextBlock
-                {
-                    Text = "Sidebar Layout & Dimensions",
-                    Foreground = isSidebarActive ? new SolidColorBrush(Color.Parse("#B0BACF")) : Brushes.Gray,
-                    FontSize = 14,
-                    FontWeight = FontWeight.Bold,
-                    IsEnabled = isSidebarActive
-                },
-                new StackPanel
-                {
-                    Spacing = 8,
-                    Children =
+                        Spacing = 8,
+                        Children =
+                        {
+                            new TextBlock { Text = "Position the launcher's primary navigation menu.", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#5E6B85")), Margin = new Thickness(0, 0, 0, 4) },
+                            navPosComboBox
+                        }
+                    },
+                    FlatSection("Sidebar Dimensions"),
+                    new StackPanel
                     {
-                        CreatePanelEyebrow("Sidebar Placement"),
-                        sidebarSideComboBox
-                    }
-                },
-                sidebarCollapsedToggle,
-                new StackPanel
-                {
-                    Spacing = 8,
-                    Children =
-                    {
-                        new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Children = { CreatePanelEyebrow("Sidebar Width"), sidebarWidthLabel.With(column: 1) } },
-                        sidebarWidthSlider
-                    }
-                },
-                new StackPanel
-                {
-                    Spacing = 8,
-                    Children =
-                    {
-                        new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Children = { CreatePanelEyebrow("Sidebar Padding"), sidebarPaddingLabel.With(column: 1) } },
-                        sidebarPaddingSlider
+                        Spacing = 12,
+                        Children =
+                        {
+                            new StackPanel { Spacing = 6, Children = { FieldLabel("Sidebar Side"), sidebarSideComboBox } },
+                            new StackPanel { Spacing = 6, Children = { FieldLabel("Sidebar Collapse State"), sidebarCollapsedToggle } },
+                            new StackPanel { Spacing = 6, Children = {
+                                new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Children = { FieldLabel("Sidebar Width"), sidebarWidthLabel.With(column: 1) } },
+                                sidebarWidthSlider
+                            } },
+                            new StackPanel { Margin = new Thickness(0, 0, 0, 24), Spacing = 6, Children = {
+                                new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Children = { FieldLabel("Sidebar Padding"), sidebarPaddingLabel.With(column: 1) } },
+                                sidebarPaddingSlider
+                            } }
+                        }
                     }
                 }
             }
-        }, "#1A2035");
-        var layoutImportCard = editorSliders;
-
-        var themeSelector = new ComboBox
-        {
-            Width = 200,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Items = { "Dark Mode", "Light Mode", "System Default" },
-            SelectedItem = _settings.ThemeVariant == "light" ? "Light Mode" :
-                           _settings.ThemeVariant == "dark" ? "Dark Mode" : "System Default"
         };
+
+        // ── TAB 3: Themes ─────────────────────────────────────────────────────
+        var themeSelector = CreateComboBox(new List<string> { "Dark Mode", "Light Mode", "System Default" });
+        themeSelector.Width = 240;
+        themeSelector.HorizontalAlignment = HorizontalAlignment.Left;
+        themeSelector.SelectedItem = _settings.ThemeVariant == "light" ? "Light Mode" :
+                                     _settings.ThemeVariant == "dark" ? "Dark Mode" : "System Default";
         themeSelector.SelectionChanged += (_, _) =>
         {
             var selected = themeSelector.SelectedItem as string;
@@ -5671,16 +5939,11 @@ public sealed class MainWindow : Window
             RebuildUiFromLayoutState(_activeSection);
         };
 
-        var hexInput = new TextBox
-        {
-            Watermark = "#8B5A2B",
-            Text = _settings.AccentColor,
-            Width = 140,
-            Height = 32,
-            CornerRadius = new CornerRadius(6),
-            VerticalContentAlignment = VerticalAlignment.Center,
-            FontSize = 12
-        };
+        var hexInput = CreateTextBox();
+        hexInput.Text = _settings.AccentColor;
+        hexInput.Watermark = "#8B5A2B";
+        hexInput.Width = 140;
+        hexInput.Height = 32;
 
         var hexPreview = new Border
         {
@@ -5720,15 +5983,13 @@ public sealed class MainWindow : Window
                 hexApplyBtn.IsEnabled = false;
             }
         }
-
         hexInput.TextChanged += (s, e) => UpdatePreview(hexInput.Text ?? "");
-
         hexApplyBtn.Click += (_, _) => {
             var hex = hexInput.Text?.Trim() ?? "";
             if (!hex.StartsWith("#")) hex = "#" + hex;
             try
             {
-                Color.Parse(hex); // validate
+                Color.Parse(hex);
                 _settings.AccentColor = hex;
                 _settingsStore.Save(_settings);
                 InvalidateUiCache();
@@ -5738,16 +5999,11 @@ public sealed class MainWindow : Window
             catch {}
         };
 
-        var secHexInput = new TextBox
-        {
-            Watermark = "#8F70FF",
-            Text = _settings.SecondaryAccentColor ?? "#8F70FF",
-            Width = 140,
-            Height = 32,
-            CornerRadius = new CornerRadius(6),
-            VerticalContentAlignment = VerticalAlignment.Center,
-            FontSize = 12
-        };
+        var secHexInput = CreateTextBox();
+        secHexInput.Text = _settings.SecondaryAccentColor ?? "#8F70FF";
+        secHexInput.Watermark = "#8F70FF";
+        secHexInput.Width = 140;
+        secHexInput.Height = 32;
 
         var secHexPreview = new Border
         {
@@ -5787,15 +6043,13 @@ public sealed class MainWindow : Window
                 secHexApplyBtn.IsEnabled = false;
             }
         }
-
         secHexInput.TextChanged += (s, e) => UpdateSecPreview(secHexInput.Text ?? "");
-
         secHexApplyBtn.Click += (_, _) => {
             var hex = secHexInput.Text?.Trim() ?? "";
             if (!hex.StartsWith("#")) hex = "#" + hex;
             try
             {
-                Color.Parse(hex); // validate
+                Color.Parse(hex);
                 _settings.SecondaryAccentColor = hex;
                 _settingsStore.Save(_settings);
                 InvalidateUiCache();
@@ -5805,148 +6059,293 @@ public sealed class MainWindow : Window
             catch {}
         };
 
-        var colorCard = CreateSubCard("Theme & Appearance", new StackPanel
+        var primaryPresetsStack = new StackPanel
         {
-            Spacing = 16,
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
             Children =
             {
-                new TextBlock { Text = "Choose the launcher color theme mode:", Foreground = new SolidColorBrush(Color.Parse("#B0BACF")), FontSize = 14 },
-                themeSelector,
-                new TextBlock { Text = "Pick a primary accent color for the launcher UI.", Foreground = new SolidColorBrush(Color.Parse("#B0BACF")), FontSize = 14, Margin = new Thickness(0, 8, 0, 0) },
-                new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 12,
-                    Children =
-                    {
-                        CreateColorPreset("#8B5A2B"),
-                        CreateColorPreset("#FF5B5B"),
-                        CreateColorPreset("#5BFF85"),
-                        CreateColorPreset("#FFB85B"),
-                        CreateColorPreset("#5BC2FF"),
-                        CreateColorPreset("#FF5BE2"),
-                        CreateColorPreset("#FFE15B"),
-                        CreateColorPreset("#B55BFF"),
-                        CreateColorPreset("#5BFFDE"),
-                        CreateColorPreset("#E2E8F0")
-                    }
-                },
-                new TextBlock { Text = "Or enter a custom HEX code:", Foreground = new SolidColorBrush(Color.Parse("#B0BACF")), FontSize = 14, Margin = new Thickness(0, 8, 0, 0) },
-                new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 12,
-                    Children =
-                    {
-                        hexInput,
-                        hexPreview,
-                        hexApplyBtn
-                    }
-                },
-                new TextBlock { Text = "Pick a secondary accent color for the launcher UI.", Foreground = new SolidColorBrush(Color.Parse("#B0BACF")), FontSize = 14, Margin = new Thickness(0, 8, 0, 0) },
-                new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 12,
-                    Children =
-                    {
-                        CreateSecondaryColorPreset("#8B5A2B"),
-                        CreateSecondaryColorPreset("#FF5B5B"),
-                        CreateSecondaryColorPreset("#5BFF85"),
-                        CreateSecondaryColorPreset("#FFB85B"),
-                        CreateSecondaryColorPreset("#5BC2FF"),
-                        CreateSecondaryColorPreset("#FF5BE2"),
-                        CreateSecondaryColorPreset("#FFE15B"),
-                        CreateSecondaryColorPreset("#B55BFF"),
-                        CreateSecondaryColorPreset("#5BFFDE"),
-                        CreateSecondaryColorPreset("#E2E8F0")
-                    }
-                },
-                new TextBlock { Text = "Or enter a custom HEX code:", Foreground = new SolidColorBrush(Color.Parse("#B0BACF")), FontSize = 14, Margin = new Thickness(0, 8, 0, 0) },
-                new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 12,
-                    Children =
-                    {
-                        secHexInput,
-                        secHexPreview,
-                        secHexApplyBtn
-                    }
-                }
+                CreateColorPreset("#8B5A2B"),
+                CreateColorPreset("#FF5B5B"),
+                CreateColorPreset("#5BFF85"),
+                CreateColorPreset("#FFB85B"),
+                CreateColorPreset("#5BC2FF"),
+                CreateColorPreset("#FF5BE2"),
+                CreateColorPreset("#FFE15B"),
+                CreateColorPreset("#B55BFF"),
+                CreateColorPreset("#5BFFDE"),
+                CreateColorPreset("#E2E8F0")
             }
-        }, "#1A2035");
+        };
 
-        var bgBtn = CreateSecondaryButton("Choose Background Image");
-        bgBtn.Click += async (_, _) => {
+        var secondaryPresetsStack = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                CreateSecondaryColorPreset("#8B5A2B"),
+                CreateSecondaryColorPreset("#FF5B5B"),
+                CreateSecondaryColorPreset("#5BFF85"),
+                CreateSecondaryColorPreset("#FFB85B"),
+                CreateSecondaryColorPreset("#5BC2FF"),
+                CreateSecondaryColorPreset("#FF5BE2"),
+                CreateSecondaryColorPreset("#FFE15B"),
+                CreateSecondaryColorPreset("#B55BFF"),
+                CreateSecondaryColorPreset("#5BFFDE"),
+                CreateSecondaryColorPreset("#E2E8F0")
+            }
+        };
+
+        var bgBtn = new Button
+        {
+            Content = "Choose Background Image",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Height = 34,
+            Padding = new Thickness(16, 0),
+            Background = new SolidColorBrush(Color.FromArgb(70, 100, 140, 220)),
+            Foreground = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 100, 160, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center
+        };
+        bgBtn.Click += async (_, _) =>
+        {
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Select Background Image", FileTypeFilter = [FilePickerFileTypes.ImageAll] });
-            if (files.Count > 0) {
-                try {
+            if (files.Count > 0)
+            {
+                try
+                {
                     var srcPath = files[0].Path.LocalPath;
                     var destDir = Path.Combine(_defaultMinecraftPath.BasePath, "death-client");
                     Directory.CreateDirectory(destDir);
                     var destPath = Path.Combine(destDir, "custom_bg.png");
                     File.Copy(srcPath, destPath, true);
+                    InvalidateUiCache();
                     Content = BuildRoot();
                     SetActiveSection("settings");
-                } catch (Exception ex) {
+                }
+                catch (Exception ex)
+                {
                     await DialogService.ShowInfoAsync(this, "Error", "Failed to set background: " + ex.Message);
                 }
             }
         };
 
-        var backgroundCard = CreateSubCard("Background", new StackPanel
+        var themesPane = new ScrollViewer
         {
-            Spacing = 12,
-            Children =
+            Padding = new Thickness(24, 8, 20, 20),
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            Content = new StackPanel
             {
-                new TextBlock { Text = "Set a custom wallpaper for the launcher dashboard.", Foreground = new SolidColorBrush(Color.Parse("#B0BACF")), FontSize = 14 },
-                bgBtn
+                Spacing = 4,
+                Children =
+                {
+                    FlatSection("Theme & Appearance"),
+                    new StackPanel
+                    {
+                        Spacing = 12,
+                        Children =
+                        {
+                            new StackPanel { Spacing = 6, Children = { FieldLabel("Color Theme Mode"), themeSelector } },
+                            new StackPanel { Spacing = 6, Children = {
+                                FieldLabel("Primary Accent Color"),
+                                primaryPresetsStack,
+                                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { hexInput, hexPreview, hexApplyBtn } }
+                            } },
+                            new StackPanel { Spacing = 6, Children = {
+                                FieldLabel("Secondary Accent Color"),
+                                secondaryPresetsStack,
+                                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { secHexInput, secHexPreview, secHexApplyBtn } }
+                            } }
+                        }
+                    },
+                    FlatSection("Background Image"),
+                    new StackPanel
+                    {
+                        Spacing = 8,
+                        Children =
+                        {
+                            new TextBlock { Text = "Set a custom wallpaper for the launcher dashboard.", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#5E6B85")), Margin = new Thickness(0, 0, 0, 4) },
+                            bgBtn
+                        }
+                    }
+                }
             }
-        }, "#1A2035");
-
-        var fancyMenuToggle = new ToggleSwitch
-        {
-            Content = "Enable FancyMenu Integration",
-            IsChecked = _settings.EnableFancyMenu,
-            OnContent = "Enabled",
-            OffContent = "Disabled",
-            Foreground = Brushes.White
         };
-        fancyMenuToggle.IsCheckedChanged += (_, _) => {
-            _settings.EnableFancyMenu = fancyMenuToggle.IsChecked ?? false;
-            _settingsStore.Save(_settings);
+
+        // ── Content host — swapped by nav clicks ─────────────────────────────
+        var contentHost = new Border { Child = configPane };
+
+        // ── Sidebar nav ───────────────────────────────────────────────────────
+        var navDefs = new[]
+        {
+            ("⊞", "Configuration", (Control)configPane),
+            ("▣", "UI",            (Control)uiPane),
+            ("◈", "Themes",        (Control)themesPane),
         };
 
-        var minecraftHomeCard = CreateSubCard("Minecraft Home Screen", new StackPanel
+        var sidebarStack = new StackPanel { Spacing = 2, Margin = new Thickness(0, 8, 0, 0) };
+        var allNavBtns = new List<Button>();
+
+        void SetActiveNav(Button active, Control pane)
         {
-            Spacing = 12,
+            foreach (var b in allNavBtns)
+            {
+                b.Background = Brushes.Transparent;
+                if (b.Content is StackPanel sp && sp.Children.Count > 1 && sp.Children[1] is TextBlock tb)
+                {
+                    tb.Foreground = new SolidColorBrush(Color.Parse("#A4ADBD"));
+                    tb.FontWeight = FontWeight.Medium;
+                }
+                if (b.Content is StackPanel sp2 && sp2.Children[0] is TextBlock icon)
+                    icon.Foreground = new SolidColorBrush(Color.Parse("#8E99B0"));
+            }
+            active.Background = new SolidColorBrush(Color.FromArgb(35, 100, 180, 255));
+            if (active.Content is StackPanel asp && asp.Children.Count > 1 && asp.Children[1] is TextBlock atb)
+            {
+                atb.Foreground = Brushes.White;
+                atb.FontWeight = FontWeight.Bold;
+                _activeSettingsTab = atb.Text ?? "Configuration";
+            }
+            contentHost.Child = pane;
+        }
+
+        foreach (var (icon, label, pane) in navDefs)
+        {
+            var navBtn = new Button
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Background = Brushes.Transparent,
+                BorderBrush = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(10, 8),
+                CornerRadius = new CornerRadius(8),
+                Content = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 10,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = icon,
+                            FontSize = 13,
+                            Width = 18,
+                            TextAlignment = TextAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Foreground = new SolidColorBrush(Color.Parse("#8E99B0"))
+                        },
+                        new TextBlock
+                        {
+                            Text = label,
+                            FontSize = 12,
+                            FontWeight = FontWeight.Medium,
+                            Foreground = new SolidColorBrush(Color.Parse("#A4ADBD")),
+                            VerticalAlignment = VerticalAlignment.Center
+                        }
+                    }
+                }
+            };
+            var capturedPane = pane;
+            var capturedBtn  = navBtn;
+            navBtn.Click += (_, _) => SetActiveNav(capturedBtn, capturedPane);
+            allNavBtns.Add(navBtn);
+            sidebarStack.Children.Add(navBtn);
+        }
+
+        // Activate preserved or default Configuration
+        var defaultBtn = allNavBtns.FirstOrDefault(b =>
+            b.Content is StackPanel sp && sp.Children.Count > 1 && sp.Children[1] is TextBlock tb && tb.Text == _activeSettingsTab
+        ) ?? allNavBtns.FirstOrDefault();
+        if (defaultBtn != null)
+        {
+            var def = navDefs.FirstOrDefault(d => d.Item2 == _activeSettingsTab);
+            SetActiveNav(defaultBtn, def.Item3 ?? configPane);
+        }
+
+        var sidebarLabel = new TextBlock
+        {
+            Text = "SETTINGS",
+            FontSize = 9,
+            FontWeight = FontWeight.Bold,
+            Foreground = new SolidColorBrush(Color.Parse("#3D4A60")),
+            Margin = new Thickness(12, 12, 0, 4),
+            LetterSpacing = 1.5
+        };
+
+        var sidebar = new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+            BorderThickness = new Thickness(0, 0, 1, 0),
+            Child = new StackPanel { Children = { sidebarLabel, sidebarStack } }
+        };
+
+        // ── Body: 20% sidebar | 80% content ──────────────────────────────────
+        var bodyGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("1*,4*"),
             Children =
             {
-                new TextBlock { Text = "Automatically install FancyMenu and a custom layout in your Minecraft instances.", Foreground = new SolidColorBrush(Color.Parse("#B0BACF")), FontSize = 14, TextWrapping = TextWrapping.Wrap },
-                fancyMenuToggle,
-                new TextBlock { Text = "Note: This will download FancyMenu and Konkrete mods during launch.", Foreground = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B")), FontSize = 12, FontWeight = FontWeight.Bold }
+                sidebar.With(column: 0),
+                contentHost.With(column: 1)
             }
-        }, "#1A2035");
+        };
 
-        var orderCard = CreateSubCard("Launch Screen Order", CreateSectionOrderPicker(), "#1A2035");
-
-        return CreateSectionScroller(new StackPanel
+        // ── Panel shell ───────────────────────────────────────────────────────
+        var panel = new Border
         {
-            Spacing = 24,
-            Margin = new Thickness(4, 4, 4, 80),
-            Children =
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Background = new SolidColorBrush(Color.FromArgb(250, 11, 15, 24)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(16),
+            ClipToBounds = true,
+            BoxShadow = new BoxShadows(new BoxShadow { Blur = 40, OffsetY = 12, Color = Color.FromArgb(180, 0, 0, 0) }),
+            Child = new Grid
             {
-                title,
-                runtimeCard,
-                sessionCard,
-                layoutImportCard,
-                colorCard,
-                backgroundCard,
-                orderCard,
-                minecraftHomeCard
+                RowDefinitions = new RowDefinitions("Auto,*"),
+                Children =
+                {
+                    header.With(row: 0),
+                    bodyGrid.With(row: 1)
+                }
             }
-        });
+        };
+
+        // ── 3×3 grid: centre cell = 6/(1+6+1) * 2 axes = 75% × 75% ──────────
+        var backdropGrid = new Grid
+        {
+            RowDefinitions    = new RowDefinitions("1*,6*,1*"),
+            ColumnDefinitions = new ColumnDefinitions("1*,6*,1*")
+        };
+        Grid.SetRow(panel, 1);
+        Grid.SetColumn(panel, 1);
+        backdropGrid.Children.Add(panel);
+
+        // ── Dimmed backdrop ───────────────────────────────────────────────────
+        var backdrop = new Border
+        {
+            IsVisible  = false,
+            Background = new SolidColorBrush(Color.FromArgb(155, 2, 4, 10)),
+            ZIndex     = 110,
+            Child      = backdropGrid
+        };
+
+        backdropGrid.PointerPressed += (s, e) =>
+        {
+            if (!panel.Bounds.Contains(e.GetPosition(backdropGrid)))
+                backdrop.IsVisible = false;
+        };
+
+        return backdrop;
     }
 
     private async Task ChangeBaseDirectoryAsync()
@@ -6307,11 +6706,19 @@ public sealed class MainWindow : Window
             RefreshWorkspaceUi();
         }
 
+        if (section == "settings")
+        {
+            if (_settingsOverlay != null)
+            {
+                _settingsOverlay.IsVisible = true;
+            }
+            return;
+        }
+
         AnimateSection(launchSection, "LaunchSection", launchVisible);
         AnimateSection(modrinthSection, "ModrinthSection", modrinthVisible);
         AnimateSection(profilesSection, "ProfilesSection", profilesVisible);
         AnimateSection(performanceSection, "PerformanceSection", performanceVisible);
-        AnimateSection(settingsSection, "SettingsSection", settingsVisible);
         AnimateSection(layoutSection, "LayoutSection", layoutVisible);
         AnimateSection(workspaceSection, "WorkspaceSection", workspaceVisible);
 
@@ -6323,7 +6730,7 @@ public sealed class MainWindow : Window
         ApplyNavState(launchNavButton, section == "home" || section == "launch");
         ApplyNavState(modrinthNavButton, section == "modrinth");
         ApplyNavState(profilesNavButton, section == "instances" || section == "profiles" || section == "workspace");
-        ApplyNavState(settingsNavButton, section == "settings");
+        ApplyNavState(settingsNavButton, false);
         ApplyNavState(layoutNavButton, section == "layout");
         if (accountsNavButton != null) ApplyNavState(accountsNavButton, section == "accounts");
 
@@ -6616,7 +7023,7 @@ public sealed class MainWindow : Window
             var activeSkinPath = _settings.CustomSkinPath;
             if (string.IsNullOrWhiteSpace(activeSkinPath) || !File.Exists(activeSkinPath))
             {
-                activeSkinPath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "skin.png");
+                activeSkinPath = string.Empty;
             }
 
             // Self-healing: if skin.png is 0 bytes but custom_skin.png is valid, recover it
@@ -7694,6 +8101,12 @@ public sealed class MainWindow : Window
 
         UpdateCharacterPreview();
 
+        var skinPath = _settings.CustomSkinPath;
+        if (!string.IsNullOrEmpty(skinPath) && File.Exists(skinPath))
+        {
+            return;
+        }
+
         try
         {
             await Task.Delay(1000, token);
@@ -7776,35 +8189,17 @@ public sealed class MainWindow : Window
 
             var skinPath = _settings.CustomSkinPath;
             bool skinExists = !string.IsNullOrEmpty(skinPath) && File.Exists(skinPath);
-            if (!skinExists)
-            {
-                skinPath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "skin.png");
-                skinExists = File.Exists(skinPath);
-            }
 
             if (!skinExists)
             {
-                var selectedVersion = _selectedProfile?.GameVersion ?? cbVersion.SelectedItem?.ToString() ?? string.Empty;
-                var resourceName = Character.GetCharacterResourceNameFromUuidAndGameVersion(_playerUuid, selectedVersion);
-                if (!string.IsNullOrWhiteSpace(resourceName))
+                var steveFallback = Path.Combine(AppContext.BaseDirectory, "assets", "original-minecraft-skin-steve.png");
+                if (!File.Exists(steveFallback))
+                    steveFallback = Path.Combine(Directory.GetCurrentDirectory(), "assets", "original-minecraft-skin-steve.png");
+
+                if (File.Exists(steveFallback))
                 {
-                    var searchFolders = new[] 
-                    {
-                        Path.Combine(AppContext.BaseDirectory, "Resources"),
-                        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Resources"),
-                        Path.Combine(Directory.GetCurrentDirectory(), "Resources")
-                    };
-
-                    foreach (var folder in searchFolders)
-                    {
-                        var p = Path.Combine(folder, $"{resourceName}.png");
-                        if (File.Exists(p))
-                        {
-                            skinPath = p;
-                            skinExists = true;
-                            break;
-                        }
-                    }
+                    skinPath = steveFallback;
+                    skinExists = true;
                 }
             }
 
@@ -7837,19 +8232,25 @@ public sealed class MainWindow : Window
                         _cachedIsSlim = isSlim;
                         _cachedSkinPath = skinPathToUse;
                         _cachedSkinWriteTime = writeTime;
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateAccountsButtonText());
                     }
                 }
                 catch (Exception ex)
                 {
                     LauncherLog.Error($"[3DPreview] Skin load error: {ex.Message}");
                     _cachedSkinBitmap = null;
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateAccountsButtonText());
                 }
             }
         }
         else
         {
-            _cachedSkinBitmap = null;
-            _cachedSkinPath = null;
+            if (_cachedSkinBitmap != null)
+            {
+                _cachedSkinBitmap = null;
+                _cachedSkinPath = null;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateAccountsButtonText());
+            }
         }
 
         // Update Cape Cache (only on path change, not on file timestamp changes to avoid flicker)
@@ -8211,9 +8612,9 @@ public sealed class MainWindow : Window
         // 2. Back (-Z): V1, V0, V3, V2 (looking from back: V5, V4, V7, V6)
         list.Add(new Quad3D(v[5], v[4], v[7], v[6], new Rect(isCape ? tx + d : tx + d + w + d, ty + d, w, h), isCape, isOverlay));
         // 3. Left (-X): V0, V1, V2, V3 (looking from left: V4, V0, V6, V2)
-        list.Add(new Quad3D(v[4], v[0], v[6], v[2], new Rect(tx + d + w, ty + d, d, h), isCape, isOverlay));
+        list.Add(new Quad3D(v[4], v[0], v[6], v[2], new Rect(tx, ty + d, d, h), isCape, isOverlay));
         // 4. Right (+X): V0, V1, V2, V3 (looking from right: V1, V5, V3, V7)
-        list.Add(new Quad3D(v[1], v[5], v[3], v[7], new Rect(tx, ty + d, d, h), isCape, isOverlay));
+        list.Add(new Quad3D(v[1], v[5], v[3], v[7], new Rect(tx + d + w, ty + d, d, h), isCape, isOverlay));
         // 5. Top (+Y): V0, V1, V2, V3 (looking from top: V4, V5, V0, V1)
         list.Add(new Quad3D(v[4], v[5], v[0], v[1], new Rect(tx + d, ty, w, d), isCape, isOverlay));
         // 6. Bottom (-Y): V0, V1, V2, V3 (looking from bottom: V2, V3, V6, V7)
@@ -17771,24 +18172,22 @@ if __name__ == '__main__':
     private Button CreateSecondaryButton(string text)
     {
         var style = _settings.Style;
-        var btnHeight = double.IsNaN(style.ButtonHeight) ? 48 : style.ButtonHeight;
+        var btnHeight = double.IsNaN(style.ButtonHeight) ? 44 : style.ButtonHeight;
         var btnFs = double.IsNaN(style.ButtonFontSize) ? 14 : style.ButtonFontSize;
-        var btnCr = double.IsNaN(style.ButtonCornerRadius) ? 18 : style.ButtonCornerRadius;
-        var btnPad = double.IsNaN(style.ButtonPadding) ? 18 : style.ButtonPadding;
-        
-        var bg = !string.IsNullOrWhiteSpace(style.ButtonBackground) ? style.ButtonBackground : "#55101728";
-        var fg = !string.IsNullOrWhiteSpace(style.ButtonForeground) ? style.ButtonForeground : "#FFFFFF";
+        var btnCr = double.IsNaN(style.ButtonCornerRadius) ? 14 : style.ButtonCornerRadius;
+        var btnPad = double.IsNaN(style.ButtonPadding) ? 16 : style.ButtonPadding;
 
         var button = new Button
         {
             Content = text,
             Height = btnHeight,
-            Background = new SolidColorBrush(Color.Parse(bg)),
-            Foreground = new SolidColorBrush(Color.Parse(fg)),
-            BorderBrush = new SolidColorBrush(Color.Parse("#3C4F73")),
+            Background = new SolidColorBrush(GetAccentColor(25)),
+            Foreground = Brushes.White,
+            BorderBrush = new SolidColorBrush(GetAccentColor(70)),
             BorderThickness = new Thickness(1),
             FontWeight = FontWeight.SemiBold,
-            Padding = new Thickness(btnPad, 12),
+            FontSize = btnFs,
+            Padding = new Thickness(btnPad, 0),
             CornerRadius = new CornerRadius(btnCr),
             FontFamily = new FontFamily("SF Pro, Inter, Segoe UI"),
             HorizontalContentAlignment = HorizontalAlignment.Center,
@@ -18667,6 +19066,10 @@ if __name__ == '__main__':
 
     private string ResolveThemeLogoPath()
     {
+        var fugoLogo = Path.Combine(AppContext.BaseDirectory, "assets", "fugo-logo.png");
+        if (File.Exists(fugoLogo))
+            return fugoLogo;
+
         var bundledLogo = Path.Combine(AppContext.BaseDirectory, "Resources", "death_client_logo.png");
         if (File.Exists(bundledLogo))
             return bundledLogo;
@@ -18874,7 +19277,8 @@ if __name__ == '__main__':
             });
             if (files.Count > 0)
             {
-                var skinPath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "skin.png");
+                var accountId = GetSelectedAccountIdSafe();
+                var skinPath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", $"skin_{accountId}.png");
                 Directory.CreateDirectory(Path.GetDirectoryName(skinPath)!);
                 await using var stream = await files[0].OpenReadAsync();
                 await using var dest = File.Create(skinPath);
@@ -18916,8 +19320,9 @@ if __name__ == '__main__':
                         await stream.CopyToAsync(dest);
                     }
 
-                    var capePath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "cape.png");
-                    var gifSourcePath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "cape.gif");
+                    var accountId = GetSelectedAccountIdSafe();
+                    var capePath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", $"cape_{accountId}.png");
+                    var gifSourcePath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", $"cape_{accountId}.gif");
                     Directory.CreateDirectory(Path.GetDirectoryName(capePath)!);
 
                     bool isGif = false;
@@ -19474,18 +19879,7 @@ if __name__ == '__main__':
 
     private string GetTaskbarIconUri()
     {
-        bool isLight = false;
-        if (Application.Current != null)
-        {
-            isLight = Application.Current.ActualThemeVariant == ThemeVariant.Light;
-        }
-        else
-        {
-            isLight = _settings.ThemeVariant == "light";
-        }
-        return isLight 
-            ? "avares://FugoLauncher/assets/deathclient-taskbar-light.png" 
-            : "avares://FugoLauncher/assets/deathclient-taskbar.png";
+        return "avares://FugoLauncher/assets/fugo-logo.png";
     }
 
     private void UpdateWindowIcon()
@@ -19503,7 +19897,22 @@ if __name__ == '__main__':
 
     private IBrush GetAccentStripBrush()
     {
-        return Brushes.Transparent;
+        var accentHex = !string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#8B5A2B";
+        Color accentColor;
+        try { accentColor = Color.Parse(accentHex); } catch { accentColor = Color.Parse("#8B5A2B"); }
+        return new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Color.FromArgb(0, accentColor.R, accentColor.G, accentColor.B), 0),
+                new GradientStop(Color.FromArgb(220, accentColor.R, accentColor.G, accentColor.B), 0.25),
+                new GradientStop(Color.FromArgb(255, Math.Min((byte)255, (byte)(accentColor.R + 50)), Math.Min((byte)255, (byte)(accentColor.G + 50)), Math.Min((byte)255, (byte)(accentColor.B + 50))), 0.5),
+                new GradientStop(Color.FromArgb(220, accentColor.R, accentColor.G, accentColor.B), 0.75),
+                new GradientStop(Color.FromArgb(0, accentColor.R, accentColor.G, accentColor.B), 1)
+            }
+        };
     }
 
     private void ApplySelectedPresetStyle()

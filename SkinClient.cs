@@ -21,6 +21,7 @@ public static class SkinClient
 {
     private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
+    private const int AnimatedCapeFrameTimeTicks = 2; // Minecraft runs animation ticks at 20 TPS; 2 ticks = 10 FPS.
 
     // ─── Stable offline UUID ──────────────────────────────────────────────────
 
@@ -475,6 +476,7 @@ public static class SkinClient
                     int targetH = (w >= 128) ? 64 : 32;
 
                     using (var spritesheet = new Image<Rgba32>(targetW, targetH * frameCount))
+                    using (var composedFrame = new Image<Rgba32>(targetW, targetH))
                     {
                         for (int i = 0; i < frameCount; i++)
                         {
@@ -484,9 +486,11 @@ public static class SkinClient
                                 {
                                     frameImage.Mutate(x => x.Resize(targetW, targetH));
                                 }
-                                
+
+                                // GIF frames can be stored as transparent deltas. Composite them so the cape does not blink out between frames.
+                                composedFrame.Mutate(x => x.DrawImage(frameImage, new Point(0, 0), 1f));
                                 var destPoint = new Point(0, i * targetH);
-                                spritesheet.Mutate(x => x.DrawImage(frameImage, destPoint, 1f));
+                                spritesheet.Mutate(x => x.DrawImage(composedFrame, destPoint, 1f));
                             }
                         }
                         spritesheet.SaveAsPng(pngPath);
@@ -518,7 +522,7 @@ public static class SkinClient
             if (isGif || isAnimatedPng)
             {
                 var mcmetaPath = pngPath + ".mcmeta";
-                var mcmeta = "{\"animation\":{\"interpolate\":false,\"frametime\":2}}";
+                var mcmeta = $"{{\"animation\":{{\"interpolate\":false,\"frametime\":{AnimatedCapeFrameTimeTicks}}}}}";
                 File.WriteAllText(mcmetaPath, mcmeta);
                 LauncherLog.Info($"[Cape] Generated .mcmeta for animated cape: {mcmetaPath}");
             }

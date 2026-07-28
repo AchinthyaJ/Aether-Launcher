@@ -17,6 +17,10 @@ internal sealed class LauncherAccount
     public DateTime MinecraftAccessTokenExpiresUtc { get; set; }
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
 
+    public string CustomSkinPath { get; set; } = string.Empty;
+    public string CustomCapePath { get; set; } = string.Empty;
+    public string CustomCapeSourcePath { get; set; } = string.Empty;
+
     public bool IsExpired => Provider == "microsoft" && (DateTime.UtcNow.AddMinutes(5) >= MinecraftAccessTokenExpiresUtc);
 }
 

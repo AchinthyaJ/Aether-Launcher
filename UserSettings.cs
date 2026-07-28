@@ -29,7 +29,46 @@ internal sealed class UserSettingsStore
         try
         {
             var json = File.ReadAllText(_settingsPath);
-            return JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions) ?? new UserSettings();
+            var settings = JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions) ?? new UserSettings();
+
+            var legacySkin = Path.Combine(Path.GetDirectoryName(_settingsPath)!, "skin.png");
+            var legacyCape = Path.Combine(Path.GetDirectoryName(_settingsPath)!, "cape.png");
+            var legacyGifCape = Path.Combine(Path.GetDirectoryName(_settingsPath)!, "cape.gif");
+
+            if (settings.Accounts != null && settings.Accounts.Count > 0)
+            {
+                var targetAcc = settings.Accounts.Find(a => a.Username == settings.Username) ?? settings.Accounts[0];
+                if (targetAcc != null)
+                {
+                    if (string.IsNullOrEmpty(targetAcc.CustomSkinPath) && File.Exists(legacySkin))
+                    {
+                        var newSkinPath = Path.Combine(Path.GetDirectoryName(_settingsPath)!, $"skin_{targetAcc.Id}.png");
+                        try { File.Copy(legacySkin, newSkinPath, true); } catch { }
+                        targetAcc.CustomSkinPath = newSkinPath;
+                    }
+                    if (string.IsNullOrEmpty(targetAcc.CustomCapePath) && File.Exists(legacyCape))
+                    {
+                        var newCapePath = Path.Combine(Path.GetDirectoryName(_settingsPath)!, $"cape_{targetAcc.Id}.png");
+                        try { File.Copy(legacyCape, newCapePath, true); } catch { }
+                        targetAcc.CustomCapePath = newCapePath;
+                    }
+                    if (string.IsNullOrEmpty(targetAcc.CustomCapeSourcePath))
+                    {
+                        if (File.Exists(legacyGifCape))
+                        {
+                            var newGifPath = Path.Combine(Path.GetDirectoryName(_settingsPath)!, $"cape_{targetAcc.Id}.gif");
+                            try { File.Copy(legacyGifCape, newGifPath, true); } catch { }
+                            targetAcc.CustomCapeSourcePath = newGifPath;
+                        }
+                        else if (!string.IsNullOrEmpty(targetAcc.CustomCapePath))
+                        {
+                            targetAcc.CustomCapeSourcePath = targetAcc.CustomCapePath;
+                        }
+                    }
+                }
+            }
+
+            return settings;
         }
         catch (Exception ex)
         {
@@ -198,9 +237,48 @@ internal sealed class UserSettings
 {
     public string Username { get; set; } = string.Empty;
     public string Version { get; set; } = string.Empty;
-    public string CustomSkinPath { get; set; } = string.Empty;
-    public string CustomCapePath { get; set; } = string.Empty;
-    public string CustomCapeSourcePath { get; set; } = string.Empty;
+    private string _customSkinPath = string.Empty;
+    private string _customCapePath = string.Empty;
+    private string _customCapeSourcePath = string.Empty;
+
+    public string CustomSkinPath
+    {
+        get => GetSelectedAccount()?.CustomSkinPath ?? _customSkinPath;
+        set
+        {
+            var acc = GetSelectedAccount();
+            if (acc != null) acc.CustomSkinPath = value;
+            else _customSkinPath = value;
+        }
+    }
+
+    public string CustomCapePath
+    {
+        get => GetSelectedAccount()?.CustomCapePath ?? _customCapePath;
+        set
+        {
+            var acc = GetSelectedAccount();
+            if (acc != null) acc.CustomCapePath = value;
+            else _customCapePath = value;
+        }
+    }
+
+    public string CustomCapeSourcePath
+    {
+        get => GetSelectedAccount()?.CustomCapeSourcePath ?? _customCapeSourcePath;
+        set
+        {
+            var acc = GetSelectedAccount();
+            if (acc != null) acc.CustomCapeSourcePath = value;
+            else _customCapeSourcePath = value;
+        }
+    }
+
+    private LauncherAccount? GetSelectedAccount()
+    {
+        if (string.IsNullOrEmpty(SelectedAccountId)) return null;
+        return Accounts?.Find(a => a.Id == SelectedAccountId);
+    }
     public bool EnableFancyMenu { get; set; } = false;
     public bool OfflineMode { get; set; } = false;
     public string ClientLayout { get; set; } = string.Empty; // Legacy — kept for migration only
