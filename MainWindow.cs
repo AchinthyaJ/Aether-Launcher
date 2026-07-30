@@ -2705,7 +2705,7 @@ public sealed class MainWindow : Window
         {
             ColumnDefinitions = new ColumnDefinitions("*, *, *"),
             ColumnSpacing = 10,
-            Height = 135,
+            Height = 85, // Much sleeker height than 135
             Children =
             {
                 breakpointCard,
@@ -2714,7 +2714,7 @@ public sealed class MainWindow : Window
             }
         };
 
-        return new StackPanel { Children = { header, cardsGrid } };
+        return new StackPanel { Margin = new Thickness(0, -32, 0, 0), Children = { header, cardsGrid } };
     }
 
     private Border BuildServerCard(string bgAsset, string serverName, string tagLine, string description, string ip, string accentHex, bool isFeatured, string? logoAsset = null)
@@ -2727,7 +2727,7 @@ public sealed class MainWindow : Window
         }
         catch { }
 
-        // Logo overlay (shows when NOT hovered)
+        // Subtle logo on the right
         var logoContent = new Panel();
         if (!string.IsNullOrEmpty(logoAsset))
         {
@@ -2738,126 +2738,138 @@ public sealed class MainWindow : Window
                 {
                     Source = logoBmp,
                     Stretch = Stretch.UniformToFill,
+                    Width = 48,
+                    Height = 48,
+                    Margin = new Thickness(0, 0, 16, 0),
                     VerticalAlignment = VerticalAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Transitions = new Transitions { new DoubleTransition { Property = Control.OpacityProperty, Duration = TimeSpan.FromMilliseconds(200) } }
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Opacity = 0.8
                 });
             }
             catch { }
         }
 
-        // Overlay that shows on hover
-        var hoverOverlay = new Border
+        // Always-visible gradient so text is readable against the background
+        var textGradient = new Border
         {
             Background = new LinearGradientBrush
             {
-                StartPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
                 GradientStops =
                 {
-                    new GradientStop(Color.FromArgb(230, 9, 12, 20), 0),
-                    new GradientStop(Color.FromArgb(140, 9, 12, 20), 0.6),
+                    new GradientStop(Color.FromArgb(220, 9, 12, 20), 0),
+                    new GradientStop(Color.FromArgb(180, 9, 12, 20), 0.6),
                     new GradientStop(Color.FromArgb(0, 9, 12, 20), 1)
                 }
-            },
-            Opacity = 0,
-            Transitions = new Transitions
+            }
+        };
+
+        // Text content permanently visible on the left
+        var textContent = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 0, 0),
+            Spacing = 2,
+            Children =
             {
-                new DoubleTransition { Property = Border.OpacityProperty, Duration = TimeSpan.FromMilliseconds(250) }
-            },
-            Child = new StackPanel
-            {
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(14, 0, 14, 14),
-                Spacing = 4,
-                Children =
+                new Border
                 {
-                    new Border
+                    Background = new SolidColorBrush(Color.FromArgb(40, Color.Parse(accentHex).R, Color.Parse(accentHex).G, Color.Parse(accentHex).B)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(120, Color.Parse(accentHex).R, Color.Parse(accentHex).G, Color.Parse(accentHex).B)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(4),
+                    Padding = new Thickness(6, 2),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Thickness(0, 0, 0, 2),
+                    Child = new TextBlock
                     {
-                        Background = new SolidColorBrush(Color.FromArgb(40, Color.Parse(accentHex).R, Color.Parse(accentHex).G, Color.Parse(accentHex).B)),
-                        BorderBrush = new SolidColorBrush(Color.FromArgb(120, Color.Parse(accentHex).R, Color.Parse(accentHex).G, Color.Parse(accentHex).B)),
-                        BorderThickness = new Thickness(1),
-                        CornerRadius = new CornerRadius(4),
-                        Padding = new Thickness(6, 2),
-                        HorizontalAlignment = HorizontalAlignment.Left,
-                        Child = new TextBlock
-                        {
-                            Text = tagLine,
-                            FontSize = 11,
-                            FontWeight = FontWeight.Bold,
-                            Foreground = new SolidColorBrush(Color.Parse(accentHex)),
-                            LetterSpacing = 1
-                        }
-                    },
-                    new TextBlock
-                    {
-                        Text = serverName,
-                        FontSize = isFeatured ? 20 : 16,
+                        Text = tagLine,
+                        FontSize = 9,
                         FontWeight = FontWeight.Bold,
-                        Foreground = Brushes.White
-                    },
-                    new TextBlock
-                    {
-                        Text = description,
-                        FontSize = 12.5,
-                        Foreground = new SolidColorBrush(Color.Parse("#A0AABB")),
-                        TextWrapping = TextWrapping.Wrap
-                    },
-                    new Button
-                    {
-                        Content = $"Copy IP: {ip}",
-                        FontSize = 9.5,
                         Foreground = new SolidColorBrush(Color.Parse(accentHex)),
-                        Background = Brushes.Transparent,
-                        Padding = new Thickness(0, 2, 0, 0),
-                        Cursor = new Cursor(StandardCursorType.Hand),
-                        Command = new RelayCommand(() => CopyServerIpToClipboard(ip))
+                        LetterSpacing = 1
+                    }
+                },
+                new TextBlock
+                {
+                    Text = serverName,
+                    FontSize = isFeatured ? 17 : 15,
+                    FontWeight = FontWeight.Bold,
+                    Foreground = Brushes.White
+                },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 6,
+                    Children = 
+                    {
+                        new TextBlock
+                        {
+                            Text = description,
+                            FontSize = 11,
+                            Foreground = new SolidColorBrush(Color.Parse("#A0AABB")),
+                            VerticalAlignment = VerticalAlignment.Center
+                        },
+                        new TextBlock
+                        {
+                            Text = "•",
+                            FontSize = 11,
+                            Foreground = new SolidColorBrush(Color.Parse("#505A6B")),
+                            VerticalAlignment = VerticalAlignment.Center
+                        },
+                        new Button
+                        {
+                            Content = "Copy IP",
+                            FontSize = 10,
+                            FontWeight = FontWeight.SemiBold,
+                            Foreground = new SolidColorBrush(Color.Parse(accentHex)),
+                            Background = Brushes.Transparent,
+                            Padding = new Thickness(0),
+                            Cursor = new Cursor(StandardCursorType.Hand),
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Command = new RelayCommand(() => CopyServerIpToClipboard(ip))
+                        }
                     }
                 }
             }
         };
 
-        hoverOverlay.Transitions = new Transitions
-        {
-            new DoubleTransition { Property = Control.OpacityProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() }
-        };
-        logoContent.Transitions = new Transitions
-        {
-            new DoubleTransition { Property = Control.OpacityProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() }
-        };
-
         var card = new Border
         {
-            CornerRadius = new CornerRadius(16),
+            CornerRadius = new CornerRadius(14),
             ClipToBounds = true,
             Background = bgBrush != null ? bgBrush : new SolidColorBrush(Color.Parse("#1A1F2E")),
             BorderBrush = new SolidColorBrush(Color.FromArgb(isFeatured ? (byte)80 : (byte)40, Color.Parse(accentHex).R, Color.Parse(accentHex).G, Color.Parse(accentHex).B)),
             BorderThickness = new Thickness(1),
             BoxShadow = isFeatured ? new BoxShadows(new BoxShadow
             {
-                Blur = 20,
-                Color = Color.FromArgb(100, Color.Parse(accentHex).R, Color.Parse(accentHex).G, Color.Parse(accentHex).B),
+                Blur = 14,
+                Color = Color.FromArgb(70, Color.Parse(accentHex).R, Color.Parse(accentHex).G, Color.Parse(accentHex).B),
                 OffsetX = 0,
-                OffsetY = 0
+                OffsetY = 2
             }) : default,
-            Child = new Grid { Children = { logoContent, hoverOverlay } },
+            Child = new Grid { Children = { logoContent, textGradient, textContent } },
             Transitions = new Transitions
             {
-                new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() }
+                new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() },
+                new BrushTransition { Property = Border.BorderBrushProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() }
             },
-            RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative)
+            RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+            Cursor = new Cursor(StandardCursorType.Hand)
         };
 
         card.PointerEntered += (_, _) => {
-            hoverOverlay.Opacity = 1;
-            logoContent.Opacity = 0;
             card.RenderTransform = TransformOperations.Parse("scale(1.02)");
+            card.BorderBrush = new SolidColorBrush(Color.FromArgb(isFeatured ? (byte)160 : (byte)100, Color.Parse(accentHex).R, Color.Parse(accentHex).G, Color.Parse(accentHex).B));
         };
         card.PointerExited += (_, _) => {
-            hoverOverlay.Opacity = 0;
-            logoContent.Opacity = 1;
             card.RenderTransform = TransformOperations.Parse("scale(1.0)");
+            card.BorderBrush = new SolidColorBrush(Color.FromArgb(isFeatured ? (byte)80 : (byte)40, Color.Parse(accentHex).R, Color.Parse(accentHex).G, Color.Parse(accentHex).B));
         };
+
+        // Click on the entire card copies the IP as well
+        card.PointerPressed += (_, _) => CopyServerIpToClipboard(ip);
 
         return card;
     }
@@ -3277,13 +3289,6 @@ public sealed class MainWindow : Window
                             Text = "Coming soon — optimised for Fugo.",
                             FontSize = 12,
                             Foreground = _settings.ThemeVariant == "light" ? new SolidColorBrush(Color.Parse("#4A5568")) : new SolidColorBrush(Color.Parse("#A0A8B8"))
-                        },
-                        new TextBlock
-                        {
-                            Text = "Fabric 1.21.11 · Performance & Menu Enhanced",
-                            FontSize = 11,
-                            FontWeight = FontWeight.Medium,
-                            Foreground = new SolidColorBrush(Color.Parse(_settings.AccentColor ?? "#8B5A2B"))
                         }
                     }
                 }.With(column: 0),
