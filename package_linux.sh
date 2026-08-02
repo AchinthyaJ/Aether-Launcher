@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Configuration
-VERSION="3.1.0"
+# Allow VERSION to be passed as environment variable, default to 3.1.0
+VERSION="${VERSION:-3.1.0}"
 APP_NAME="fugo-launcher"
 DISPLAY_NAME="Fugo Launcher"
 MAINTAINER="Fugo Launcher Team"
