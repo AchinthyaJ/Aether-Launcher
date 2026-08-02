@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -24,6 +25,7 @@ using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using System.Linq;
 using System.Collections.Generic;
+using System.Text;
 using System.Text.Json;
 using Avalonia.Animation;
 using Avalonia.Animation.Easings;
@@ -260,13 +262,16 @@ public sealed class MainWindow : Window
     private Button profilesNavButton = null!;
     private Button modrinthNavButton = null!;
     private Button settingsNavButton = null!;
+    private Button customizeNavButton = null!;
     private Button layoutNavButton = null!;
     private Button accountsNavButton = null!;
     private TextBlock activeProfileBadge = null!;
     private TextBlock activeContextLabel = null!;
     private TextBlock installModeLabel = null!;
     private Image characterImage = null!;
-    private double _rotationAngle = 0.0;
+    private Image customizeCharacterImage = null!;
+    private ScrollViewer? _activeCustomizeScrollViewer;
+    private double _rotationAngle = -0.35;
     private double _rotationAngleX = 0.22;
     private bool _isDraggingCharacter = false;
     private Point _lastDragPoint;
@@ -331,6 +336,7 @@ public sealed class MainWindow : Window
     private TextBlock modrinthDetailsDesc = null!;
     private Border modrinthDetailsIconFallback = null!;
     private Button importMrpackButton = null!;
+    private StackPanel modrinthModListPanel = null!;
     private ListBox profileListBox = null!;
     private TextBlock profileInspectorTitle = null!;
     private TextBlock profileInspectorMeta = null!;
@@ -348,6 +354,7 @@ public sealed class MainWindow : Window
     private Control profilesSection = null!;
     private Control performanceSection = null!;
     private Control settingsSection = null!;
+    private Control customizeSection = null!;
     private Control layoutSection = null!;
     private Control workspaceSection = null!;
     // Instance Workspace fields
@@ -405,6 +412,21 @@ public sealed class MainWindow : Window
     private Border _wsTabContentPanel = null!;
     private TextBlock _wsHeaderLastPlayed = null!;
     private Border? _backgroundBorder;
+    private static bool _hasPlayedStartupAnimation = false;
+    private Grid? _startupOverlayGrid;
+    private Border? _startupCardBorder;
+    private StartupPatternCard? _startupPatternCard;
+    private Panel? _startupLogoContainer;
+    private Border? _startupOuterBorder;
+    private Control? _startupContentControl;
+    private Panel? _startupAccentOverlay;     // hidden during startup
+    private Control? _startupFloatingControls; // accounts btn + window controls — hidden during startup
+    private readonly ScaleTransform _cardScaleTransform = new(1.0 / 1.5, 1.0 / 1.5);
+    private readonly TranslateTransform _mountainTransform = new(0, 0);   // used by _backgroundBorder
+    private readonly TranslateTransform _logoTranslateTransform = new(0, 0);
+    private readonly ScaleTransform _logoScaleTransform = new(1.0, 1.0);
+    private Control? _sidebarBodyControl;
+    private Control? _brandControl;
     private readonly System.Collections.Generic.List<Border> _allGlassPanels = new();
     private readonly System.Collections.Generic.Dictionary<Border, (IBrush? Bg, IBrush? Border)> _originalBrushes = new();
     private Border? _homeStatusBar;
@@ -414,6 +436,8 @@ public sealed class MainWindow : Window
     private Border _instanceEditorOverlay = null!;
     private Border _accountsOverlay = null!;
     private Border _settingsOverlay = null!;
+    private Border _onboardingOverlay = null!;
+    private Button _onboardingCloseButton = null!;
     private StackPanel _accountsListPanel = new();
     private MinecraftAuthenticationService _authService = new();
     private Border _playOverlay = null!;
@@ -442,6 +466,8 @@ public sealed class MainWindow : Window
     private CancellationTokenSource? _searchCancellation;
     private UserSettings _settings;
     private string _activeSection = "launch";
+    private string _activeCustomizeTab = "cursor";
+    private bool _isLoadingPopularSkinPreviews;
     private string _activeSettingsTab = "Configuration";
     // Responsive UI state
     private bool _isNarrowMode;
@@ -546,37 +572,72 @@ public sealed class MainWindow : Window
         _profileStore = new LauncherProfileStore(_defaultMinecraftPath.BasePath);
         _defaultLauncher = CreateLauncher(_defaultMinecraftPath);
         ConfigureWindowChrome();
-        EnsureFallbackControlsInitialized();
+        this.AddHandler(InputElement.KeyDownEvent, (s, e) =>
+        {
+            if (_activeSection == "customize" && _activeCustomizeScrollViewer != null)
+            {
+                // Skip when a text input or slider has focus — they need keys for their own purposes
+                if (e.Source is TextBox || e.Source is Slider) return;
+
+                if (e.Key == Key.W || e.Key == Key.A || e.Key == Key.Left || e.Key == Key.Up)
+                {
+                    ScrollActiveCarousel(-1);
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.S || e.Key == Key.D || e.Key == Key.Right || e.Key == Key.Down)
+                {
+                    ScrollActiveCarousel(1);
+                    e.Handled = true;
+                }
+            }
+        }, RoutingStrategies.Tunnel);
 
         this.SizeChanged += (s, e) => UpdateResponsiveLayout();
         Opened += async (_, _) => 
         {
             UpdateResponsiveLayout();
 
-            // ── Home screen fade-in (0.1 s) ────────────────────────────────
-            if (!IsPerformanceModeEnabled())
+            if (!_hasPlayedStartupAnimation)
             {
-                Opacity = 0.0;
-                Transitions = new Transitions
-                {
-                    new DoubleTransition
-                    {
-                        Property = Window.OpacityProperty,
-                        Duration = TimeSpan.FromMilliseconds(100),
-                        Easing = new CubicEaseOut()
-                    }
-                };
-                await Task.Delay(20);
-                Opacity = 1.0;
+                _ = RunSeamlessStartupAnimationAsync();
             }
-
-            // ── Staggered card slide-in ─────────────────────────────────────
-            _ = AnimateHomeCardsAsync();
+            else
+            {
+                if (!IsPerformanceModeEnabled())
+                {
+                    Opacity = 0.0;
+                    Transitions = new Transitions
+                    {
+                        new DoubleTransition
+                        {
+                            Property = Window.OpacityProperty,
+                            Duration = TimeSpan.FromMilliseconds(100),
+                            Easing = new CubicEaseOut()
+                        }
+                    };
+                    await Task.Delay(20);
+                    Opacity = 1.0;
+                }
+                _ = AnimateHomeCardsAsync();
+            }
 
             // Defer heavy init to next frame so window renders immediately
             await Dispatcher.UIThread.InvokeAsync(async () =>
             {
                 try { await InitializeAsync(); } catch { }
+                if (_hasPlayedStartupAnimation)
+                {
+                    bool needsOnboarding = _settings.Accounts.Count == 0;
+                    if (needsOnboarding)
+                    {
+                        _onboardingOverlay.IsVisible = true;
+                        _onboardingOverlay.Opacity = 1.0;
+                        if (_onboardingOverlay.Child is Border cardBorder)
+                        {
+                            cardBorder.RenderTransform = TransformOperations.Parse("translateY(0px) scale(1.0)");
+                        }
+                    }
+                }
             }, Avalonia.Threading.DispatcherPriority.Background);
         };
 
@@ -698,6 +759,8 @@ public sealed class MainWindow : Window
         _backgroundBorder = new Border 
         { 
             Background = GetMainBackground(),
+            RenderTransform = _mountainTransform,
+            Opacity = _hasPlayedStartupAnimation ? 1.0 : 0.0,  // Hidden until startup animation reveals it
             ZIndex = -1 // Keep behind all children
         };
         if (_activeSection != "home" && _activeSection != "launch")
@@ -769,7 +832,8 @@ public sealed class MainWindow : Window
                     BuildExternalPlayButtonHost(topNavigation: true)!,
                     DetachFromParent(_instanceEditorOverlay)!.With(row: 0, rowSpan: 2, columnSpan: 1),
                     DetachFromParent(_accountsOverlay)!.With(row: 0, rowSpan: 2, columnSpan: 2),
-                    DetachFromParent(_settingsOverlay)!.With(row: 0, rowSpan: 2, columnSpan: 2)
+                    DetachFromParent(_settingsOverlay)!.With(row: 0, rowSpan: 2, columnSpan: 2),
+                    DetachFromParent(_onboardingOverlay)!.With(row: 0, rowSpan: 2, columnSpan: 2)
                 }
             }, topNavigation: true);
 
@@ -838,7 +902,8 @@ public sealed class MainWindow : Window
                                 BuildExternalPlayButtonHost(topNavigation: false)!,
                 DetachFromParent(_instanceEditorOverlay)!.With(columnSpan: 2),
                 DetachFromParent(_accountsOverlay)!.With(columnSpan: 2),
-                DetachFromParent(_settingsOverlay)!.With(columnSpan: 2)
+                DetachFromParent(_settingsOverlay)!.With(columnSpan: 2),
+                DetachFromParent(_onboardingOverlay)!.With(columnSpan: 2)
             }
         }, topNavigation: false);
     }
@@ -1090,17 +1155,98 @@ public sealed class MainWindow : Window
 
         var shell = new Grid
         {
-            ClipToBounds = false,
+            ClipToBounds = true,
             Children = { content, accentOverlay }
         };
+
+        if (!_hasPlayedStartupAnimation)
+        {
+            // Hide everything except the card during startup
+            content.Opacity    = 0.0;
+            accentOverlay.Opacity = 0.0;
+            _startupAccentOverlay = accentOverlay;
+        }
+
+        if (!_hasPlayedStartupAnimation)
+        {
+            Bitmap? logoBmp = null;
+            try
+            {
+                try   { logoBmp = new Bitmap(AssetLoader.Open(new Uri("avares://FugoLauncher/assets/fugo-logo-transparent.png"))); }
+                catch { logoBmp = new Bitmap(AssetLoader.Open(new Uri("avares://FugoLauncher/assets/fugo-logo.png"))); }
+            }
+            catch { }
+
+            // Pattern card: white bg + curvy lines; SlideProgress drives the black slide
+            _startupPatternCard = new StartupPatternCard { SlideProgress = 0.0 };
+
+            var logoImage = new Image
+            {
+                Width  = 100,
+                Height = 100,
+                Source = logoBmp,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center
+            };
+
+            var logoTransformGroup = new TransformGroup();
+            logoTransformGroup.Children.Add(_logoScaleTransform);
+            logoTransformGroup.Children.Add(_logoTranslateTransform);
+
+            _startupLogoContainer = new Panel
+            {
+                HorizontalAlignment   = HorizontalAlignment.Center,
+                VerticalAlignment     = VerticalAlignment.Center,
+                RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+                RenderTransform       = logoTransformGroup,
+                Opacity               = 1.0,
+                IsHitTestVisible      = false,
+                Children              = { logoImage }
+            };
+
+            _startupCardBorder = new Border
+            {
+                Width               = 560,
+                Height              = 350,
+                CornerRadius        = new CornerRadius(24),
+                ClipToBounds        = true,
+                BoxShadow           = BoxShadows.Parse("0 24 60 0 #70000000"),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+                RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+                RenderTransform     = _cardScaleTransform,
+                Child = new Grid
+                {
+                    Children = { _startupPatternCard, _startupLogoContainer }
+                }
+            };
+
+            // Overlay is transparent — desktop shows through outside the card
+            _startupOverlayGrid = new Grid
+            {
+                ClipToBounds     = false,
+                IsHitTestVisible = true,
+                ZIndex           = 10000,
+                Background       = Brushes.Transparent,
+                Children         = { _startupCardBorder }
+            };
+
+            shell.Children.Add(_startupOverlayGrid);
+            _startupContentControl = content;
+        }
 
         if (!topNavigation)
         {
             var floatingControls = BuildWindowControls();
             floatingControls.Margin = new Thickness(0, 16, 16, 0);
             floatingControls.HorizontalAlignment = HorizontalAlignment.Right;
-            floatingControls.VerticalAlignment = VerticalAlignment.Top;
-            floatingControls.ZIndex = 9999;
+            floatingControls.VerticalAlignment   = VerticalAlignment.Top;
+            floatingControls.ZIndex  = 9999;
+            if (!_hasPlayedStartupAnimation)
+            {
+                floatingControls.Opacity = 0.0;  // hidden until animation completes
+                _startupFloatingControls = floatingControls;
+            }
             shell.Children.Add(floatingControls);
         }
 
@@ -1109,19 +1255,23 @@ public sealed class MainWindow : Window
         var margin = style.WindowMargin;
         if (style.CompactMode) margin = Math.Max(0, margin - 4);
         
-        var bg = !string.IsNullOrWhiteSpace(style.WindowBackground) ? style.WindowBackground : "#090C12";
-        var border = !string.IsNullOrWhiteSpace(style.WindowBorderColor) ? style.WindowBorderColor : "#DC222A3F";
+        var outerBg   = !string.IsNullOrWhiteSpace(style.WindowBackground) ? style.WindowBackground : "#090C12";
+        var outerBorder = !string.IsNullOrWhiteSpace(style.WindowBorderColor) ? style.WindowBorderColor : "#DC222A3F";
 
-        return new Border
+        _startupOuterBorder = new Border
         {
-            Margin = new Thickness(margin),
-            CornerRadius = new CornerRadius(cr),
-            ClipToBounds = true,
-            Background = new SolidColorBrush(Color.Parse(bg)),
-            BorderBrush = new SolidColorBrush(Color.Parse(border)),
+            Margin          = new Thickness(margin),
+            CornerRadius    = new CornerRadius(cr),
+            ClipToBounds    = true,
+            // Start transparent during startup so only the card is visible
+            Background      = _hasPlayedStartupAnimation
+                                ? new SolidColorBrush(Color.Parse(outerBg))
+                                : Brushes.Transparent,
+            BorderBrush     = new SolidColorBrush(Color.Parse(outerBorder)),
             BorderThickness = new Thickness(style.WindowBorderThickness),
-            Child = shell
+            Child           = shell
         };
+        return _startupOuterBorder;
     }
 
 
@@ -1211,45 +1361,7 @@ public sealed class MainWindow : Window
 
     private Brush GetMainBackground()
     {
-        var style = _settings.Style;
-
-        // 1. If a specific WindowBackground hex color is set, prioritize it
-        if (!string.IsNullOrWhiteSpace(style.WindowBackground))
-        {
-            try { return new SolidColorBrush(Color.Parse(style.WindowBackground)); } catch { }
-        }
-
-        // 2. Try Custom Background Image Path from style
-        if (!string.IsNullOrWhiteSpace(style.BackgroundImagePath) && File.Exists(style.BackgroundImagePath))
-        {
-            try {
-                var ovOp = double.IsNaN(style.BackgroundOverlayOpacity) ? 1.0 : style.BackgroundOverlayOpacity;
-                return new ImageBrush(new Bitmap(style.BackgroundImagePath)) 
-                { 
-                    Stretch = Stretch.UniformToFill, 
-                    AlignmentX = AlignmentX.Center,
-                    AlignmentY = AlignmentY.Center,
-                    Opacity = ovOp == 1.0 ? style.BackgroundOpacity : 1.0 - ovOp
-                };
-            } catch { }
-        }
-
-        // 3. Try legacy custom_bg.png on disk
-        var customBgPath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "custom_bg.png");
-        if (File.Exists(customBgPath))
-        {
-            try {
-                return new ImageBrush(new Bitmap(customBgPath)) 
-                { 
-                    Stretch = Stretch.UniformToFill, 
-                    AlignmentX = AlignmentX.Center,
-                    AlignmentY = AlignmentY.Center,
-                    Opacity = style.BackgroundOpacity 
-                };
-            } catch { }
-        }
-
-        // 4. Default Bundled Resource
+        // 1. Bundled Mountain Artwork (launcherbackground.png)
         try 
         {
             var asset = AssetLoader.Open(new Uri("avares://FugoLauncher/assets/launcherbackground.png"));
@@ -1260,22 +1372,27 @@ public sealed class MainWindow : Window
                     Stretch = Stretch.UniformToFill, 
                     AlignmentX = AlignmentX.Center,
                     AlignmentY = AlignmentY.Center,
-                    Opacity = style.BackgroundOpacity 
+                    Opacity = 1.0 
                 };
             }
         } catch { }
 
-        // 5. Final Fallback to Linear Gradient
-        return new LinearGradientBrush
+        // 2. Try Custom Background Image Path from style if specified
+        var style = _settings.Style;
+        if (!string.IsNullOrWhiteSpace(style.BackgroundImagePath) && File.Exists(style.BackgroundImagePath))
         {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-            GradientStops =
-            {
-                new GradientStop(Color.Parse("#0E1119"), 0),
-                new GradientStop(Color.Parse("#141822"), 1)
-            }
-        };
+            try {
+                return new ImageBrush(new Bitmap(style.BackgroundImagePath)) 
+                { 
+                    Stretch = Stretch.UniformToFill, 
+                    AlignmentX = AlignmentX.Center,
+                    AlignmentY = AlignmentY.Center,
+                    Opacity = 1.0
+                };
+            } catch { }
+        }
+
+        return new SolidColorBrush(Color.Parse("#090C12"));
     }
 
 
@@ -1368,6 +1485,8 @@ public sealed class MainWindow : Window
         profilesNavButton.Click += (_, _) => SetActiveSection("instances");
         modrinthNavButton = CreateNavButton("puzzle", "Mods", collapsed);
         modrinthNavButton.Click += (_, _) => SetActiveSection("modrinth");
+        customizeNavButton = CreateNavButton("palette", "Customize", collapsed);
+        customizeNavButton.Click += (_, _) => SetActiveSection("customize");
         settingsNavButton = CreateNavButton("settings", "Settings", collapsed);
         settingsNavButton.Click += (_, _) => SetActiveSection("settings");
         layoutNavButton = CreateNavButton("server", "Servers", collapsed);
@@ -1434,11 +1553,14 @@ public sealed class MainWindow : Window
                     DetachFromParent(launchNavButton)!,
                     DetachFromParent(profilesNavButton)!,
                     DetachFromParent(modrinthNavButton)!,
+                    DetachFromParent(customizeNavButton)!,
                     DetachFromParent(settingsNavButton)!,
                     DetachFromParent(layoutNavButton)!
                 }
             }
         };
+        _sidebarBodyControl = sidebarBody;
+        _brandControl = brand;
         AttachWindowDrag(sidebarBody);
 
         return new Grid
@@ -1460,6 +1582,8 @@ public sealed class MainWindow : Window
         profilesNavButton.Click += (_, _) => SetActiveSection("instances");
         modrinthNavButton = CreateNavButton("puzzle", "Mods");
         modrinthNavButton.Click += (_, _) => SetActiveSection("modrinth");
+        customizeNavButton = CreateNavButton("palette", "Customize");
+        customizeNavButton.Click += (_, _) => SetActiveSection("customize");
         settingsNavButton = CreateNavButton("settings", "Settings");
         settingsNavButton.Click += (_, _) => SetActiveSection("settings");
         layoutNavButton = CreateNavButton("server", "Servers");
@@ -1468,10 +1592,11 @@ public sealed class MainWindow : Window
         ApplyHoverMotion(launchNavButton);
         ApplyHoverMotion(profilesNavButton);
         ApplyHoverMotion(modrinthNavButton);
+        ApplyHoverMotion(customizeNavButton);
         ApplyHoverMotion(settingsNavButton);
         ApplyHoverMotion(layoutNavButton);
 
-        foreach (var button in new[] { launchNavButton, profilesNavButton, modrinthNavButton, settingsNavButton, layoutNavButton })
+        foreach (var button in new[] { launchNavButton, profilesNavButton, modrinthNavButton, customizeNavButton, settingsNavButton, layoutNavButton })
         {
             if (button == null) continue;
             button.Height = 40;
@@ -1535,6 +1660,7 @@ public sealed class MainWindow : Window
                 DetachFromParent(launchNavButton)!,
                 DetachFromParent(profilesNavButton)!,
                 DetachFromParent(modrinthNavButton)!,
+                DetachFromParent(customizeNavButton)!,
                 DetachFromParent(settingsNavButton)!,
                 DetachFromParent(layoutNavButton)!
             }
@@ -1727,6 +1853,7 @@ public sealed class MainWindow : Window
                     _rotationAngleX = Math.Clamp(_rotationAngleX + dy * 0.012, -0.5, 0.5);
                     _dragVelocity = -dx * 0.015;
                     _lastDragPoint = currentPoint;
+                    UpdateCharacterPreview();
                     e.Handled = true;
                 }
             };
@@ -1911,12 +2038,13 @@ public sealed class MainWindow : Window
         _playOverlay.Child = playGrid;
         _playOverlay.PointerPressed -= PlayOverlay_PointerPressed;
         _playOverlay.PointerPressed += PlayOverlay_PointerPressed;
-        _playOverlay.Cursor = new Cursor(StandardCursorType.Hand);
+        _playOverlay.Cursor = GetInteractiveCursor();
 
         _instanceEditorOverlay ??= BuildInstanceEditorOverlay();
         _accountsListPanel ??= new StackPanel();
         _accountsOverlay ??= BuildAccountsOverlay();
         _settingsOverlay ??= BuildSettingsOverlay();
+        _onboardingOverlay ??= BuildOnboardingOverlay();
         PbProgress = pbProgress;
         ModrinthSearchInput = modrinthSearchInput;
         UpdateSelectedProjectDetails();
@@ -2057,6 +2185,7 @@ public sealed class MainWindow : Window
     {
         RefreshAccountsList();
         _accountsOverlay.IsVisible = true;
+        _accountsOverlay.Opacity = 1.0;
         if (accountsNavButton != null) accountsNavButton.IsVisible = false;
     }
 
@@ -2093,6 +2222,19 @@ public sealed class MainWindow : Window
         }
     }
 
+    // CroppedBitmap keeps a reference to its source. The live preview cache is replaced
+    // whenever a skin changes, so using CroppedBitmap here left account avatars pointing
+    // at a disposed bitmap. Render an independent thumbnail instead.
+    private static RenderTargetBitmap CreateSkinHeadThumbnail(Bitmap skin, int size)
+    {
+        var thumbnail = new RenderTargetBitmap(new PixelSize(size, size), new Vector(96, 96));
+        using var context = thumbnail.CreateDrawingContext();
+        var destination = new Rect(0, 0, size, size);
+        context.DrawImage(skin, new Rect(64, 64, 64, 64), destination);
+        context.DrawImage(skin, new Rect(320, 64, 64, 64), destination);
+        return thumbnail;
+    }
+
     private bool _isAuthenticating;
     private void RefreshAccountsList()
     {
@@ -2105,35 +2247,21 @@ public sealed class MainWindow : Window
             var skinBmp = GetSkinBitmap(account.CustomSkinPath);
             if (skinBmp != null)
             {
-                var cropBase = new PixelRect(64, 64, 64, 64);
-                var croppedBase = new CroppedBitmap(skinBmp, cropBase);
-                
-                var cropHat = new PixelRect(320, 64, 64, 64);
-                var croppedHat = new CroppedBitmap(skinBmp, cropHat);
-                
-                var imgBase = new Image
+                var img = new Image
                 {
-                    Source = croppedBase,
+                    Source = CreateSkinHeadThumbnail(skinBmp, 28),
                     Width = 28,
                     Height = 28,
                     Stretch = Stretch.Fill
                 };
-                RenderOptions.SetBitmapInterpolationMode(imgBase, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
-                
-                var imgHat = new Image
-                {
-                    Source = croppedHat,
-                    Width = 28,
-                    Height = 28,
-                    Stretch = Stretch.Fill
-                };
-                RenderOptions.SetBitmapInterpolationMode(imgHat, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+                RenderOptions.SetBitmapInterpolationMode(img, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+                skinBmp.Dispose();
                 
                 avatarControl = new Grid
                 {
                     Width = 28,
                     Height = 28,
-                    Children = { imgBase, imgHat }
+                    Children = { img }
                 };
             }
             else
@@ -2457,18 +2585,32 @@ public sealed class MainWindow : Window
 
     private Border BuildAccountsOverlay()
     {
+        var overlay = new Border
+        {
+            IsVisible = false,
+            Background = new SolidColorBrush(Color.FromArgb(180, 5, 5, 8)), // Dimmed background
+            ZIndex = 900,
+            Opacity = 0.0,
+            Transitions = new Transitions
+            {
+                new DoubleTransition { Property = Border.OpacityProperty, Duration = TimeSpan.FromMilliseconds(300), Easing = new CubicEaseInOut() }
+            }
+        };
+
         var closeButton = new Button
         {
             Content = "×",
             Background = Brushes.Transparent,
             Foreground = Brushes.White,
             FontSize = 24,
-            Padding = new Thickness(8, 0)
+            Padding = new Thickness(8, 0),
+            Cursor = GetInteractiveCursor()
         };
         ToolTip.SetTip(closeButton, "Close");
         closeButton.Click += (_, _) => 
         {
-            _accountsOverlay.IsVisible = false;
+            overlay.Opacity = 0.0;
+            overlay.IsVisible = false;
             if (accountsNavButton != null)
             {
                 accountsNavButton.IsVisible = true;
@@ -2476,6 +2618,7 @@ public sealed class MainWindow : Window
                 accountsNavButton.RenderTransform = TransformOperations.Parse("scale(1.0)");
             }
         };
+        ApplyHoverMotion(closeButton);
 
         var header = new Grid
         {
@@ -2487,21 +2630,32 @@ public sealed class MainWindow : Window
             }
         };
 
-        var addMicrosoftBtn = CreatePrimaryButton("Add Microsoft Account", "#5B80FF", Colors.White);
-        addMicrosoftBtn.Click += async (_, _) => await AddMicrosoftAccountAsync();
+        var addAccountBtn = CreatePrimaryButton("Add Account", "#D97706", Colors.White);
+        addAccountBtn.Height = 44;
+        addAccountBtn.FontWeight = FontWeight.Bold;
+        addAccountBtn.Cursor = GetInteractiveCursor();
+        ApplyHoverMotion(addAccountBtn);
 
-        var addOfflineBtn = CreateSecondaryButton("Add Offline");
-        addOfflineBtn.Click += async (_, _) => await AddOfflineAccountAsync();
+        addAccountBtn.Click += (_, _) =>
+        {
+            overlay.Opacity = 0.0;
+            overlay.IsVisible = false;
+
+            _onboardingOverlay.IsVisible = true;
+            _onboardingOverlay.Opacity = 1.0;
+            if (_onboardingOverlay.Child is Border cardBorder)
+            {
+                cardBorder.RenderTransform = TransformOperations.Parse("translateY(0px) scale(1.0)");
+            }
+            if (_onboardingCloseButton != null)
+            {
+                _onboardingCloseButton.IsVisible = _settings.Accounts.Count > 0;
+            }
+        };
 
         var footer = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("*,*"),
-            ColumnSpacing = 8,
-            Children =
-            {
-                addMicrosoftBtn.With(column: 0),
-                addOfflineBtn.With(column: 1)
-            }
+            Children = { addAccountBtn }
         };
 
         var panel = new Border
@@ -2510,17 +2664,17 @@ public sealed class MainWindow : Window
             MaxHeight = 560,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Background = new SolidColorBrush(Color.FromArgb(248, 12, 16, 26)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
+            Background = new SolidColorBrush(Color.Parse("#0D0F14")), // Matte background
+            BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)), // Subtle border
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(20),
+            CornerRadius = new CornerRadius(16),
             BoxShadow = new BoxShadows(new BoxShadow
             {
-                Blur = 32,
-                OffsetY = 12,
-                Color = Color.FromArgb(160, 0, 0, 0)
+                Blur = 40,
+                OffsetY = 20,
+                Color = Color.FromArgb(80, 0, 0, 0)
             }),
-            Padding = new Thickness(24),
+            Padding = new Thickness(28),
             Child = new Grid
             {
                 RowDefinitions = new RowDefinitions("Auto,*,Auto"),
@@ -2538,13 +2692,8 @@ public sealed class MainWindow : Window
             }
         };
 
-        return new Border
-        {
-            IsVisible = false,
-            Background = new SolidColorBrush(Color.FromArgb(170, 2, 4, 8)),
-            ZIndex = 100,
-            Child = panel
-        };
+        overlay.Child = panel;
+        return overlay;
     }
 
     private void UpdateAccountsButtonText()
@@ -2564,35 +2713,20 @@ public sealed class MainWindow : Window
             Control iconControl;
             if (_cachedSkinBitmap != null)
             {
-                var cropBase = new PixelRect(64, 64, 64, 64);
-                var croppedBase = new CroppedBitmap(_cachedSkinBitmap, cropBase);
-                
-                var cropHat = new PixelRect(320, 64, 64, 64);
-                var croppedHat = new CroppedBitmap(_cachedSkinBitmap, cropHat);
-                
-                var imgBase = new Image
+                var img = new Image
                 {
-                    Source = croppedBase,
+                    Source = CreateSkinHeadThumbnail(_cachedSkinBitmap, 18),
                     Width = 18,
                     Height = 18,
                     Stretch = Stretch.Fill
                 };
-                RenderOptions.SetBitmapInterpolationMode(imgBase, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
-                
-                var imgHat = new Image
-                {
-                    Source = croppedHat,
-                    Width = 18,
-                    Height = 18,
-                    Stretch = Stretch.Fill
-                };
-                RenderOptions.SetBitmapInterpolationMode(imgHat, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+                RenderOptions.SetBitmapInterpolationMode(img, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
                 
                 iconControl = new Grid
                 {
                     Width = 18,
                     Height = 18,
-                    Children = { imgBase, imgHat }
+                    Children = { img }
                 };
             }
             else
@@ -2826,7 +2960,7 @@ public sealed class MainWindow : Window
                             Foreground = new SolidColorBrush(Color.Parse(accentHex)),
                             Background = Brushes.Transparent,
                             Padding = new Thickness(0),
-                            Cursor = new Cursor(StandardCursorType.Hand),
+                            Cursor = GetInteractiveCursor(),
                             VerticalAlignment = VerticalAlignment.Center,
                             Command = new RelayCommand(() => CopyServerIpToClipboard(ip))
                         }
@@ -2856,7 +2990,7 @@ public sealed class MainWindow : Window
                 new BrushTransition { Property = Border.BorderBrushProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() }
             },
             RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
 
         card.PointerEntered += (_, _) => {
@@ -2895,6 +3029,7 @@ public sealed class MainWindow : Window
         modrinthSection ??= BuildModrinthDeck();
         profilesSection ??= BuildProfilesDeck();
         performanceSection ??= BuildPerformanceDeck();
+        customizeSection ??= BuildCustomizeDeck();
         settingsSection ??= BuildSettingsDeck();
         layoutSection ??= BuildLayoutDeck();
         workspaceSection ??= BuildWorkspaceDeck();
@@ -2903,6 +3038,7 @@ public sealed class MainWindow : Window
         modrinthSection.IsVisible = _activeSection == "modrinth";
         profilesSection.IsVisible = _activeSection == "profiles";
         performanceSection.IsVisible = _activeSection == "performance";
+        customizeSection.IsVisible = _activeSection == "customize";
         settingsSection.IsVisible = _activeSection == "settings";
         layoutSection.IsVisible = _activeSection == "layout";
         workspaceSection.IsVisible = _activeSection == "workspace";
@@ -2915,6 +3051,7 @@ public sealed class MainWindow : Window
         modrinthSection = null!;
         profilesSection = null!;
         performanceSection = null!;
+        customizeSection = null!;
         settingsSection = null!;
         layoutSection = null!;
         workspaceSection = null!;
@@ -2929,6 +3066,7 @@ public sealed class MainWindow : Window
         launchNavButton = null!;
         profilesNavButton = null!;
         modrinthNavButton = null!;
+        customizeNavButton = null!;
         settingsNavButton = null!;
         layoutNavButton = null!;
         accountsNavButton = null!;
@@ -3021,6 +3159,7 @@ public sealed class MainWindow : Window
         var modrinth = DetachFromParent(modrinthSection)!;
         var profiles = DetachFromParent(profilesSection)!;
         var performance = DetachFromParent(performanceSection)!;
+        var customize = DetachFromParent(customizeSection)!;
         var settings = DetachFromParent(settingsSection)!;
         var layout = DetachFromParent(layoutSection)!;
         var workspace = DetachFromParent(workspaceSection)!;
@@ -3045,6 +3184,7 @@ public sealed class MainWindow : Window
                             modrinth!,
                             profiles!,
                             performance!,
+                            customize!,
                             settings!,
                             layout!,
                             workspace!
@@ -3179,26 +3319,53 @@ public sealed class MainWindow : Window
 
         foreach (var c in actionsGroup.Children) ApplyHoverMotion(c as Control);
 
-        var skinContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Children = { new TextBlock { Text = "●", FontSize = 10, Foreground = new SolidColorBrush(GetAccentColor(255)), VerticalAlignment = VerticalAlignment.Center }, new TextBlock { Text = "Skin", FontSize = 12, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center } } };
-        var skinBtn = new Button { Content = skinContent, Background = new SolidColorBrush(GetAccentColor(35)), BorderBrush = new SolidColorBrush(GetAccentColor(80)), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Height = 36, Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center };
-        skinBtn.Click += async (_, _) => await ChangeSkinAsync();
-        ApplyHoverMotion(skinBtn);
-
-        var capeContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Children = { new TextBlock { Text = "■", FontSize = 10, Foreground = new SolidColorBrush(GetAccentColor(255)), VerticalAlignment = VerticalAlignment.Center }, new TextBlock { Text = "Cape", FontSize = 12, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center } } };
-        var capeBtn = new Button { Content = capeContent, Background = new SolidColorBrush(GetAccentColor(35)), BorderBrush = new SolidColorBrush(GetAccentColor(80)), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Height = 36, Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center };
-        capeBtn.Click += async (_, _) => await ChangeCapeAsync();
-        ApplyHoverMotion(capeBtn);
-
-        var resetContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Children = { new TextBlock { Text = "×", FontSize = 13, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(GetAccentColor(255)), VerticalAlignment = VerticalAlignment.Center }, new TextBlock { Text = "Reset", FontSize = 12, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center } } };
-        var resetBtn = new Button { Content = resetContent, Background = new SolidColorBrush(GetAccentColor(35)), BorderBrush = new SolidColorBrush(GetAccentColor(80)), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Height = 36, Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center };
-        resetBtn.Click += (_, _) => {
-            _settings.CustomSkinPath = string.Empty;
-            _settings.CustomCapePath = string.Empty;
-            _settings.CustomCapeSourcePath = string.Empty;
-            _settingsStore.Save(_settings);
-            UpdateCharacterPreview();
+        var customizeFloatingBtn = new Button
+        {
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Children =
+                {
+                    CreateNavigationIcon("palette", 18, Brushes.White), // Painting plate icon
+                    new TextBlock { Text = "Customize Avatar", FontSize = 13, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }
+                }
+            },
+            Background = new SolidColorBrush(Color.FromArgb(200, 22, 27, 38)),
+            BorderBrush = new SolidColorBrush(Color.Parse("#D97706")), // Amber accent
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10), // Sleek rounded rectangle
+            Height = 42,
+            Padding = new Thickness(16, 0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(12),
+            Cursor = GetInteractiveCursor(),
+            ZIndex = 10,
+            Opacity = 0.0, // Fades in on player hover
+            Transitions = new Transitions
+            {
+                new DoubleTransition { Property = Control.OpacityProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() }
+            }
         };
-        ApplyHoverMotion(resetBtn);
+        customizeFloatingBtn.Click += (_, _) => SetActiveSection("customize");
+        ApplyHoverMotion(customizeFloatingBtn);
+        customizeFloatingBtn.Opacity = 0.0; // Override initial ApplyHoverMotion default
+
+        var characterContainer = new Panel
+        {
+            Height = 280,
+            Background = Brushes.Transparent,
+            Children =
+            {
+                new Border { Child = DetachFromParent(characterImage) },
+                customizeFloatingBtn
+            }
+        };
+
+        characterContainer.PointerEntered += (s, e) => { customizeFloatingBtn.Opacity = 1.0; };
+        characterContainer.PointerExited += (s, e) => { customizeFloatingBtn.Opacity = 0.0; };
 
         var avatarPanel = CreateGlassPanel(new StackPanel
         {
@@ -3206,13 +3373,7 @@ public sealed class MainWindow : Window
             Children =
             {
                 new TextBlock { Text = "Avatar", FontSize = 12.5, FontWeight = FontWeight.Bold, Foreground = Brushes.White, Opacity = 0.8 },
-                new Border { Height = 260, Child = DetachFromParent(characterImage) },
-                new Grid
-                {
-                    ColumnDefinitions = new ColumnDefinitions("*,*,*"),
-                    ColumnSpacing = 8,
-                    Children = { skinBtn.With(column: 0), capeBtn.With(column: 1), resetBtn.With(column: 2) }
-                }
+                characterContainer
             }
         }, padding: new Thickness(16), margin: new Thickness(0));
         avatarPanel.Width = 280;
@@ -3225,7 +3386,7 @@ public sealed class MainWindow : Window
                                      ?? avatarPanelDirectChild;
         _avatarControls = (avatarPanelDirectChild as StackPanel)
             ?? (StackPanel)((Border)avatarPanelDirectChild!).Child!;
-        _avatarActions = (Grid)_avatarControls.Children[2];
+        _avatarActions = new Grid { IsVisible = false, Height = 0 };
 
         _avatarGlass.PointerEntered += (s, e) => { if (_isNarrowMode) SetAvatarExpansion(true); };
         _avatarGlass.PointerExited += (s, e) => { if (_isNarrowMode) SetAvatarExpansion(false); };
@@ -3478,18 +3639,16 @@ public sealed class MainWindow : Window
 
     private Control BuildModrinthDeck()
     {
-        // ── Search & Filter Row Styling ────────────────────────────────────
+         // ── Search & Filter Row Styling ────────────────────────────────────
         var accentColorVal = Color.Parse(_settings.AccentColor);
-        var fieldBg = new SolidColorBrush(Color.Parse(!string.IsNullOrWhiteSpace(_settings.Style.FieldBackground) ? _settings.Style.FieldBackground : "#1A1F2E"));
-        var fieldBorder = new SolidColorBrush(Color.Parse(!string.IsNullOrWhiteSpace(_settings.Style.FieldBorderColor) ? _settings.Style.FieldBorderColor : "#2A3143"));
-        var fieldRadius = new CornerRadius(double.IsNaN(_settings.Style.FieldRadius) ? 16 : _settings.Style.FieldRadius);
+        var fieldRadius = new CornerRadius(6); // Standardized corner radius
 
         modrinthSearchInput.Watermark = "🔍 Search for mods...";
         modrinthSearchInput.CornerRadius = fieldRadius;
-        modrinthSearchInput.Background = fieldBg;
-        modrinthSearchInput.BorderBrush = fieldBorder;
-        modrinthSearchInput.BorderThickness = new Thickness(1);
-        modrinthSearchInput.Height = 42;
+        modrinthSearchInput.Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255));
+        modrinthSearchInput.BorderBrush = Brushes.Transparent;
+        modrinthSearchInput.BorderThickness = new Thickness(0);
+        modrinthSearchInput.Height = 34;
         modrinthSearchInput.VerticalContentAlignment = VerticalAlignment.Center;
         
         modrinthSearchInput.KeyDown += async (_, e) => {
@@ -3497,64 +3656,59 @@ public sealed class MainWindow : Window
         };
 
         modrinthLoaderCombo.CornerRadius = fieldRadius;
-        modrinthLoaderCombo.Height = 42;
-        modrinthLoaderCombo.Background = Brushes.Transparent;
-        modrinthLoaderCombo.BorderBrush = fieldBorder;
+        modrinthLoaderCombo.Height = 34;
+        modrinthLoaderCombo.Background = new SolidColorBrush(Color.FromArgb(12, 255, 255, 255));
+        modrinthLoaderCombo.BorderBrush = Brushes.Transparent;
+        modrinthLoaderCombo.BorderThickness = new Thickness(0);
 
         modrinthVersionInput.CornerRadius = fieldRadius;
-        modrinthVersionInput.Height = 42;
-        modrinthVersionInput.Background = Brushes.Transparent;
-        modrinthVersionInput.BorderBrush = fieldBorder;
-        modrinthVersionInput.MinHeight = 42;
+        modrinthVersionInput.Height = 34;
+        modrinthVersionInput.Background = new SolidColorBrush(Color.FromArgb(12, 255, 255, 255));
+        modrinthVersionInput.BorderBrush = Brushes.Transparent;
+        modrinthVersionInput.BorderThickness = new Thickness(0);
+        modrinthVersionInput.MinHeight = 34;
         
         modrinthProjectTypeCombo.CornerRadius = fieldRadius;
-        modrinthProjectTypeCombo.Height = 42;
-        modrinthProjectTypeCombo.Background = Brushes.Transparent;
-        modrinthProjectTypeCombo.BorderBrush = fieldBorder;
+        modrinthProjectTypeCombo.Height = 34;
+        modrinthProjectTypeCombo.Background = new SolidColorBrush(Color.FromArgb(12, 255, 255, 255));
+        modrinthProjectTypeCombo.BorderBrush = Brushes.Transparent;
+        modrinthProjectTypeCombo.BorderThickness = new Thickness(0);
 
         modrinthSearchButton.CornerRadius = fieldRadius;
-        modrinthSearchButton.Height = 42;
-        SetButtonText(modrinthSearchButton, "🔍 Search");
+        modrinthSearchButton.Height = 34;
+        SetButtonText(modrinthSearchButton, "Search");
         
-        var accentTargetColor = Color.FromArgb(160, accentColorVal.R, accentColorVal.G, accentColorVal.B);
-        modrinthSearchButton.Background = new LinearGradientBrush
-        {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-            GradientStops =
-            {
-                new GradientStop(accentColorVal, 0),
-                new GradientStop(accentTargetColor, 1)
-            }
-        };
+        modrinthSearchButton.Background = new SolidColorBrush(accentColorVal);
         modrinthSearchButton.BorderThickness = new Thickness(0);
         modrinthSearchButton.Padding = new Thickness(16, 0);
+        ApplyHoverMotion(modrinthSearchButton);
 
         modrinthSortCombo.CornerRadius = fieldRadius;
-        modrinthSortCombo.Height = 42;
-        modrinthSortCombo.Background = Brushes.Transparent;
-        modrinthSortCombo.BorderBrush = fieldBorder;
+        modrinthSortCombo.Height = 34;
+        modrinthSortCombo.Background = new SolidColorBrush(Color.FromArgb(12, 255, 255, 255));
+        modrinthSortCombo.BorderBrush = Brushes.Transparent;
+        modrinthSortCombo.BorderThickness = new Thickness(0);
 
         var filterRow = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto,Auto"),
-            ColumnSpacing = 12,
+            ColumnSpacing = 10,
             Margin = new Thickness(4, 0, 4, 16)
         };
 
         filterRow.Children.Add(modrinthSearchInput.With(column: 0));
         
-        var loaderText = new TextBlock { Text = "Loader", Foreground = new SolidColorBrush(Color.Parse("#A0A8B8")), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,4,0) };
+        var loaderText = new TextBlock { Text = "Loader", Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")), FontSize = 11, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,4,0) };
         var loaderPanel = new StackPanel { Orientation = Orientation.Horizontal, Children = { loaderText, modrinthLoaderCombo } };
         filterRow.Children.Add(loaderPanel.With(column: 1));
 
-        var versionText = new TextBlock { Text = "Version", Foreground = new SolidColorBrush(Color.Parse("#A0A8B8")), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,4,0) };
+        var versionText = new TextBlock { Text = "Version", Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")), FontSize = 11, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,4,0) };
         var versionPanel = new StackPanel { Orientation = Orientation.Horizontal, Children = { versionText, modrinthVersionInput } };
         filterRow.Children.Add(versionPanel.With(column: 2));
 
         filterRow.Children.Add(modrinthProjectTypeCombo.With(column: 3));
 
-        var sortText = new TextBlock { Text = "Sort", Foreground = new SolidColorBrush(Color.Parse("#A0A8B8")), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,4,0) };
+        var sortText = new TextBlock { Text = "Sort", Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")), FontSize = 11, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,4,0) };
         var sortPanel = new StackPanel { Orientation = Orientation.Horizontal, Children = { sortText, modrinthSortCombo } };
         filterRow.Children.Add(sortPanel.With(column: 4));
 
@@ -3582,19 +3736,20 @@ public sealed class MainWindow : Window
             
             var installBtn = new Button
             {
-                Content = isInstalled ? "✓" : "↓",
+                Content = isInstalled ? "Installed" : "Install",
                 IsEnabled = !isInstalled,
                 Background = isInstalled 
-                    ? new SolidColorBrush(Color.FromArgb(30, 255, 255, 255))
+                    ? Brushes.Transparent
                     : new SolidColorBrush(accentColorVal),
                 Foreground = isInstalled 
-                    ? new SolidColorBrush(Color.Parse("#A0A8B8"))
+                    ? new SolidColorBrush(Color.Parse("#6C7A9C"))
                     : (Color.Parse(_settings.Style.ButtonForeground ?? "#FFFFFF") == Colors.Black ? Brushes.Black : Brushes.White),
-                CornerRadius = new CornerRadius(12),
+                CornerRadius = new CornerRadius(6), // Standardized button radius
                 Padding = new Thickness(12, 6),
-                FontSize = 12,
+                FontSize = 11,
                 FontWeight = FontWeight.Bold,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                BorderThickness = new Thickness(0)
             };
             installBtn.Click += async (s, _) =>
             {
@@ -3615,12 +3770,12 @@ public sealed class MainWindow : Window
             {
                 Width = 48,
                 Height = 48,
-                CornerRadius = new CornerRadius(10),
-                Background = new SolidColorBrush(Color.Parse("#253245")),
+                CornerRadius = new CornerRadius(8),
+                Background = new SolidColorBrush(Color.Parse("#1A1F2E")),
                 Child = new TextBlock
                 {
                     Text = (project?.Title ?? "?").Substring(0, 1).ToUpperInvariant(),
-                    FontSize = 20,
+                    FontSize = 18,
                     FontWeight = FontWeight.Black,
                     Foreground = Brushes.White,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -3639,10 +3794,10 @@ public sealed class MainWindow : Window
 
             var cardBorder = new Border
             {
-                Background = new SolidColorBrush(Color.FromArgb(40, 22, 28, 42)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(16),
+                Background = new SolidColorBrush(Color.FromArgb(15, 255, 255, 255)), // Flat integrated card bg
+                BorderBrush = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(10), // Standardized card radius
                 Margin = new Thickness(6),
                 Padding = new Thickness(12),
                 Child = new Grid
@@ -3669,14 +3824,14 @@ public sealed class MainWindow : Window
                                     Text = project?.Title ?? "Unknown",
                                     Foreground = Brushes.White,
                                     FontWeight = FontWeight.Bold,
-                                    FontSize = 14,
+                                    FontSize = 13.5,
                                     TextTrimming = TextTrimming.CharacterEllipsis
                                 },
                                 new TextBlock
                                 {
                                     Text = project?.Description ?? "",
-                                    Foreground = new SolidColorBrush(Color.Parse("#9CA3AF")),
-                                    FontSize = 12,
+                                    Foreground = new SolidColorBrush(Color.Parse("#8E96A8")),
+                                    FontSize = 11.5,
                                     TextWrapping = TextWrapping.NoWrap,
                                     TextTrimming = TextTrimming.CharacterEllipsis
                                 },
@@ -3687,8 +3842,8 @@ public sealed class MainWindow : Window
                                     Margin = new Thickness(0, 2, 0, 0),
                                     Children =
                                     {
-                                        new TextBlock { Text = "◆", Foreground = new SolidColorBrush(accentColorVal), FontSize = 10 },
-                                        new TextBlock { Text = $"{dlText} dls", Foreground = new SolidColorBrush(Color.Parse("#9CA3AF")), FontSize = 10 }
+                                        new TextBlock { Text = "•", Foreground = new SolidColorBrush(Color.Parse("#4E5A78")), FontSize = 10, VerticalAlignment = VerticalAlignment.Center },
+                                        new TextBlock { Text = $"{dlText} downloads", Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")), FontSize = 9.5, VerticalAlignment = VerticalAlignment.Center }
                                     }
                                 }
                             }
@@ -3701,32 +3856,20 @@ public sealed class MainWindow : Window
 
             cardBorder.Transitions = new Transitions
             {
-                new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) },
-                new BrushTransition { Property = Border.BackgroundProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) },
-                new BrushTransition { Property = Border.BorderBrushProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) },
-                new BoxShadowsTransition { Property = Border.BoxShadowProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) }
+                new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(200) },
+                new BrushTransition { Property = Border.BackgroundProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(200) }
             };
             cardBorder.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
             
             cardBorder.PointerEntered += (s, e) =>
             {
-                cardBorder.Background = new SolidColorBrush(Color.FromArgb(70, 30, 40, 60));
-                cardBorder.BorderBrush = new SolidColorBrush(accentColorVal);
-                cardBorder.RenderTransform = TransformOperations.Parse("scale(1.03)");
-                cardBorder.BoxShadow = new BoxShadows(new BoxShadow
-                {
-                    Blur = 10,
-                    Color = Color.FromArgb(40, accentColorVal.R, accentColorVal.G, accentColorVal.B),
-                    OffsetX = 0,
-                    OffsetY = 0
-                });
+                cardBorder.Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)); // Flat hover bg shift
+                cardBorder.RenderTransform = TransformOperations.Parse("scale(1.015)"); // Subtle scale
             };
             cardBorder.PointerExited += (s, e) =>
             {
-                cardBorder.Background = new SolidColorBrush(Color.FromArgb(40, 22, 28, 42));
-                cardBorder.BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
+                cardBorder.Background = new SolidColorBrush(Color.FromArgb(15, 255, 255, 255));
                 cardBorder.RenderTransform = TransformOperations.Parse("scale(1.0)");
-                cardBorder.BoxShadow = new BoxShadows();
             };
             ToolTip.SetTip(cardBorder, "Double-click to view details");
             cardBorder.DoubleTapped += (s, e) =>
@@ -3782,7 +3925,7 @@ public sealed class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0, 0, -10, 0),
             ZIndex = 10,
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
         ToolTip.SetTip(closeDetailsBtn, "Close Details");
         closeDetailsBtn.Click += (_, _) => {
@@ -3824,7 +3967,20 @@ public sealed class MainWindow : Window
                     {
                         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                         Margin = new Thickness(0, 10, 0, 16),
-                        Content = modrinthDetailsDesc
+                        Content = new Grid
+                        {
+                            RowDefinitions = new RowDefinitions("Auto,Auto"),
+                            Children =
+                            {
+                                modrinthDetailsDesc.With(row: 0),
+                                (modrinthModListPanel = new StackPanel
+                                {
+                                    Spacing = 4,
+                                    Margin = new Thickness(0, 12, 0, 0),
+                                    IsVisible = false
+                                }).With(row: 1)
+                            }
+                        }
                     }.With(row: 3),
                     
                     installSelectedButton.With(row: 4)
@@ -3940,21 +4096,22 @@ public sealed class MainWindow : Window
             // Handle "+ Add New Instance" placeholder card
             if (profile.Name == "__add_new_placeholder__")
             {
+                var accentColor = Color.Parse(_settings.AccentColor ?? "#8B5A2B");
                 var plusIcon = new Border
                 {
                     Width = 36,
                     Height = 36,
                     CornerRadius = new CornerRadius(18),
-                    BorderThickness = new Thickness(2),
-                    BorderBrush = new SolidColorBrush(Color.Parse("#5C6E91")),
+                    BorderThickness = new Thickness(1.5),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(180, accentColor.R, accentColor.G, accentColor.B)),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     Child = new TextBlock
                     {
                         Text = "+",
-                        FontSize = 20,
+                        FontSize = 18,
                         FontWeight = FontWeight.Bold,
-                        Foreground = new SolidColorBrush(Color.Parse("#5C6E91")),
+                        Foreground = new SolidColorBrush(Color.FromArgb(200, accentColor.R, accentColor.G, accentColor.B)),
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
                         Margin = new Thickness(0, -1, 0, 0)
@@ -3966,21 +4123,21 @@ public sealed class MainWindow : Window
                     Text = "Add New Instance",
                     FontSize = 13,
                     FontWeight = FontWeight.SemiBold,
-                    Foreground = new SolidColorBrush(Color.Parse("#5C6E91")),
+                    Foreground = new SolidColorBrush(Color.FromArgb(200, accentColor.R, accentColor.G, accentColor.B)),
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 4, 0, 0)
+                    Margin = new Thickness(0, 8, 0, 0)
                 };
 
                 var addCard = new Border
                 {
-                    Width = 245,
-                    Height = 145,
-                    CornerRadius = new CornerRadius(14),
-                    BorderThickness = new Thickness(2),
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
-                    Background = new SolidColorBrush(Color.FromArgb(100, 10, 14, 26)),
+                    Width = 290,
+                    Height = 160,
+                    CornerRadius = new CornerRadius(12),
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(40, accentColor.R, accentColor.G, accentColor.B)),
+                    Background = new SolidColorBrush(Color.FromArgb(30, accentColor.R, accentColor.G, accentColor.B)),
                     Margin = new Thickness(8),
-                    Cursor = new Cursor(StandardCursorType.Hand),
+                    Cursor = GetInteractiveCursor(),
                     Child = new StackPanel
                     {
                         VerticalAlignment = VerticalAlignment.Center,
@@ -3990,48 +4147,42 @@ public sealed class MainWindow : Window
                     },
                     Transitions = new Transitions
                     {
-                        new BrushTransition { Property = Border.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() },
-                        new BrushTransition { Property = Border.BorderBrushProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() },
-                        new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() }
+                        new BrushTransition { Property = Border.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() },
+                        new BrushTransition { Property = Border.BorderBrushProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() },
+                        new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() }
                     },
                     RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative)
                 };
 
                 plusIcon.Transitions = new Transitions
                 {
-                    new BrushTransition { Property = Border.BorderBrushProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() }
+                    new BrushTransition { Property = Border.BorderBrushProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() }
                 };
 
                 if (plusIcon.Child is TextBlock tbIcon)
                 {
                     tbIcon.Transitions = new Transitions
                     {
-                        new BrushTransition { Property = TextBlock.ForegroundProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() }
+                        new BrushTransition { Property = TextBlock.ForegroundProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() }
                     };
                 }
 
                 addText.Transitions = new Transitions
                 {
-                    new BrushTransition { Property = TextBlock.ForegroundProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() }
+                    new BrushTransition { Property = TextBlock.ForegroundProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() }
                 };
 
                 // Premium interactive hover animations
                 addCard.PointerEntered += (_, _) =>
                 {
-                    addCard.BorderBrush = new SolidColorBrush(Color.Parse("#38D6C4"));
-                    addCard.Background = new SolidColorBrush(Color.FromArgb(60, 56, 214, 196));
-                    plusIcon.BorderBrush = new SolidColorBrush(Color.Parse("#38D6C4"));
-                    if (plusIcon.Child is TextBlock tb) tb.Foreground = new SolidColorBrush(Color.Parse("#38D6C4"));
-                    addText.Foreground = new SolidColorBrush(Color.Parse("#38D6C4"));
-                    addCard.RenderTransform = TransformOperations.Parse("scale(1.025)");
+                    addCard.BorderBrush = new SolidColorBrush(accentColor);
+                    addCard.Background = new SolidColorBrush(Color.FromArgb(50, accentColor.R, accentColor.G, accentColor.B));
+                    addCard.RenderTransform = TransformOperations.Parse("scale(1.02)");
                 };
                 addCard.PointerExited += (_, _) =>
                 {
-                    addCard.BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
-                    addCard.Background = new SolidColorBrush(Color.FromArgb(100, 10, 14, 26));
-                    plusIcon.BorderBrush = new SolidColorBrush(Color.Parse("#5C6E91"));
-                    if (plusIcon.Child is TextBlock tb) tb.Foreground = new SolidColorBrush(Color.Parse("#5C6E91"));
-                    addText.Foreground = new SolidColorBrush(Color.Parse("#5C6E91"));
+                    addCard.BorderBrush = new SolidColorBrush(Color.FromArgb(40, accentColor.R, accentColor.G, accentColor.B));
+                    addCard.Background = new SolidColorBrush(Color.FromArgb(30, accentColor.R, accentColor.G, accentColor.B));
                     addCard.RenderTransform = TransformOperations.Parse("scale(1.0)");
                 };
 
@@ -4043,30 +4194,19 @@ public sealed class MainWindow : Window
 
             var card = new Border
             {
-                Width = 245,
-                Height = 145,
-                CornerRadius = new CornerRadius(14),
+                Width = 290,
+                Height = 160,
+                CornerRadius = new CornerRadius(12),
                 BorderThickness = new Thickness(1),
-                BorderBrush = isFugo
-                    ? new LinearGradientBrush
-                      {
-                          StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                          EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                          GradientStops =
-                          {
-                              new GradientStop(Color.Parse("#5B21B6"), 0.0),
-                              new GradientStop(Color.Parse("#3730A3"), 1.0)
-                          }
-                      }
-                    : new SolidColorBrush(Color.FromArgb(35, 255, 255, 255)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
                 Background = new SolidColorBrush(Color.FromArgb(160, 10, 14, 26)),
                 Margin = new Thickness(8),
                 ClipToBounds = true,
                 Transitions = new Transitions
                 {
-                    new BrushTransition { Property = Border.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() },
-                    new BrushTransition { Property = Border.BorderBrushProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() },
-                    new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() }
+                    new BrushTransition { Property = Border.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() },
+                    new BrushTransition { Property = Border.BorderBrushProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() },
+                    new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() }
                 },
                 RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative)
             };
@@ -4203,39 +4343,46 @@ public sealed class MainWindow : Window
             // Normal Content Layout
             var normalContent = new Grid
             {
-                RowDefinitions = new RowDefinitions("Auto,*,Auto"),
+                RowDefinitions = new RowDefinitions("Auto,*"),
                 Margin = new Thickness(14),
                 Transitions = new Transitions
                 {
-                    new DoubleTransition { Property = Control.OpacityProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) }
+                    new DoubleTransition { Property = Control.OpacityProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(200) }
                 }
             };
 
-            // Row 0: Top Bar (Icon, Last Played, Context Menu)
+            // Row 0: Top Bar — icon left, loader badge center, menu btn right
             var topBar = new Grid
             {
                 ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto")
             };
             topBar.Children.Add(iconContainer.With(column: 0));
 
-            var lastPlayedBlock = new TextBlock
+            // Loader badge in the middle-right of top row
+            var loaderBadge = new Border
             {
-                Text = profile.LaunchCountSinceLastInstall > 0
-                    ? $"Played {profile.LaunchCountSinceLastInstall} times"
-                    : "Never",
-                FontSize = 10,
-                Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")),
-                VerticalAlignment = VerticalAlignment.Center,
+                Background = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(5, 2),
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 0, 24, 0)
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 0, 4, 0),
+                Child = new TextBlock
+                {
+                    Text = string.IsNullOrWhiteSpace(profile.LoaderDisplay) ? "Vanilla" : profile.LoaderDisplay,
+                    FontSize = 9,
+                    FontWeight = FontWeight.Bold,
+                    Foreground = new SolidColorBrush(Color.Parse("#C0CCDD")),
+                    VerticalAlignment = VerticalAlignment.Center
+                }
             };
-
+            topBar.Children.Add(loaderBadge.With(column: 1));
             // Context Menu Button ("•••")
             var menuBtn = new Button
             {
                 Width = 24,
                 Height = 24,
-                CornerRadius = new CornerRadius(12),
+                CornerRadius = new CornerRadius(6),
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
                 Content = new TextBlock
@@ -4251,7 +4398,7 @@ public sealed class MainWindow : Window
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center,
                 Focusable = false,
-                Cursor = new Cursor(StandardCursorType.Hand)
+                Cursor = GetInteractiveCursor()
             };
 
             var contextMenu = new ContextMenu();
@@ -4365,19 +4512,15 @@ public sealed class MainWindow : Window
             menuBtn.ContextMenu = contextMenu;
             menuBtn.Click += (_, _) => contextMenu.Open(menuBtn);
 
-            var topBarRight = new Panel
-            {
-                Children = { lastPlayedBlock, menuBtn }
-            };
-            topBar.Children.Add(topBarRight.With(column: 2));
+            topBar.Children.Add(menuBtn.With(column: 2));
             normalContent.Children.Add(topBar.With(row: 0));
 
             // Row 1: Instance Name & Subtext
             var textStack = new StackPanel
             {
-                VerticalAlignment = VerticalAlignment.Center,
-                Spacing = 2,
-                Margin = new Thickness(0, 8, 0, 0)
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Spacing = 4,
+                Margin = new Thickness(0, 16, 0, 0)
             };
 
             var nameStack = new StackPanel
@@ -4397,85 +4540,29 @@ public sealed class MainWindow : Window
             };
             nameStack.Children.Add(nameBlock);
 
-            if (isFugo)
-            {
-                nameStack.Children.Add(new Border
-                {
-                    Background = new SolidColorBrush(Color.Parse("#382A0C")),
-                    BorderBrush = new SolidColorBrush(Color.Parse("#D4AF37")),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(4),
-                    Padding = new Thickness(4, 1),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Child = new TextBlock
-                    {
-                        Text = "★ OFFICIAL",
-                        FontSize = 7,
-                        FontWeight = FontWeight.Bold,
-                        Foreground = new SolidColorBrush(Color.Parse("#FFE066")),
-                        VerticalAlignment = VerticalAlignment.Center
-                    }
-                });
-            }
-
             var versionBlock = new TextBlock
             {
-                Text = $"{profile.LoaderDisplay} {profile.VersionId}".Trim(),
+                Text = profile.VersionId,
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.Parse("#A4A8B1")),
+                Foreground = new SolidColorBrush(Color.Parse("#8E96A8")),
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
 
             textStack.Children.Add(nameStack);
             textStack.Children.Add(versionBlock);
-            normalContent.Children.Add(textStack.With(row: 1));
 
-            // Row 2: Bottom Bar (Loader Pill & Version Pill)
-            Color loaderColor = Color.Parse("#A0A8B8");
-            string loaderDisplay = profile.LoaderDisplay ?? "Vanilla";
-            if (loaderDisplay.Contains("Fabric", StringComparison.OrdinalIgnoreCase))
-                loaderColor = Color.Parse("#C894FF");
-            else if (loaderDisplay.Contains("Forge", StringComparison.OrdinalIgnoreCase))
-                loaderColor = Color.Parse("#FF8A80");
-            else if (loaderDisplay.Contains("NeoForge", StringComparison.OrdinalIgnoreCase))
-                loaderColor = Color.Parse("#FFA726");
-            else if (loaderDisplay.Contains("Vanilla", StringComparison.OrdinalIgnoreCase))
-                loaderColor = Color.Parse("#81C784");
-
-            var loaderPill = new Border
+            if (profile.LaunchCountSinceLastInstall > 0)
             {
-                BorderBrush = new SolidColorBrush(loaderColor),
-                BorderThickness = new Thickness(1),
-                Background = new SolidColorBrush(Color.FromArgb(20, loaderColor.R, loaderColor.G, loaderColor.B)),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(6, 2),
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Child = new TextBlock
+                textStack.Children.Add(new TextBlock
                 {
-                    Text = loaderDisplay,
-                    FontSize = 9,
-                    FontWeight = FontWeight.Bold,
-                    Foreground = new SolidColorBrush(loaderColor),
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            };
+                    Text = $"Played {profile.LaunchCountSinceLastInstall} times",
+                    FontSize = 9.5,
+                    Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")),
+                    Opacity = 0.6
+                });
+            }
 
-            var bottomBar = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-                VerticalAlignment = VerticalAlignment.Bottom
-            };
-            bottomBar.Children.Add(loaderPill.With(column: 0));
-
-            var shortVersionBlock = new TextBlock
-            {
-                Text = profile.GameVersion ?? "",
-                FontSize = 10,
-                Foreground = new SolidColorBrush(Color.Parse("#8E96A8")),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            bottomBar.Children.Add(shortVersionBlock.With(column: 1));
-            normalContent.Children.Add(bottomBar.With(row: 2));
+            normalContent.Children.Add(textStack.With(row: 1));
 
             // Hover Content Overlay
             var hoverOverlay = new Grid
@@ -4497,7 +4584,7 @@ public sealed class MainWindow : Window
                 Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
                 BorderThickness = new Thickness(0),
                 Content = CreateVectorIcon("logs", 12, "#FFFFFF"),
-                Cursor = new Cursor(StandardCursorType.Hand),
+                Cursor = GetInteractiveCursor(),
                 Focusable = false
             };
             ToolTip.SetTip(consoleBtn, "Console Logs");
@@ -4520,7 +4607,7 @@ public sealed class MainWindow : Window
                 Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
                 BorderThickness = new Thickness(0),
                 Content = CreateVectorIcon("settings", 12, "#FFFFFF"),
-                Cursor = new Cursor(StandardCursorType.Hand),
+                Cursor = GetInteractiveCursor(),
                 Focusable = false
             };
             ToolTip.SetTip(settingsBtn, "Instance Settings");
@@ -4547,7 +4634,7 @@ public sealed class MainWindow : Window
                         new TextBlock { Text = "Play Now", FontSize = 11, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }
                     }
                 },
-                Cursor = new Cursor(StandardCursorType.Hand),
+                Cursor = GetInteractiveCursor(),
                 Focusable = false
             };
             hoverPlayBtn.Click += async (_, _) =>
@@ -4589,29 +4676,12 @@ public sealed class MainWindow : Window
                 normalContent.Opacity = 0.15;
                 hoverOverlay.Opacity = 1.0;
                 hoverOverlay.IsHitTestVisible = true;
-                card.RenderTransform = TransformOperations.Parse("scale(1.025)");
-                if (isFugo)
+                card.RenderTransform = TransformOperations.Parse("scale(1.02)");
+                
+                var isSelected = string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal);
+                if (!isSelected)
                 {
-                    card.BorderBrush = new LinearGradientBrush
-                    {
-                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                        GradientStops =
-                        {
-                            new GradientStop(Color.Parse("#FFE066"), 0.0),
-                            new GradientStop(Color.Parse("#38D6C4"), 0.5),
-                            new GradientStop(Color.Parse("#FFE066"), 1.0)
-                        }
-                    };
-                    card.BorderThickness = new Thickness(2);
-                }
-                else
-                {
-                    if (!string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal))
-                    {
-                        card.BorderBrush = new SolidColorBrush(Color.Parse("#38D6C4"));
-                        card.BorderThickness = new Thickness(2);
-                    }
+                    card.BorderBrush = new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
                 }
                 card.Background = new SolidColorBrush(Color.FromArgb(200, 16, 22, 38));
             };
@@ -4620,43 +4690,18 @@ public sealed class MainWindow : Window
                 normalContent.Opacity = 1.0;
                 hoverOverlay.Opacity = 0.0;
                 hoverOverlay.IsHitTestVisible = false;
-                var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
                 card.RenderTransform = TransformOperations.Parse("scale(1.0)");
-                if (isFugo)
+                
+                var currentAccent = _settings?.AccentColor ?? "#8B5A2B";
+                var isSelected = string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal);
+                if (isSelected)
                 {
-                    if (string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal))
-                    {
-                        card.BorderBrush = new LinearGradientBrush
-                        {
-                            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                            GradientStops = { new GradientStop(Color.Parse("#FFE066"), 0.0), new GradientStop(Color.Parse("#38D6C4"), 0.5), new GradientStop(Color.Parse("#FFE066"), 1.0) }
-                        };
-                        card.BorderThickness = new Thickness(2);
-                    }
-                    else
-                    {
-                        card.BorderBrush = new LinearGradientBrush
-                        {
-                            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                            GradientStops = { new GradientStop(Color.Parse("#5B21B6"), 0.0), new GradientStop(Color.Parse("#3730A3"), 1.0) }
-                        };
-                        card.BorderThickness = new Thickness(1);
-                    }
+                    var accent = Color.Parse(currentAccent);
+                    card.BorderBrush = new SolidColorBrush(accent);
                 }
                 else
                 {
-                    if (string.Equals(profile.InstanceDirectory, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal))
-                    {
-                        card.BorderBrush = new SolidColorBrush(Color.Parse(currentAccent));
-                        card.BorderThickness = new Thickness(2);
-                    }
-                    else
-                    {
-                        card.BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
-                        card.BorderThickness = new Thickness(1);
-                    }
+                    card.BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
                 }
 
                 if (coverBrush != Brushes.Transparent)
@@ -5517,6 +5562,1699 @@ public sealed class MainWindow : Window
         return new Border();
     }
 
+    private Control BuildCustomizeDeck()
+    {
+        return CreateGlassPanel(BuildCustomizePane());
+    }
+
+    private Control BuildCustomizePane()
+    {
+        var contentArea = new Border();
+
+        var cursorBtn = CreateSubTabPill("Cursor", true);
+        var skinBtn   = CreateSubTabPill("Skin", false);
+        var capeBtn   = CreateSubTabPill("Cape", false);
+        var themesBtn = CreateSubTabPill("Themes", false);
+
+        var subTabBtns = new[] { cursorBtn, skinBtn, capeBtn, themesBtn };
+
+        void SelectSubTab(string tabName, Button selectedBtn, Func<Control> paneBuilder)
+        {
+            _activeCustomizeTab = tabName;
+            foreach (var b in subTabBtns)
+            {
+                b.Background = new SolidColorBrush(Color.FromArgb(18, 255, 255, 255));
+                b.Foreground = new SolidColorBrush(Color.Parse("#BEC5D4"));
+                b.FontWeight = FontWeight.Medium;
+            }
+            selectedBtn.Background = Brushes.White;
+            selectedBtn.Foreground = Brushes.Black;
+            selectedBtn.FontWeight = FontWeight.Bold;
+
+            contentArea.Child = paneBuilder();
+            UpdateCharacterPreview();
+            // Return focus to the window so WASD immediately scrolls the new carousel
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => this.Focus(), Avalonia.Threading.DispatcherPriority.Background);
+        }
+
+        cursorBtn.Click += (_, _) => SelectSubTab("cursor", cursorBtn, BuildCursorGalleryPane);
+        skinBtn.Click   += (_, _) => SelectSubTab("skin", skinBtn, BuildSkinGalleryPane);
+        capeBtn.Click   += (_, _) => SelectSubTab("cape", capeBtn, BuildCapeGalleryPane);
+        themesBtn.Click += (_, _) => SelectSubTab("themes", themesBtn, BuildThemesGalleryPane);
+
+        switch (_activeCustomizeTab)
+        {
+            case "skin": SelectSubTab("skin", skinBtn, BuildSkinGalleryPane); break;
+            case "cape": SelectSubTab("cape", capeBtn, BuildCapeGalleryPane); break;
+            case "themes": SelectSubTab("themes", themesBtn, BuildThemesGalleryPane); break;
+            default: SelectSubTab("cursor", cursorBtn, BuildCursorGalleryPane); break;
+        }
+
+        var header = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Thickness(24, 16, 24, 12),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Children = { cursorBtn, skinBtn, capeBtn, themesBtn }
+        };
+
+        return new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            Children =
+            {
+                header.With(row: 0),
+                contentArea.With(row: 1)
+            }
+        };
+    }
+
+    private Button CreateSubTabPill(string label, bool active)
+    {
+        return new Button
+        {
+            Content = label,
+            Padding = new Thickness(18, 8),
+            CornerRadius = new CornerRadius(14),
+            FontSize = 12,
+            FontWeight = active ? FontWeight.Bold : FontWeight.Medium,
+            Background = active ? Brushes.White : new SolidColorBrush(Color.FromArgb(18, 255, 255, 255)),
+            Foreground = active ? Brushes.Black : new SolidColorBrush(Color.Parse("#BEC5D4")),
+            Cursor = GetInteractiveCursor()
+        };
+    }
+
+    private static TextBlock CreateHeaderLabel(string text)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            FontSize = 13,
+            FontWeight = FontWeight.Bold,
+            Foreground = Brushes.White,
+            Margin = new Thickness(0, 8, 0, 4)
+        };
+    }
+
+    private Image Get3DCharacterControl()
+    {
+        if (customizeCharacterImage == null)
+        {
+            customizeCharacterImage = new Image
+            {
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Width = 240,
+                Height = 300
+            };
+            
+            customizeCharacterImage.PointerPressed += (s, e) =>
+            {
+                var pointerInfo = e.GetCurrentPoint(customizeCharacterImage);
+                if (pointerInfo.Properties.IsLeftButtonPressed)
+                {
+                    _isDraggingCharacter = true;
+                    _lastDragPoint = e.GetPosition(customizeCharacterImage);
+                    _dragVelocity = 0.0;
+                    e.Handled = true;
+                }
+            };
+
+            customizeCharacterImage.PointerMoved += (s, e) =>
+            {
+                if (_isDraggingCharacter)
+                {
+                    var currentPoint = e.GetPosition(customizeCharacterImage);
+                    double dx = currentPoint.X - _lastDragPoint.X;
+                    double dy = currentPoint.Y - _lastDragPoint.Y;
+                    _rotationAngle -= dx * 0.015;
+                    _rotationAngleX = Math.Clamp(_rotationAngleX + dy * 0.012, -0.5, 0.5);
+                    _dragVelocity = -dx * 0.015;
+                    _lastDragPoint = currentPoint;
+                    UpdateCharacterPreview();
+                    e.Handled = true;
+                }
+            };
+
+            customizeCharacterImage.PointerReleased += (s, e) =>
+            {
+                if (_isDraggingCharacter)
+                {
+                    _isDraggingCharacter = false;
+                    e.Handled = true;
+                }
+            };
+        }
+        return customizeCharacterImage;
+    }
+
+    private void ScrollActiveCarousel(int direction)
+    {
+        if (_activeCustomizeScrollViewer == null) return;
+        double step = 218;
+        double currentX = _activeCustomizeScrollViewer.Offset.X;
+        double maxX = Math.Max(0, _activeCustomizeScrollViewer.Extent.Width - _activeCustomizeScrollViewer.Viewport.Width);
+        double targetX = Math.Clamp(currentX + (direction * step), 0, maxX);
+        _activeCustomizeScrollViewer.Offset = new Vector(targetX, 0);
+    }
+
+    private Control BuildVisualCarouselContainer(string sectionTitle, List<Control> cards, Func<Control>? rightSidePreview = null, string? subtitle = null)
+    {
+        var accentHex = !string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#3B82F6";
+        Color accentColor;
+        try { accentColor = Color.Parse(accentHex); } catch { accentColor = Color.Parse("#3B82F6"); }
+
+        var titleBlock = new TextBlock
+        {
+            Text = sectionTitle.ToUpperInvariant(),
+            FontSize = 32,
+            FontWeight = FontWeight.Black,
+            Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            LetterSpacing = 5,
+            Margin = new Thickness(0, 4, 0, 20)
+        };
+
+        var cardStack = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 18
+        };
+        foreach (var card in cards)
+        {
+            cardStack.Children.Add(card);
+        }
+
+        var scrollViewer = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Hidden,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            Content = cardStack,
+            Width = 630,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        _activeCustomizeScrollViewer = scrollViewer;
+
+        var dotsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 16, 0, 0)
+        };
+
+        void UpdateDots()
+        {
+            dotsPanel.Children.Clear();
+            int total = cards.Count;
+            if (total <= 1) return;
+
+            int step = 218;
+            int currentIndex = Math.Clamp((int)Math.Round(scrollViewer.Offset.X / step), 0, total - 1);
+
+            for (int i = 0; i < total; i++)
+            {
+                bool isCurrent = i == currentIndex;
+                dotsPanel.Children.Add(new Border
+                {
+                    Width = isCurrent ? 22 : 8,
+                    Height = 8,
+                    CornerRadius = new CornerRadius(4),
+                    Background = isCurrent
+                        ? new SolidColorBrush(Brushes.White.Color)
+                        : new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)),
+                    Transitions = new Transitions
+                    {
+                        new DoubleTransition { Property = WidthProperty, Duration = TimeSpan.FromMilliseconds(200) }
+                    }
+                });
+            }
+        }
+
+        scrollViewer.ScrollChanged += (_, _) => UpdateDots();
+        UpdateDots();
+
+        Button CreateKeycapButton(string label, Action onClick)
+        {
+            var btn = new Button
+            {
+                Width = 48,
+                Height = 48,
+                CornerRadius = new CornerRadius(12),
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                    GradientStops =
+                    {
+                        new GradientStop(Color.Parse("#2C3142"), 0),
+                        new GradientStop(Color.Parse("#12151D"), 1)
+                    }
+                },
+                BorderBrush = new SolidColorBrush(Color.Parse("#4A5268")),
+                BorderThickness = new Thickness(1.5),
+                Cursor = GetInteractiveCursor(),
+                Content = new TextBlock
+                {
+                    Text = label,
+                    FontSize = 18,
+                    FontWeight = FontWeight.Black,
+                    Foreground = Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            };
+            btn.Click += (_, _) => onClick();
+            return btn;
+        };
+
+        void ScrollStep(int direction)
+        {
+            double step = 218;
+            double targetX = Math.Clamp(scrollViewer.Offset.X + (direction * step), 0, Math.Max(0, scrollViewer.Extent.Width - scrollViewer.Viewport.Width));
+            scrollViewer.Offset = new Vector(targetX, 0);
+        }
+
+        var btnW = CreateKeycapButton("W", () => ScrollStep(-1));
+        var btnS = CreateKeycapButton("S", () => ScrollStep(1));
+
+        scrollViewer.PointerWheelChanged += (s, e) =>
+        {
+            double delta = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
+            ScrollStep(delta > 0 ? -1 : 1);
+            e.Handled = true;
+        };
+
+        scrollViewer.Focusable = true;
+        scrollViewer.KeyDown += (s, e) =>
+        {
+            if (e.Key == Key.W || e.Key == Key.A || e.Key == Key.Left)
+            {
+                ScrollStep(-1);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.S || e.Key == Key.D || e.Key == Key.Right)
+            {
+                ScrollStep(1);
+                e.Handled = true;
+            }
+        };
+
+        var carouselRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 16,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { btnW, scrollViewer, btnS }
+        };
+
+        var carouselColumn = new StackPanel
+        {
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Children = { titleBlock }
+        };
+
+        if (!string.IsNullOrWhiteSpace(subtitle))
+        {
+            carouselColumn.Children.Add(new TextBlock
+            {
+                Text = subtitle,
+                FontSize = 13,
+                Foreground = new SolidColorBrush(Color.Parse("#A7AEC0")),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, -14, 0, 12)
+            });
+        }
+        carouselColumn.Children.Add(carouselRow);
+        carouselColumn.Children.Add(dotsPanel);
+
+        if (rightSidePreview != null)
+        {
+            var sideControl = rightSidePreview();
+            return new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Children =
+                {
+                    carouselColumn.With(column: 0),
+                    sideControl.With(column: 1)
+                }
+            };
+        }
+
+        return carouselColumn;
+    }
+
+    private Control BuildCursorGalleryPane()
+    {
+        var options = GetAvailableCursorOptions();
+        var accentHex = !string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#3B82F6";
+        Color accentColor;
+        try { accentColor = Color.Parse(accentHex); } catch { accentColor = Color.Parse("#3B82F6"); }
+
+        var scaleValueLabel = new TextBlock
+        {
+            Text = $"{(_settings.CursorScale > 0 ? _settings.CursorScale : 32)}px",
+            FontSize = 12,
+            FontWeight = FontWeight.Bold,
+            Foreground = new SolidColorBrush(accentColor),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var scaleSlider = new Slider
+        {
+            Minimum = 16,
+            Maximum = 64,
+            Value = _settings.CursorScale > 0 ? _settings.CursorScale : 32,
+            Width = 180,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        scaleSlider.ValueChanged += (_, e) =>
+        {
+            int val = (int)e.NewValue;
+            scaleValueLabel.Text = $"{val}px";
+            _settings.CursorScale = val;
+            _settingsStore.Save(_settings);
+            ApplyCustomCursor();
+        };
+
+        var sliderHeader = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 12,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 16),
+            Children =
+            {
+                new TextBlock { Text = "Cursor Size:", FontSize = 12, FontWeight = FontWeight.Medium, Foreground = new SolidColorBrush(Color.Parse("#A0AABB")), VerticalAlignment = VerticalAlignment.Center },
+                scaleSlider,
+                scaleValueLabel
+            }
+        };
+
+        var cursorsDir = GetCursorsDirectoryPath();
+        var currentStyle = _settings.CustomCursorStyle ?? "Skyrim Set";
+
+        var gradientPresets = new[]
+        {
+            (Color.Parse("#81FBB8"), Color.Parse("#28C76F")),
+            (Color.Parse("#FF9A8B"), Color.Parse("#FF6A88")),
+            (Color.Parse("#4158D0"), Color.Parse("#C850C0")),
+            (Color.Parse("#FA8BFF"), Color.Parse("#2BD2FF")),
+            (Color.Parse("#FBAB7E"), Color.Parse("#F7CE68"))
+        };
+
+        var cards = new List<Control>();
+        int idx = 0;
+        foreach (var opt in options)
+        {
+            bool isSelected = string.Equals(opt, currentStyle, StringComparison.OrdinalIgnoreCase);
+
+            string previewFile = "";
+            if (string.Equals(opt, "Skyrim Set", StringComparison.OrdinalIgnoreCase))
+            {
+                previewFile = Path.Combine(cursorsDir, "skyrim set", "Normal.cur");
+            }
+            else if (!string.Equals(opt, "System Default", StringComparison.OrdinalIgnoreCase))
+            {
+                var directFile = Path.Combine(cursorsDir, opt);
+                if (File.Exists(directFile)) previewFile = directFile;
+                else if (Directory.Exists(directFile))
+                {
+                    previewFile = Path.Combine(directFile, "Normal.cur");
+                    if (!File.Exists(previewFile))
+                    {
+                        var files = Directory.GetFiles(directFile, "*.*");
+                        if (files.Length > 0) previewFile = files[0];
+                    }
+                }
+            }
+
+            Image? imgControl = null;
+            if (File.Exists(previewFile))
+            {
+                var (bmp, _) = CursorHelper.LoadCursor(previewFile, 56);
+                if (bmp != null)
+                {
+                    imgControl = new Image { Source = bmp, Width = 56, Height = 56, Stretch = Stretch.Uniform };
+                }
+            }
+
+            Control imageHost = imgControl != null ? (Control)imgControl : new TextBlock
+            {
+                Text = opt == "System Default" ? "🖱️" : "✨",
+                FontSize = 40,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var grad = gradientPresets[idx % gradientPresets.Length];
+            idx++;
+
+            var cardBorder = new Border
+            {
+                Width = 200,
+                Height = 160,
+                CornerRadius = new CornerRadius(24),
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                    GradientStops =
+                    {
+                        new GradientStop(Color.FromArgb(160, grad.Item1.R, grad.Item1.G, grad.Item1.B), 0),
+                        new GradientStop(Color.FromArgb(160, grad.Item2.R, grad.Item2.G, grad.Item2.B), 1)
+                    }
+                },
+                BorderBrush = isSelected ? Brushes.White : new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)),
+                BorderThickness = new Thickness(isSelected ? 3 : 1.5),
+                BoxShadow = isSelected ? BoxShadows.Parse("0 10 24 0 #80000000") : BoxShadows.Parse("0 4 12 0 #40000000"),
+                Cursor = GetInteractiveCursor(),
+                Child = new Grid
+                {
+                    RowDefinitions = new RowDefinitions("*,Auto"),
+                    Children =
+                    {
+                        new Border
+                        {
+                            Padding = new Thickness(12),
+                            Child = imageHost
+                        }.With(row: 0),
+
+                        new Border
+                        {
+                            Padding = new Thickness(8, 8),
+                            Background = new SolidColorBrush(Color.FromArgb(160, 10, 14, 22)),
+                            CornerRadius = new CornerRadius(0, 0, 24, 24),
+                            Child = new TextBlock
+                            {
+                                Text = opt,
+                                FontSize = 12,
+                                FontWeight = isSelected ? FontWeight.ExtraBold : FontWeight.SemiBold,
+                                Foreground = Brushes.White,
+                                HorizontalAlignment = HorizontalAlignment.Center,
+                                TextTrimming = TextTrimming.CharacterEllipsis
+                            }
+                        }.With(row: 1)
+                    }
+                }
+            };
+
+            var capturedOpt = opt;
+            cardBorder.PointerPressed += (_, _) =>
+            {
+                _settings.CustomCursorStyle = capturedOpt;
+                _settingsStore.Save(_settings);
+                ApplyCustomCursor();
+                RebuildUiFromLayoutState(_activeSection);
+            };
+
+            cards.Add(cardBorder);
+        }
+
+        var carousel = BuildVisualCarouselContainer("CURSORS", cards);
+
+        return new ScrollViewer
+        {
+            Padding = new Thickness(24, 8, 20, 20),
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                Children =
+                {
+                    sliderHeader,
+                    carousel
+                }
+            }
+        };
+    }
+
+    private Control BuildSkinGalleryPane()
+    {
+        var accentHex = !string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#3B82F6";
+        Color accentColor;
+        try { accentColor = Color.Parse(accentHex); } catch { accentColor = Color.Parse("#3B82F6"); }
+
+        var activeSkinPath = _settings.CustomSkinPath ?? "";
+
+        var usernameBox = CreateTextBox();
+        usernameBox.Watermark = "Enter Username (e.g. Dream, Notch)";
+        usernameBox.Width = 240;
+
+        var fetchBtn = new Button
+        {
+            Content = "Fetch Skin",
+            Padding = new Thickness(14, 6),
+            CornerRadius = new CornerRadius(10),
+            Background = new SolidColorBrush(accentColor),
+            Foreground = Brushes.White,
+            FontWeight = FontWeight.Bold,
+            FontSize = 12,
+            Cursor = GetInteractiveCursor()
+        };
+        fetchBtn.Click += async (_, _) => await FetchSkinByUsernameAsync(usernameBox.Text ?? "");
+
+        var importBtn = new Button
+        {
+            Content = "＋ Import Skin",
+            Padding = new Thickness(14, 6),
+            CornerRadius = new CornerRadius(10),
+            Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            Foreground = Brushes.White,
+            FontSize = 12,
+            Cursor = GetInteractiveCursor()
+        };
+        importBtn.Click += async (_, _) => await ChangeSkinAsync();
+
+        var searchStack = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 16),
+            Children = { usernameBox, fetchBtn, importBtn }
+        };
+
+        var popularSkins = new[]
+        {
+            ("Steve", ""),
+            ("Dream", "Dream"),
+            ("Technoblade", "Technoblade"),
+            ("Notch", "Notch"),
+            ("MumboJumbo", "MumboJumbo"),
+            ("Grian", "Grian"),
+            ("Spreen", "Spreen"),
+            ("TommyInnit", "TommyInnit"),
+            ("Tubbo", "Tubbo")
+        };
+        _ = EnsurePopularSkinPreviewsAsync(popularSkins.Select(s => s.Item2).Where(s => !string.IsNullOrWhiteSpace(s)));
+
+        var cards = new List<Control>();
+        var skinsDir = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "skins");
+
+        foreach (var (name, user) in popularSkins)
+        {
+            bool isSelected = string.IsNullOrEmpty(user)
+                ? string.IsNullOrEmpty(activeSkinPath)
+                : (!string.IsNullOrEmpty(activeSkinPath) && activeSkinPath.Contains(user, StringComparison.OrdinalIgnoreCase));
+
+            Bitmap? previewBmp = null;
+            if (string.IsNullOrEmpty(user))
+            {
+                var stevePath = Path.Combine(AppContext.BaseDirectory, "assets", "original-minecraft-skin-steve.png");
+                if (File.Exists(stevePath)) previewBmp = GetSkinFullBodyPreview(stevePath);
+            }
+            else
+            {
+                var userSkinPath = Path.Combine(skinsDir, $"{user}.png");
+                if (File.Exists(userSkinPath)) previewBmp = GetSkinFullBodyPreview(userSkinPath);
+            }
+
+            var capturedUser = user;
+            cards.Add(CreateMediaCard(name, previewBmp, isSelected, accentColor, async () =>
+            {
+                if (string.IsNullOrEmpty(capturedUser))
+                {
+                    _settings.CustomSkinPath = string.Empty;
+                    _settingsStore.Save(_settings);
+                    RebuildUiFromLayoutState(_activeSection);
+                }
+                else
+                {
+                    await FetchSkinByUsernameAsync(capturedUser);
+                }
+            }));
+        }
+
+        Func<Control> rightSidePreviewBuilder = () =>
+        {
+            var img3D = DetachFromParent(Get3DCharacterControl())!;
+            return new Border
+            {
+                Width = 260,
+                Height = 320,
+                Margin = new Thickness(24, 0, 0, 0),
+                CornerRadius = new CornerRadius(24),
+                Background = new SolidColorBrush(Color.FromArgb(30, 0, 0, 0)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1.5),
+                Child = new Grid
+                {
+                    Children =
+                    {
+                        img3D,
+                        new TextBlock { Text = "Rotate 3D Character", FontSize = 10, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 10) }
+                    }
+                }
+            };
+        };
+
+        var carousel = BuildVisualCarouselContainer("CHOOSE YOUR SKIN", cards, rightSidePreviewBuilder,
+            "Select a skin to customize your appearance");
+
+        return new ScrollViewer
+        {
+            Padding = new Thickness(24, 8, 20, 20),
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                Children =
+                {
+                    searchStack,
+                    carousel
+                }
+            }
+        };
+    }
+
+    private Control BuildCapeGalleryPane()
+    {
+        var accentHex = !string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#3B82F6";
+        Color accentColor;
+        try { accentColor = Color.Parse(accentHex); } catch { accentColor = Color.Parse("#3B82F6"); }
+
+        var activeCapePath = _settings.CustomCapePath ?? "";
+
+        var usernameBox = CreateTextBox();
+        usernameBox.Watermark = "Enter Username for Cape (e.g. Notch)";
+        usernameBox.Width = 240;
+
+        var fetchBtn = new Button
+        {
+            Content = "Fetch Cape",
+            Padding = new Thickness(14, 6),
+            CornerRadius = new CornerRadius(10),
+            Background = new SolidColorBrush(accentColor),
+            Foreground = Brushes.White,
+            FontWeight = FontWeight.Bold,
+            FontSize = 12,
+            Cursor = GetInteractiveCursor()
+        };
+        fetchBtn.Click += async (_, _) => await FetchCapeByUsernameAsync(usernameBox.Text ?? "");
+
+        var importBtn = new Button
+        {
+            Content = "＋ Import Cape",
+            Padding = new Thickness(14, 6),
+            CornerRadius = new CornerRadius(10),
+            Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            Foreground = Brushes.White,
+            FontSize = 12,
+            Cursor = GetInteractiveCursor()
+        };
+        importBtn.Click += async (_, _) => await ChangeCapeAsync();
+
+        var searchStack = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 16),
+            Children = { usernameBox, fetchBtn, importBtn }
+        };
+
+        var cards = new List<Control>();
+        var capesDir = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "capes");
+        bool noCapeSelected = string.IsNullOrEmpty(activeCapePath);
+        cards.Add(CreateMediaCard("No Cape", null, noCapeSelected, accentColor, () =>
+        {
+            _settings.CustomCapePath = string.Empty;
+            _settings.CustomCapeSourcePath = string.Empty;
+            _settingsStore.Save(_settings);
+            UpdateCharacterPreview();
+            RebuildUiFromLayoutState(_activeSection);
+        }, "∅"));
+
+        var popularCapes = new[]
+        {
+            ("Minecon 2011", "minecon_2011", Color.Parse("#7B2532"), Color.Parse("#D8A84B"), 0),
+            ("Minecon 2012", "minecon_2012", Color.Parse("#173F73"), Color.Parse("#8FE6FF"), 1),
+            ("Minecon 2016", "minecon_2016", Color.Parse("#5A183E"), Color.Parse("#F2D45C"), 2),
+            ("Migrator", "migrator", Color.Parse("#7F2924"), Color.Parse("#E6D7A1"), 3),
+            ("Vanilla", "vanilla", Color.Parse("#2B6B4A"), Color.Parse("#9BE7C2"), 4),
+            ("Founder", "founder", Color.Parse("#5A3B16"), Color.Parse("#F3CC64"), 5),
+            ("OptiFine Style", "optifine_style", Color.Parse("#771A23"), Color.Parse("#AC4BFF"), 6)
+        };
+
+        foreach (var (label, id, primary, secondary, pattern) in popularCapes)
+        {
+            var capePath = EnsurePopularCapePresetPath(id, primary, secondary, pattern);
+            var capturedPath = capePath;
+            bool isSelected = string.Equals(activeCapePath, capturedPath, StringComparison.OrdinalIgnoreCase);
+            cards.Add(CreateMediaCard(label, GetCapePreview(capePath), isSelected, accentColor, () =>
+            {
+                _settings.CustomCapePath = capturedPath;
+                _settings.CustomCapeSourcePath = capturedPath;
+                _settingsStore.Save(_settings);
+                UpdateCharacterPreview();
+                RebuildUiFromLayoutState(_activeSection);
+            }, "▥"));
+        }
+
+        if (Directory.Exists(capesDir))
+        {
+            foreach (var capePath in Directory.GetFiles(capesDir, "*.png")
+                .Where(path => !Path.GetFileName(path).StartsWith("popular_", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .Take(12))
+            {
+                var capturedPath = capePath;
+                bool isSelected = string.Equals(activeCapePath, capturedPath, StringComparison.OrdinalIgnoreCase);
+                var label = Path.GetFileNameWithoutExtension(capePath).Replace('_', ' ');
+                cards.Add(CreateMediaCard(label, GetCapePreview(capePath), isSelected, accentColor, () =>
+                {
+                    _settings.CustomCapePath = capturedPath;
+                    _settings.CustomCapeSourcePath = capturedPath;
+                    _settingsStore.Save(_settings);
+                    UpdateCharacterPreview();
+                    RebuildUiFromLayoutState(_activeSection);
+                }, "🧥"));
+            }
+        }
+
+        cards.Add(CreateMediaCard("Import Cape", null, false, accentColor,
+            async () => await ChangeCapeAsync(), "＋"));
+
+        Func<Control> rightSidePreviewBuilder = () =>
+        {
+            var img3D = DetachFromParent(Get3DCharacterControl())!;
+            return new Border
+            {
+                Width = 260,
+                Height = 320,
+                Margin = new Thickness(24, 0, 0, 0),
+                CornerRadius = new CornerRadius(24),
+                Background = new SolidColorBrush(Color.FromArgb(30, 0, 0, 0)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1.5),
+                Child = new Grid
+                {
+                    Children =
+                    {
+                        img3D,
+                        new TextBlock { Text = "Rotate 3D Character", FontSize = 10, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 10) }
+                    }
+                }
+            };
+        };
+
+        var carousel = BuildVisualCarouselContainer("CHOOSE YOUR CAPE", cards, rightSidePreviewBuilder,
+            "Select a cape to customize your appearance");
+
+        return new ScrollViewer
+        {
+            Padding = new Thickness(24, 8, 20, 20),
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                Children =
+                {
+                    searchStack,
+                    carousel
+                }
+            }
+        };
+    }
+
+    private Control BuildThemesGalleryPane()
+    {
+        var accentHex = !string.IsNullOrWhiteSpace(_settings.AccentColor) ? _settings.AccentColor : "#3B82F6";
+        Color accentColor;
+        try { accentColor = Color.Parse(accentHex); } catch { accentColor = Color.Parse("#3B82F6"); }
+
+        var currentPreset = _settings.SelectedPreset ?? "None";
+
+        var presets = new[]
+        {
+            ("None", "Default Dark", (Bitmap?)null),
+            ("Liquid Glass", "Liquid Glass", GetAssetBitmap("theme_liquid_glass.png")),
+            ("Mountains", "Mountains", GetAssetBitmap("launcherbackground.png")),
+            ("Clear Blue Sky", "Clear Blue Sky", (Bitmap?)null)
+        };
+
+        var cards = new List<Control>();
+        foreach (var (presetId, title, bmp) in presets)
+        {
+            bool isSelected = string.Equals(presetId, currentPreset, StringComparison.OrdinalIgnoreCase);
+
+            var card = new Border
+            {
+                Width = 200,
+                Height = 150,
+                CornerRadius = new CornerRadius(24),
+                Background = isSelected
+                    ? new SolidColorBrush(Color.FromArgb(60, accentColor.R, accentColor.G, accentColor.B))
+                    : new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+                BorderBrush = isSelected ? new SolidColorBrush(accentColor) : new SolidColorBrush(Color.FromArgb(35, 255, 255, 255)),
+                BorderThickness = new Thickness(isSelected ? 3 : 1),
+                BoxShadow = isSelected ? BoxShadows.Parse("0 8 20 0 #50000000") : BoxShadows.Parse("0 4 12 0 #30000000"),
+                Cursor = GetInteractiveCursor(),
+                Child = new Grid
+                {
+                    Children =
+                    {
+                        bmp != null
+                            ? new Image { Source = bmp, Stretch = Stretch.UniformToFill, Opacity = 0.65 }
+                            : new Border { Background = new SolidColorBrush(Color.FromArgb(40, 20, 30, 50)) },
+
+                        new Border
+                        {
+                            VerticalAlignment = VerticalAlignment.Bottom,
+                            Padding = new Thickness(10, 8),
+                            Background = new SolidColorBrush(Color.FromArgb(180, 10, 15, 25)),
+                            CornerRadius = new CornerRadius(0, 0, 24, 24),
+                            Child = new TextBlock
+                            {
+                                Text = title,
+                                FontSize = 12,
+                                FontWeight = isSelected ? FontWeight.Bold : FontWeight.Medium,
+                                Foreground = Brushes.White,
+                                HorizontalAlignment = HorizontalAlignment.Center
+                            }
+                        }
+                    }
+                }
+            };
+
+            var capturedPreset = presetId;
+            card.PointerPressed += (_, _) =>
+            {
+                _settings.SelectedPreset = capturedPreset;
+                _settingsStore.Save(_settings);
+                ApplySelectedPresetStyle();
+                RebuildUiFromLayoutState(_activeSection);
+            };
+
+            cards.Add(card);
+        }
+
+        var carousel = BuildVisualCarouselContainer("THEMES", cards);
+
+        return new ScrollViewer
+        {
+            Padding = new Thickness(24, 8, 20, 20),
+            Content = carousel
+        };
+    }
+
+    private static void SaveImageAsPng(SixLabors.ImageSharp.Image image, string destinationPath)
+    {
+        using var output = File.Create(destinationPath);
+        image.Save(output, new SixLabors.ImageSharp.Formats.Png.PngEncoder());
+    }
+
+    private static string SanitizeAssetFileName(string value)
+        => Regex.Replace(value.Trim(), "[^A-Za-z0-9_.-]", "_");
+
+    private async Task<string> DownloadSkinForUsernameAsync(string username)
+    {
+        var safeUsername = username.Trim();
+        var fileSafeUsername = SanitizeAssetFileName(safeUsername);
+        var url = $"https://minotar.net/skin/{Uri.EscapeDataString(safeUsername)}";
+        using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+        var bytes = await http.GetByteArrayAsync(url);
+        if (bytes.Length == 0)
+            throw new InvalidOperationException("The skin service returned an empty image.");
+
+        using var image = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(bytes);
+        if (image.Width != 64 || (image.Height != 64 && image.Height != 32))
+            throw new InvalidOperationException($"The returned image is {image.Width}x{image.Height}; Minecraft skins must be 64x64 or 64x32 PNGs.");
+
+        var destDir = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "skins");
+        Directory.CreateDirectory(destDir);
+        var destPath = Path.Combine(destDir, $"{fileSafeUsername}.png");
+        SaveImageAsPng(image, destPath);
+        return destPath;
+    }
+
+    private async Task EnsurePopularSkinPreviewsAsync(IEnumerable<string> usernames)
+    {
+        if (_isLoadingPopularSkinPreviews) return;
+
+        var skinsDir = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "skins");
+        var missing = usernames
+            .Select(u => u.Trim())
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(u => !File.Exists(Path.Combine(skinsDir, $"{SanitizeAssetFileName(u)}.png")))
+            .ToList();
+
+        if (missing.Count == 0) return;
+
+        _isLoadingPopularSkinPreviews = true;
+        var changed = false;
+        try
+        {
+            foreach (var username in missing)
+            {
+                try
+                {
+                    await DownloadSkinForUsernameAsync(username);
+                    changed = true;
+                }
+                catch (Exception ex)
+                {
+                    LauncherLog.Warn($"[SkinPreview] Failed to preload popular skin '{username}': {ex.Message}");
+                }
+            }
+        }
+        finally
+        {
+            _isLoadingPopularSkinPreviews = false;
+        }
+
+        if (changed && _activeSection == "customize" && _activeCustomizeTab == "skin")
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => RebuildUiFromLayoutState(_activeSection));
+    }
+
+    private async Task FetchSkinByUsernameAsync(string username)
+    {
+        if (string.IsNullOrWhiteSpace(username)) return;
+        try
+        {
+            var destPath = await DownloadSkinForUsernameAsync(username);
+            _settings.CustomSkinPath = destPath;
+            _settingsStore.Save(_settings);
+            RebuildUiFromLayoutState(_activeSection);
+        }
+        catch (Exception ex)
+        {
+            await DialogService.ShowInfoAsync(this, "Error", $"Failed to fetch skin for '{username}': {ex.Message}");
+        }
+    }
+
+    private string EnsurePopularCapePresetPath(string id, Color primary, Color secondary, int pattern)
+    {
+        var destDir = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "capes");
+        Directory.CreateDirectory(destDir);
+        var destPath = Path.Combine(destDir, $"popular_{SanitizeAssetFileName(id)}.png");
+        if (File.Exists(destPath))
+            return destPath;
+
+        using var image = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(64, 32);
+        var transparent = new SixLabors.ImageSharp.PixelFormats.Rgba32(0, 0, 0, 0);
+        var p = new SixLabors.ImageSharp.PixelFormats.Rgba32(primary.R, primary.G, primary.B, 255);
+        var s = new SixLabors.ImageSharp.PixelFormats.Rgba32(secondary.R, secondary.G, secondary.B, 255);
+        var dark = new SixLabors.ImageSharp.PixelFormats.Rgba32(
+            (byte)Math.Max(0, primary.R - 35),
+            (byte)Math.Max(0, primary.G - 35),
+            (byte)Math.Max(0, primary.B - 35),
+            255);
+
+        for (var y = 0; y < image.Height; y++)
+        {
+            for (var x = 0; x < image.Width; x++)
+                image[x, y] = transparent;
+        }
+
+        void FillRect(int x, int y, int w, int h, SixLabors.ImageSharp.PixelFormats.Rgba32 color)
+        {
+            for (var yy = Math.Max(0, y); yy < Math.Min(image.Height, y + h); yy++)
+            {
+                for (var xx = Math.Max(0, x); xx < Math.Min(image.Width, x + w); xx++)
+                    image[xx, yy] = color;
+            }
+        }
+
+        void FillCapeFace(int x, int y)
+        {
+            FillRect(x, y, 10, 16, p);
+            FillRect(x, y, 10, 2, dark);
+            FillRect(x, y + 14, 10, 2, dark);
+
+            switch (pattern % 7)
+            {
+                case 0:
+                    FillRect(x + 4, y + 3, 2, 10, s);
+                    FillRect(x + 2, y + 6, 6, 3, s);
+                    break;
+                case 1:
+                    for (var i = 0; i < 10; i += 2) FillRect(x + i, y, 1, 16, s);
+                    break;
+                case 2:
+                    FillRect(x + 1, y + 1, 8, 2, s);
+                    FillRect(x + 1, y + 13, 8, 2, s);
+                    FillRect(x + 1, y + 1, 2, 14, s);
+                    FillRect(x + 7, y + 1, 2, 14, s);
+                    break;
+                case 3:
+                    for (var i = -8; i < 12; i += 4)
+                        for (var yy = 0; yy < 16; yy++)
+                        {
+                            var xx = i + yy / 2;
+                            if (xx >= 0 && xx < 10) image[x + xx, y + yy] = s;
+                        }
+                    break;
+                case 4:
+                    FillRect(x + 2, y + 2, 6, 12, s);
+                    FillRect(x + 3, y + 3, 4, 10, p);
+                    FillRect(x + 4, y + 4, 2, 8, s);
+                    break;
+                case 5:
+                    FillRect(x + 1, y + 4, 8, 3, s);
+                    FillRect(x + 3, y + 2, 4, 12, s);
+                    break;
+                default:
+                    FillRect(x + 2, y + 3, 6, 8, s);
+                    FillRect(x + 3, y + 5, 4, 4, new SixLabors.ImageSharp.PixelFormats.Rgba32(20, 20, 25, 255));
+                    break;
+            }
+        }
+
+        FillCapeFace(1, 1);
+        FillCapeFace(12, 1);
+        FillRect(0, 1, 1, 16, dark);
+        FillRect(11, 1, 1, 16, dark);
+        FillRect(22, 1, 1, 16, dark);
+        SaveImageAsPng(image, destPath);
+        return destPath;
+    }
+
+    private static bool IsValidCapeImage(SixLabors.ImageSharp.Image image)
+    {
+        return (image.Width == 64 && image.Height >= 32 && image.Height % 32 == 0)
+            || (image.Width == 128 && image.Height >= 64 && image.Height % 64 == 0);
+    }
+
+    private async Task<string> DownloadCapeForUsernameAsync(string username)
+    {
+        var safeUsername = username.Trim();
+        var fileSafeUsername = SanitizeAssetFileName(safeUsername);
+        using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+
+        var profileUrl = $"https://api.mojang.com/users/profiles/minecraft/{Uri.EscapeDataString(safeUsername)}";
+        using var profileResponse = await http.GetAsync(profileUrl);
+        if (!profileResponse.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Mojang could not find a Minecraft profile named '{safeUsername}'.");
+
+        using var profileDoc = JsonDocument.Parse(await profileResponse.Content.ReadAsStringAsync());
+        if (!profileDoc.RootElement.TryGetProperty("id", out var idProp))
+            throw new InvalidOperationException("Mojang profile response did not include a UUID.");
+
+        var uuid = idProp.GetString();
+        if (string.IsNullOrWhiteSpace(uuid))
+            throw new InvalidOperationException("Mojang profile response did not include a UUID.");
+
+        var sessionUrl = $"https://sessionserver.mojang.com/session/minecraft/profile/{Uri.EscapeDataString(uuid)}?unsigned=false";
+        using var sessionResponse = await http.GetAsync(sessionUrl);
+        if (!sessionResponse.IsSuccessStatusCode)
+            throw new InvalidOperationException("Mojang session server did not return texture data for this profile.");
+
+        using var sessionDoc = JsonDocument.Parse(await sessionResponse.Content.ReadAsStringAsync());
+        if (!sessionDoc.RootElement.TryGetProperty("properties", out var properties) || properties.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("Mojang texture response did not include properties.");
+
+        string? encodedTextures = null;
+        foreach (var property in properties.EnumerateArray())
+        {
+            if (property.TryGetProperty("name", out var nameProp)
+                && string.Equals(nameProp.GetString(), "textures", StringComparison.OrdinalIgnoreCase)
+                && property.TryGetProperty("value", out var valueProp))
+            {
+                encodedTextures = valueProp.GetString();
+                break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(encodedTextures))
+            throw new InvalidOperationException("Mojang texture response did not include a textures payload.");
+
+        var texturesJson = Encoding.UTF8.GetString(Convert.FromBase64String(encodedTextures));
+        using var texturesDoc = JsonDocument.Parse(texturesJson);
+        if (!texturesDoc.RootElement.TryGetProperty("textures", out var textures)
+            || !textures.TryGetProperty("CAPE", out var cape)
+            || !cape.TryGetProperty("url", out var capeUrlProp))
+        {
+            throw new InvalidOperationException($"'{safeUsername}' does not have a Mojang cape on their profile.");
+        }
+
+        var capeUrl = capeUrlProp.GetString();
+        if (string.IsNullOrWhiteSpace(capeUrl))
+            throw new InvalidOperationException("Mojang texture response included an empty cape URL.");
+
+        var capeBytes = await http.GetByteArrayAsync(capeUrl);
+        if (capeBytes.Length == 0)
+            throw new InvalidOperationException("The cape texture download was empty.");
+
+        using var image = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(capeBytes);
+        if (!IsValidCapeImage(image))
+            throw new InvalidOperationException($"The returned image is {image.Width}x{image.Height}; capes must be 64x32, 128x64, or a valid animated variant.");
+
+        var destDir = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", "capes");
+        Directory.CreateDirectory(destDir);
+        var destPath = Path.Combine(destDir, $"{fileSafeUsername}.png");
+        SaveImageAsPng(image, destPath);
+        return destPath;
+    }
+
+    private async Task FetchCapeByUsernameAsync(string username)
+    {
+        if (string.IsNullOrWhiteSpace(username)) return;
+        try
+        {
+            var destPath = await DownloadCapeForUsernameAsync(username);
+            _settings.CustomCapePath = destPath;
+            _settings.CustomCapeSourcePath = destPath;
+            _settingsStore.Save(_settings);
+            RebuildUiFromLayoutState(_activeSection);
+        }
+        catch (Exception ex)
+        {
+            await DialogService.ShowInfoAsync(this, "Error", $"Failed to fetch cape for '{username}': {ex.Message}");
+        }
+    }
+
+    private Border CreateMediaCard(string label, Bitmap? preview, bool isSelected, Color accentColor, Action onClick, string fallbackIcon = "👕")
+    {
+        var card = new Border
+        {
+            Width = 190,
+            Height = 202,
+            Margin = new Thickness(0, 0, 16, 16),
+            CornerRadius = new CornerRadius(18),
+            Background = isSelected
+                ? new SolidColorBrush(Color.FromArgb(50, accentColor.R, accentColor.G, accentColor.B))
+                : new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+            BorderBrush = isSelected ? new SolidColorBrush(accentColor) : new SolidColorBrush(Color.FromArgb(35, 255, 255, 255)),
+            BorderThickness = new Thickness(isSelected ? 2 : 1),
+            BoxShadow = isSelected ? BoxShadows.Parse("0 8 20 0 #50000000") : BoxShadows.Parse("0 4 12 0 #30000000"),
+            Cursor = GetInteractiveCursor(),
+            Child = new Grid
+            {
+                RowDefinitions = new RowDefinitions("*,Auto"),
+                Children =
+                {
+                    new Border
+                    {
+                        Padding = new Thickness(16),
+                        Child = preview != null
+                            ? new Image { Source = preview, Stretch = Stretch.Uniform }
+                            : new TextBlock { Text = fallbackIcon, FontSize = 42, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+                    }.With(row: 0),
+
+                    new Border
+                    {
+                        Padding = new Thickness(8, 8),
+                        Background = new SolidColorBrush(Color.FromArgb(30, 0, 0, 0)),
+                        CornerRadius = new CornerRadius(0, 0, 16, 16),
+                        Child = new TextBlock
+                        {
+                            Text = label,
+                            FontSize = 11,
+                            FontWeight = isSelected ? FontWeight.Bold : FontWeight.Medium,
+                            Foreground = isSelected ? Brushes.White : new SolidColorBrush(Color.Parse("#C8D0E0")),
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis
+                        }
+                    }.With(row: 1)
+                }
+            }
+        };
+
+        card.PointerPressed += (_, _) => onClick();
+        return card;
+    }
+
+    private static Bitmap? GetAssetBitmap(string assetName)
+    {
+        try
+        {
+            var uri = new Uri($"avares://FugoLauncher/assets/{assetName}");
+            return new Bitmap(AssetLoader.Open(uri));
+        }
+        catch
+        {
+            try
+            {
+                var file = Path.Combine(AppContext.BaseDirectory, "assets", assetName);
+                if (File.Exists(file)) return new Bitmap(file);
+            }
+            catch { }
+            return null;
+        }
+    }
+
+    private static Bitmap? GetSkinHeadPreview(string skinPath)
+    {
+        try
+        {
+            using var stream = File.OpenRead(skinPath);
+            var srcBmp = new Bitmap(stream);
+            int srcW = (int)srcBmp.Size.Width;
+            int srcH = (int)srcBmp.Size.Height;
+
+            var rtb = new RenderTargetBitmap(new PixelSize(64, 64), new Vector(96, 96));
+            using (var ctx = rtb.CreateDrawingContext())
+            {
+                double scaleX = srcW / 64.0;
+                double scaleY = srcH / 64.0;
+
+                var headSrc = new Rect(8 * scaleX, 8 * scaleY, 8 * scaleX, 8 * scaleY);
+                var dest = new Rect(0, 0, 64, 64);
+                ctx.DrawImage(srcBmp, headSrc, dest);
+
+                var helmSrc = new Rect(40 * scaleX, 8 * scaleY, 8 * scaleX, 8 * scaleY);
+                ctx.DrawImage(srcBmp, helmSrc, dest);
+            }
+            return rtb;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private Bitmap? GetSkinFullBodyPreview(string skinPath)
+    {
+        try
+        {
+            using var prepared = PrepareSkinImage(skinPath, out bool isSlim);
+            using var srcBmp = ImageSharpToAvaloniaBitmap(prepared);
+
+            const int canvasW = 124;
+            const int canvasH = 166;
+            var rtb = new RenderTargetBitmap(new PixelSize(canvasW, canvasH), new Vector(96, 96));
+            using (var ctx = rtb.CreateDrawingContext())
+            {
+                var quads = BuildCharacterQuads(isSlim, 0.9, false);
+                const double rotationY = -0.48;
+                const double rotationX = 0.20;
+                const double scale = 4.35;
+                const double centerX = canvasW / 2.0;
+                const double centerY = 78.0;
+
+                var visibleQuads = new List<Quad3D>();
+                foreach (var q in quads)
+                {
+                    Point3D r0 = RotateX(RotateY(q.V0, rotationY), rotationX);
+                    Point3D r1 = RotateX(RotateY(q.V1, rotationY), rotationX);
+                    Point3D r2 = RotateX(RotateY(q.V2, rotationY), rotationX);
+                    Point3D r3 = RotateX(RotateY(q.V3, rotationY), rotationX);
+
+                    Point p0 = r0.Project(scale, centerX, centerY);
+                    Point p1 = r1.Project(scale, centerX, centerY);
+                    Point p2 = r2.Project(scale, centerX, centerY);
+                    Point p3 = r3.Project(scale, centerX, centerY);
+
+                    double cross = (p1.X - p0.X) * (p2.Y - p0.Y) - (p1.Y - p0.Y) * (p2.X - p0.X);
+                    if (cross <= 0) continue;
+
+                    q.CenterZ = (r0.Z + r1.Z + r2.Z + r3.Z) / 4.0;
+                    q.P0 = p0;
+                    q.P1 = p1;
+                    q.P2 = p2;
+                    q.P3 = p3;
+                    visibleQuads.Add(q);
+                }
+
+                visibleQuads.Sort((a, b) => a.CenterZ.CompareTo(b.CenterZ));
+
+                foreach (var q in visibleQuads)
+                {
+                    var sourceRect = new Rect(q.SourceRect.X * 8.0, q.SourceRect.Y * 8.0, q.SourceRect.Width * 8.0, q.SourceRect.Height * 8.0);
+                    if (sourceRect.Width <= 0 || sourceRect.Height <= 0) continue;
+
+                    double m11 = (q.P1.X - q.P0.X) / sourceRect.Width;
+                    double m12 = (q.P1.Y - q.P0.Y) / sourceRect.Width;
+                    double m21 = (q.P2.X - q.P0.X) / sourceRect.Height;
+                    double m22 = (q.P2.Y - q.P0.Y) / sourceRect.Height;
+                    double m31 = q.P0.X;
+                    double m32 = q.P0.Y;
+
+                    using (ctx.PushTransform(new Matrix(m11, m12, m21, m22, m31, m32)))
+                    {
+                        ctx.DrawImage(srcBmp, sourceRect, new Rect(0, 0, sourceRect.Width, sourceRect.Height));
+                    }
+                }
+            }
+
+            return rtb;
+        }
+        catch (Exception ex)
+        {
+            LauncherLog.Error($"[SkinPreview] Full body preview load error for {skinPath}: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static Bitmap? GetCapePreview(string capePath)
+    {
+        try
+        {
+            using var stream = File.OpenRead(capePath);
+            var srcBmp = new Bitmap(stream);
+            int srcW = (int)srcBmp.Size.Width;
+            int srcH = (int)srcBmp.Size.Height;
+
+            var rtb = new RenderTargetBitmap(new PixelSize(132, 150), new Vector(96, 96));
+            using (var ctx = rtb.CreateDrawingContext())
+            {
+                int frameHeight = (srcW >= 128) ? 64 : 32;
+                double scaleX = srcW / 64.0;
+                double scaleY = frameHeight / 32.0;
+
+                var capeSrc = new Rect(1 * scaleX, 1 * scaleY, 10 * scaleX, 16 * scaleY);
+
+                // No player model needed for cape, ONLY the cape itself.
+                var capeDest = new Rect(37, 28, 58, 94);
+                var matrix = new Matrix(1.0, -0.14, -0.18, 1.0, capeDest.X, capeDest.Y + 10);
+                using (ctx.PushTransform(matrix))
+                {
+                    ctx.DrawImage(srcBmp, capeSrc, new Rect(0, 0, capeDest.Width, capeDest.Height));
+                }
+
+                ctx.FillRectangle(new SolidColorBrush(Color.FromArgb(85, 255, 255, 255)), new Rect(41, 31, 6, 88));
+            }
+            return rtb;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task CompleteOnboardingAsync(LauncherAccount account, bool offlineMode)
+    {
+        _settings.OfflineMode = offlineMode;
+        _settings.IsFirstRun = false;
+        
+        var existing = _settings.Accounts.FirstOrDefault(a => a.Uuid == account.Uuid && a.Provider == account.Provider);
+        if (existing != null) _settings.Accounts.Remove(existing);
+
+        _settings.Accounts.Add(account);
+        _settings.SelectedAccountId = account.Id;
+        _settings.Username = account.Username;
+        _settingsStore.Save(_settings);
+
+        UpdateAccountsButtonText();
+        RefreshAccountsList();
+        UpdateCharacterPreview();
+
+        if (_onboardingOverlay != null)
+        {
+            _onboardingOverlay.Opacity = 0.0;
+            await Task.Delay(400);
+            _onboardingOverlay.IsVisible = false;
+        }
+
+        _ = AnimateHomeCardsAsync();
+    }
+
+    private async Task MicrosoftOnboardingLoginAsync()
+    {
+        if (_isAuthenticating) return;
+        _isAuthenticating = true;
+
+        var clientId = string.IsNullOrWhiteSpace(_settings.MicrosoftClientId) ? "00000000402b5328" : _settings.MicrosoftClientId;
+        using var cts = new CancellationTokenSource();
+        
+        try
+        {
+            LauncherLog.Info("[Microsoft Auth Onboarding] Starting device code login...");
+            var session = await _authService.BeginDeviceLoginAsync(clientId, cts.Token);
+            Process.Start(new ProcessStartInfo { FileName = session.VerificationUri, UseShellExecute = true });
+            
+            var dialogTask = DialogService.ShowMicrosoftAuthDialogAsync(this, session.UserCode, session.VerificationUri, cts);
+            var pollTask = _authService.CompleteDeviceLoginAsync(clientId, session, cts.Token);
+
+            var completedTask = await Task.WhenAny(dialogTask, pollTask);
+
+            if (completedTask == pollTask)
+            {
+                var account = await pollTask;
+                await CompleteOnboardingAsync(account, false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            await DialogService.ShowInfoAsync(this, "Authentication Failed", ex.Message);
+        }
+        finally
+        {
+            _isAuthenticating = false;
+        }
+    }
+
+    private Border BuildOnboardingOverlay()
+    {
+        var overlay = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)),
+            IsVisible = false,
+            ZIndex = 1000,
+            Opacity = 0.0,
+            Transitions = new Transitions
+            {
+                new DoubleTransition { Property = Border.OpacityProperty, Duration = TimeSpan.FromMilliseconds(400), Easing = new CubicEaseInOut() }
+            }
+        };
+
+        var card = new Border
+        {
+            Width = 440,
+            MinHeight = 360,
+            Background = new SolidColorBrush(Color.Parse("#0D0F14")),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(16),
+            Padding = new Thickness(36),
+            BoxShadow = new BoxShadows(new BoxShadow { Color = Color.FromArgb(80, 0, 0, 0), Blur = 40, OffsetX = 0, OffsetY = 20 }),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            RenderTransform = TransformOperations.Parse("translateY(40px) scale(0.95)"),
+            Transitions = new Transitions
+            {
+                new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(500), Easing = new CubicEaseInOut() },
+                new DoubleTransition { Property = Border.HeightProperty, Duration = TimeSpan.FromMilliseconds(300), Easing = new CubicEaseInOut() }
+            }
+        };
+
+        Bitmap? logoBmp = null;
+        try { logoBmp = new Bitmap(AssetLoader.Open(new Uri("avares://FugoLauncher/assets/fugo-logo-transparent.png"))); }
+        catch { logoBmp = new Bitmap(AssetLoader.Open(new Uri("avares://FugoLauncher/assets/fugo-logo.png"))); }
+        var logo = new Image { Source = logoBmp, Height = 64, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 16) };
+
+        var title = new TextBlock
+        {
+            Text = "Welcome to Fugo",
+            FontSize = 24,
+            FontWeight = FontWeight.Bold,
+            Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+
+        var subtitle = new TextBlock
+        {
+            Text = "Choose how you'd like to begin.",
+            FontSize = 14,
+            Foreground = new SolidColorBrush(Color.Parse("#8E96A8")),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 32)
+        };
+
+        // Microsoft button
+        var microsoftBtn = new Border
+        {
+            Height = 72,
+            Background = new SolidColorBrush(Color.Parse("#161B26")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#262E3F")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(16),
+            Margin = new Thickness(0, 0, 0, 16),
+            Cursor = GetInteractiveCursor()
+        };
+        ApplyHoverMotion(microsoftBtn);
+        microsoftBtn.Transitions!.Add(new DoubleTransition { Property = Border.HeightProperty, Duration = TimeSpan.FromMilliseconds(300), Easing = new CubicEaseInOut() });
+        microsoftBtn.Transitions!.Add(new ThicknessTransition { Property = Border.MarginProperty, Duration = TimeSpan.FromMilliseconds(300), Easing = new CubicEaseInOut() });
+
+        var recommendedBadge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(40, 217, 119, 6)),
+            BorderBrush = new SolidColorBrush(Color.Parse("#D97706")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(6, 2),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock { Text = "Recommended", FontSize = 10, Foreground = new SolidColorBrush(Color.Parse("#F59E0B")), FontWeight = FontWeight.Bold }
+        };
+
+        var msTextStack = new StackPanel
+        {
+            Spacing = 2,
+            Children =
+            {
+                new TextBlock { Text = "Continue with Microsoft", FontSize = 15, FontWeight = FontWeight.Bold, Foreground = Brushes.White },
+                new TextBlock { Text = "Sync your account", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")) }
+            }
+        };
+
+        var msGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Children =
+            {
+                msTextStack,
+                recommendedBadge.With(column: 1)
+            }
+        };
+        microsoftBtn.Child = msGrid;
+
+        // Play with Fugo button
+        var playBtn = new Border
+        {
+            Height = 72,
+            Background = new SolidColorBrush(Color.Parse("#161B26")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#262E3F")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(16),
+            Margin = new Thickness(0, 0, 0, 16),
+            Cursor = GetInteractiveCursor()
+        };
+        ApplyHoverMotion(playBtn);
+
+        var playTextStack = new StackPanel
+        {
+            Spacing = 2,
+            Children =
+            {
+                new TextBlock { Text = "Play with Fugo", FontSize = 15, FontWeight = FontWeight.Bold, Foreground = Brushes.White },
+                new TextBlock { Text = "Jump straight in", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")) }
+            }
+        };
+        playBtn.Child = playTextStack;
+
+        // Offline Input Panel (hidden initially)
+        var offlineUsernameBox = CreateTextBox();
+        offlineUsernameBox.Watermark = "Enter your Minecraft username...";
+        offlineUsernameBox.Height = 44;
+        offlineUsernameBox.Margin = new Thickness(0, 0, 0, 16);
+
+        var continueBtn = CreatePrimaryButton("Play with Fugo", "#D97706", Colors.White);
+        continueBtn.Height = 44;
+        continueBtn.FontWeight = FontWeight.Bold;
+        continueBtn.Cursor = GetInteractiveCursor();
+        ApplyHoverMotion(continueBtn);
+
+        var usernameInputPanel = new StackPanel
+        {
+            Spacing = 4,
+            Opacity = 0.0,
+            IsVisible = false,
+            Transitions = new Transitions
+            {
+                new DoubleTransition { Property = StackPanel.OpacityProperty, Duration = TimeSpan.FromMilliseconds(300), Easing = new CubicEaseInOut() }
+            },
+            Children =
+            {
+                new TextBlock { Text = "Minecraft Username", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")), Margin = new Thickness(0, 8, 0, 6) },
+                offlineUsernameBox,
+                continueBtn
+            }
+        };
+
+        // Click actions
+        playBtn.PointerPressed += async (s, e) =>
+        {
+            playBtn.IsHitTestVisible = false;
+            microsoftBtn.Height = 0;
+            microsoftBtn.Opacity = 0.0;
+            microsoftBtn.Margin = new Thickness(0);
+
+            card.MinHeight = 390;
+            usernameInputPanel.IsVisible = true;
+            await Task.Delay(50);
+            usernameInputPanel.Opacity = 1.0;
+        };
+
+        microsoftBtn.PointerPressed += async (s, e) =>
+        {
+            await MicrosoftOnboardingLoginAsync();
+        };
+
+        continueBtn.Click += async (_, _) =>
+        {
+            var username = offlineUsernameBox.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                await DialogService.ShowInfoAsync(this, "Username required", "Please enter a username.");
+                return;
+            }
+
+            var acc = new LauncherAccount
+            {
+                Provider = "offline",
+                Username = username,
+                DisplayName = username
+            };
+
+            await CompleteOnboardingAsync(acc, true);
+        };
+
+        _onboardingCloseButton = new Button
+        {
+            Content = "×",
+            Background = Brushes.Transparent,
+            Foreground = Brushes.White,
+            FontSize = 20,
+            Padding = new Thickness(6, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, -20, -20, 0),
+            Cursor = GetInteractiveCursor(),
+            ZIndex = 20,
+            IsVisible = false
+        };
+        _onboardingCloseButton.Click += (_, _) =>
+        {
+            _onboardingOverlay.Opacity = 0.0;
+            _onboardingOverlay.IsVisible = false;
+        };
+        ApplyHoverMotion(_onboardingCloseButton);
+
+        var content = new StackPanel
+        {
+            Children =
+            {
+                logo,
+                title,
+                subtitle,
+                microsoftBtn,
+                playBtn,
+                usernameInputPanel
+            }
+        };
+
+        var cardLayout = new Grid
+        {
+            Children =
+            {
+                content,
+                _onboardingCloseButton
+            }
+        };
+
+        card.Child = cardLayout;
+        overlay.Child = card;
+
+        return overlay;
+    }
+
     private Border BuildSettingsOverlay()
     {
         var closeButton = new Button
@@ -6102,6 +7840,24 @@ public sealed class MainWindow : Window
             }
         };
 
+        // ── Custom Cursor Settings UI ─────────────────────────────────────────
+        var cursorOptions = GetAvailableCursorOptions();
+        var cursorComboBox = CreateComboBox(cursorOptions);
+        cursorComboBox.Width = 240;
+        cursorComboBox.HorizontalAlignment = HorizontalAlignment.Left;
+
+        var initialSelection = _settings.CustomCursorStyle ?? "Skyrim Set";
+        var matchSelection = cursorOptions.Find(o => string.Equals(o, initialSelection, StringComparison.OrdinalIgnoreCase));
+        cursorComboBox.SelectedItem = matchSelection ?? (cursorOptions.Count > 0 ? cursorOptions[0] : "Skyrim Set");
+
+        cursorComboBox.SelectionChanged += (_, _) =>
+        {
+            var selected = cursorComboBox.SelectedItem as string ?? "Skyrim Set";
+            _settings.CustomCursorStyle = selected;
+            _settingsStore.Save(_settings);
+            ApplyCustomCursor();
+        };
+
         var bgBtn = new Button
         {
             Content = "Choose Background Image",
@@ -6170,6 +7926,16 @@ public sealed class MainWindow : Window
                             } }
                         }
                     },
+                    FlatSection("Custom Cursor"),
+                    new StackPanel
+                    {
+                        Spacing = 8,
+                        Children =
+                        {
+                            new TextBlock { Text = "Customize mouse cursor style across Fugo Launcher.", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#5E6B85")), Margin = new Thickness(0, 0, 0, 4) },
+                            cursorComboBox
+                        }
+                    },
                     FlatSection("Background Image"),
                     new StackPanel
                     {
@@ -6184,6 +7950,8 @@ public sealed class MainWindow : Window
             }
         };
 
+        var customizePane = BuildCustomizePane();
+
         // ── Content host — swapped by nav clicks ─────────────────────────────
         var contentHost = new Border { Child = configPane };
 
@@ -6192,7 +7960,7 @@ public sealed class MainWindow : Window
         {
             ("⊞", "Configuration", (Control)configPane),
             ("▣", "UI",            (Control)uiPane),
-            ("◈", "Themes",        (Control)themesPane),
+            ("🎨", "Customize",     (Control)customizePane),
         };
 
         var sidebarStack = new StackPanel { Spacing = 2, Margin = new Thickness(0, 8, 0, 0) };
@@ -6375,6 +8143,7 @@ public sealed class MainWindow : Window
 
     private async Task InitializeAsync()
     {
+        ApplyCustomCursor();
 
         var tasks = new List<Task>();
         
@@ -6505,15 +8274,159 @@ public sealed class MainWindow : Window
         {
             var captured = card;
             Dispatcher.UIThread.Post(() => RevealCard(captured));
-            await Task.Delay(300);
+            await Task.Delay(90);
         }
 
         // Featured servers appear last
         if (featuredEntry != null)
         {
-            await Task.Delay(200);
+            await Task.Delay(90);
             var captured = featuredEntry;
             Dispatcher.UIThread.Post(() => RevealCard(captured));
+        }
+    }
+
+    private async Task RunSeamlessStartupAnimationAsync()
+    {
+        if (_hasPlayedStartupAnimation) return;
+
+        double windowWidth  = Bounds.Width  > 0 ? Bounds.Width  : 1100;
+        double windowHeight = Bounds.Height > 0 ? Bounds.Height : 700;
+
+        // ── Reduced-Motion / Performance mode ────────────────────────────────
+        if (IsPerformanceModeEnabled())
+        {
+            await Task.Delay(80);
+            if (_startupContentControl  != null) _startupContentControl.Opacity  = 1.0;
+            if (_startupAccentOverlay   != null) _startupAccentOverlay.Opacity   = 1.0;
+            if (_startupFloatingControls!= null) _startupFloatingControls.Opacity = 1.0;
+            if (_backgroundBorder       != null) _backgroundBorder.Opacity       = 1.0;
+            if (_sidebarBodyControl     != null) _sidebarBodyControl.Opacity     = 1.0;
+            if (_brandControl           != null) _brandControl.Opacity           = 1.0;
+            foreach (var b in new[] { launchNavButton, profilesNavButton,
+                                      modrinthNavButton, settingsNavButton, layoutNavButton })
+                if (b != null) b.Opacity = 1.0;
+            if (_playOverlay != null) _playOverlay.Opacity = 1.0;
+            if (_startupOverlayGrid != null)
+            { _startupOverlayGrid.IsVisible = false; _startupOverlayGrid.IsHitTestVisible = false; }
+            _hasPlayedStartupAnimation = true;
+            _ = AnimateHomeCardsAsync();
+            return;
+        }
+
+        const int    fps       = 60;
+        const int    fms       = 1000 / fps;
+        const double cardW     = 560.0;
+        const double cardH     = 350.0;
+        const double initScale = 1.0 / 1.5;
+        double coverScale = Math.Max(windowWidth / cardW, windowHeight / cardH) + 0.05;
+
+        // ── STEP 1: White card + curvy patterns + Fugo logo (400 ms hold) ────
+        _cardScaleTransform.ScaleX = initScale;
+        _cardScaleTransform.ScaleY = initScale;
+        if (_startupPatternCard   != null) _startupPatternCard.SlideProgress = 0.0;
+        if (_startupLogoContainer != null) _startupLogoContainer.Opacity     = 1.0;
+
+        await Task.Delay(400);
+
+        // ── STEP 2: Black slides left→right, patterns turn white (~1 s) ──────
+        for (int i = 1; i <= fps; i++)
+        {
+            double t = (double)i / fps;
+            double e = t < 0.5 ? 4*t*t*t : 1.0 - Math.Pow(-2*t + 2, 3) / 2.0;
+            if (_startupPatternCard != null) _startupPatternCard.SlideProgress = e;
+            await Task.Delay(fms);
+        }
+        if (_startupPatternCard != null) _startupPatternCard.SlideProgress = 1.0;
+
+        await Task.Delay(250);
+
+        // ── STEP 3: Expansion + logo travel (~1.2 s) ─────────────────────────
+        // Pattern card vanishes immediately — card becomes transparent.
+        // Home screen fades in with the expansion. Logo floats to sidebar.
+        if (_startupPatternCard != null) _startupPatternCard.Opacity = 0.0;
+
+        // Give outer border its real background before it becomes visible
+        var outerBgHex = !string.IsNullOrWhiteSpace(_settings.Style.WindowBackground)
+            ? _settings.Style.WindowBackground : "#090C12";
+        if (_startupOuterBorder != null)
+            _startupOuterBorder.Background = new SolidColorBrush(Color.Parse(outerBgHex));
+
+        bool   sidebarRight = IsSidebarOnRight();
+        double targetX      = sidebarRight ? (windowWidth / 2.0 - 45.0) : -(windowWidth / 2.0 - 45.0);
+        double targetY      = -(windowHeight / 2.0 - 47.0);
+        double logoTarget   = 34.0 / 100.0;
+
+        int expandFrames = (int)(fps * 1.2);
+        for (int i = 1; i <= expandFrames; i++)
+        {
+            double t     = (double)i / expandFrames;
+            double eased = t < 0.5 ? 4*t*t*t : 1.0 - Math.Pow(-2*t + 2, 3) / 2.0;
+
+            // Card expands (but is now visually transparent — only logo shows)
+            double cardS = initScale + (coverScale - initScale) * eased;
+            _cardScaleTransform.ScaleX = cardS;
+            _cardScaleTransform.ScaleY = cardS;
+
+            // Logo floats from centre to sidebar brand position
+            _logoTranslateTransform.X = targetX * eased;
+            _logoTranslateTransform.Y = targetY * eased;
+            double ls = 1.0 + (logoTarget - 1.0) * eased;
+            _logoScaleTransform.ScaleX = ls;
+            _logoScaleTransform.ScaleY = ls;
+
+            // Home screen fades in in sync with the expansion
+            if (_startupContentControl != null) _startupContentControl.Opacity = Math.Min(1.0, eased * 1.4);
+            if (_backgroundBorder      != null) _backgroundBorder.Opacity      = Math.Min(1.0, eased * 1.4);
+            if (_startupAccentOverlay  != null) _startupAccentOverlay.Opacity  = Math.Min(1.0, eased * 1.4);
+            if (_sidebarBodyControl    != null) _sidebarBodyControl.Opacity    = Math.Min(1.0, t * 2.0);
+
+            await Task.Delay(fms);
+        }
+
+        // Finalise — everything fully visible
+        if (_startupContentControl  != null) _startupContentControl.Opacity  = 1.0;
+        if (_startupAccentOverlay   != null) _startupAccentOverlay.Opacity   = 1.0;
+        if (_backgroundBorder       != null) _backgroundBorder.Opacity       = 1.0;
+        if (_brandControl           != null) _brandControl.Opacity           = 1.0;
+        if (_sidebarBodyControl     != null) _sidebarBodyControl.Opacity     = 1.0;
+
+        if (_startupOverlayGrid != null)
+        { _startupOverlayGrid.IsVisible = false; _startupOverlayGrid.IsHitTestVisible = false; }
+        if (_startupFloatingControls != null) _startupFloatingControls.Opacity = 1.0;
+
+        // ── STEP 4: Staggered nav-item fade-in (~0.8 s) ─────────────────────
+        var navBtns = new[] { launchNavButton, profilesNavButton,
+                              modrinthNavButton, layoutNavButton, settingsNavButton };
+        foreach (var btn in navBtns)
+        {
+            if (btn == null) continue;
+            for (int f = 1; f <= 8; f++) { btn.Opacity = f / 8.0; await Task.Delay(12); }
+            btn.Opacity = 1.0;
+            await Task.Delay(60);
+        }
+
+        // ── STEP 5: Content cards + play button ──────────────────────────────
+        _ = AnimateHomeCardsAsync();
+        if (_playOverlay != null)
+        {
+            await Task.Delay(140);
+            for (int f = 1; f <= 10; f++) { _playOverlay.Opacity = f / 10.0; await Task.Delay(16); }
+            _playOverlay.Opacity = 1.0;
+        }
+
+        _hasPlayedStartupAnimation = true;
+
+        bool needsOnboarding = _settings.Accounts.Count == 0;
+        if (needsOnboarding)
+        {
+            _onboardingOverlay.IsVisible = true;
+            await Task.Delay(50);
+            _onboardingOverlay.Opacity = 1.0;
+            if (_onboardingOverlay.Child is Border cardBorder)
+            {
+                cardBorder.RenderTransform = TransformOperations.Parse("translateY(0px) scale(1.0)");
+            }
         }
     }
 
@@ -6676,6 +8589,7 @@ public sealed class MainWindow : Window
         var modrinthVisible = section == "modrinth";
         var profilesVisible = section == "instances" || section == "profiles";
         var performanceVisible = section == "performance";
+        var customizeVisible = section == "customize";
         var settingsVisible = section == "settings";
         var layoutVisible = section == "layout";
         var workspaceVisible = section == "workspace";
@@ -6724,6 +8638,7 @@ public sealed class MainWindow : Window
         AnimateSection(modrinthSection, "ModrinthSection", modrinthVisible);
         AnimateSection(profilesSection, "ProfilesSection", profilesVisible);
         AnimateSection(performanceSection, "PerformanceSection", performanceVisible);
+        AnimateSection(customizeSection, "CustomizeSection", customizeVisible);
         AnimateSection(layoutSection, "LayoutSection", layoutVisible);
         AnimateSection(workspaceSection, "WorkspaceSection", workspaceVisible);
 
@@ -6735,6 +8650,7 @@ public sealed class MainWindow : Window
         ApplyNavState(launchNavButton, section == "home" || section == "launch");
         ApplyNavState(modrinthNavButton, section == "modrinth");
         ApplyNavState(profilesNavButton, section == "instances" || section == "profiles" || section == "workspace");
+        ApplyNavState(customizeNavButton, section == "customize");
         ApplyNavState(settingsNavButton, false);
         ApplyNavState(layoutNavButton, section == "layout");
         if (accountsNavButton != null) ApplyNavState(accountsNavButton, section == "accounts");
@@ -6742,6 +8658,17 @@ public sealed class MainWindow : Window
         if (section == "modrinth" && _searchResults.Count == 0)
         {
             _ = SearchModrinthAsync();
+        }
+
+        // When switching to customize, clear focus from any child control so WASD keys
+        // are captured by the window tunnel handler without being absorbed by buttons/sliders
+        if (customizeVisible)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                // Move focus to the window so no inner Button/Slider steals WASD
+                this.Focus();
+            }, Avalonia.Threading.DispatcherPriority.Background);
         }
     }
 
@@ -8166,9 +10093,11 @@ public sealed class MainWindow : Window
 
     private void UpdateCharacterPreview()
     {
-        // 1. If active section is not launch or home, skip rendering to save CPU
-        var launchVisible = _activeSection == "home" || _activeSection == "launch";
-        if (!launchVisible || WindowState == WindowState.Minimized)
+        // The same renderer powers the avatar in the home screen and the skin/cape
+        // galleries.  Previously it was skipped while Customize was active, leaving
+        // that preview stale or blank after a selection.
+        var previewVisible = _activeSection == "home" || _activeSection == "launch" || _activeSection == "customize";
+        if (!previewVisible || WindowState == WindowState.Minimized)
             return;
 
         var activeUsername = GetActiveUsername();
@@ -8258,10 +10187,12 @@ public sealed class MainWindow : Window
             }
         }
 
-        // Update Cape Cache (only on path change, not on file timestamp changes to avoid flicker)
+        // Update Cape Cache when a downloaded/imported file replaces the current one.
+        // Checking the timestamp is what makes re-fetching the same username refresh.
         if (hasCape && capePathToUse != null)
         {
-            if (capePathToUse != _cachedCapePath || _cachedCapeBitmap == null)
+            var capeWriteTime = File.GetLastWriteTime(capePathToUse);
+            if (capePathToUse != _cachedCapePath || capeWriteTime != _cachedCapeWriteTime || _cachedCapeBitmap == null)
             {
                 try
                 {
@@ -8273,7 +10204,7 @@ public sealed class MainWindow : Window
                     _pendingCapeBitmap = _cachedCapeBitmap;
                     _cachedCapeBitmap = newBitmap;
                     _cachedCapePath = capePathToUse;
-                    _cachedCapeWriteTime = File.GetLastWriteTime(capePathToUse);
+                    _cachedCapeWriteTime = capeWriteTime;
                 }
                 catch (Exception ex)
                 {
@@ -8292,7 +10223,8 @@ public sealed class MainWindow : Window
             _cachedCapePath = null;
         }
 
-        if (_cachedSkinBitmap == null)
+        bool onlyCape = (_activeSection == "customize" && _activeCustomizeTab == "cape");
+        if (_cachedSkinBitmap == null && !onlyCape)
         {
             characterImage.Source = null;
             return;
@@ -8318,10 +10250,10 @@ public sealed class MainWindow : Window
         using (var ctx = targetRtb.CreateDrawingContext())
         {
             // Build the character face list
-            var quads = BuildCharacterQuads(_cachedIsSlim, _animationTime, _cachedCapeBitmap != null);
+            var quads = BuildCharacterQuads(_cachedIsSlim, _animationTime, _cachedCapeBitmap != null, onlyCape);
 
             // Project, Cull, Sort
-            const double scale = 10.5;
+            double scale = onlyCape ? 18.0 : 10.5;
             const double centerX = canvasWidth / 2.0;
             const double centerY = canvasHeight / 2.0;
 
@@ -8357,8 +10289,9 @@ public sealed class MainWindow : Window
             int capeFrameYOffset = 0;
             if (_cachedCapeBitmap != null)
             {
+                int capeWidth = (int)_cachedCapeBitmap.Size.Width;
                 int capeHeight = (int)_cachedCapeBitmap.Size.Height;
-                int frameHeight = 256; // Standard cape frame height (32px * 8x upscale)
+                int frameHeight = capeWidth / 2;
                 if (capeHeight > frameHeight && (capeHeight % frameHeight) == 0)
                 {
                     int frames = capeHeight / frameHeight;
@@ -8375,7 +10308,12 @@ public sealed class MainWindow : Window
                 var sourceRect = q.SourceRect;
                 if (q.IsCape)
                 {
-                    var scaledSourceRect = new Rect(sourceRect.X * 8.0, sourceRect.Y * 8.0, sourceRect.Width * 8.0, sourceRect.Height * 8.0);
+                    double capeScale = (_cachedCapeBitmap!.Size.Width / 8.0) / 64.0;
+                    var scaledSourceRect = new Rect(
+                        sourceRect.X * 8.0 * capeScale,
+                        sourceRect.Y * 8.0 * capeScale,
+                        sourceRect.Width * 8.0 * capeScale,
+                        sourceRect.Height * 8.0 * capeScale);
                     sourceRect = new Rect(scaledSourceRect.X, scaledSourceRect.Y + capeFrameYOffset, scaledSourceRect.Width, scaledSourceRect.Height);
                 }
                 else
@@ -8404,11 +10342,19 @@ public sealed class MainWindow : Window
         }
 
         characterImage.Source = targetRtb;
-        // Use low quality on Windows for performance; high quality on Linux
         RenderOptions.SetBitmapInterpolationMode(characterImage, 
             OperatingSystem.IsWindows() 
                 ? Avalonia.Media.Imaging.BitmapInterpolationMode.LowQuality 
                 : Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality);
+
+        if (customizeCharacterImage != null)
+        {
+            customizeCharacterImage.Source = targetRtb;
+            RenderOptions.SetBitmapInterpolationMode(customizeCharacterImage, 
+                OperatingSystem.IsWindows() 
+                    ? Avalonia.Media.Imaging.BitmapInterpolationMode.LowQuality 
+                    : Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality);
+        }
 
         // First-ever skin: fade the avatar panel in
         if (!_skinHasEverLoaded)
@@ -8628,9 +10574,27 @@ public sealed class MainWindow : Window
         return list;
     }
 
-    private List<Quad3D> BuildCharacterQuads(bool isSlim, double animTime, bool hasCape)
+    private List<Quad3D> BuildCharacterQuads(bool isSlim, double animTime, bool hasCape, bool onlyCape = false)
     {
         var list = new List<Quad3D>();
+
+        if (onlyCape)
+        {
+            if (hasCape)
+            {
+                double capeAngleOnly = 0.18 + Math.Sin(animTime * 1.5) * 0.07;
+                var capeQuads = CreateBoxQuads(0, 0, 0, 10, 16, 0.5, 0, 0, 0.0, false, true);
+                foreach (var q in capeQuads)
+                {
+                    q.V0 = ApplyJointRotation(q.V0, new Point3D(0, 8, 0), capeAngleOnly, 0, 0);
+                    q.V1 = ApplyJointRotation(q.V1, new Point3D(0, 8, 0), capeAngleOnly, 0, 0);
+                    q.V2 = ApplyJointRotation(q.V2, new Point3D(0, 8, 0), capeAngleOnly, 0, 0);
+                    q.V3 = ApplyJointRotation(q.V3, new Point3D(0, 8, 0), capeAngleOnly, 0, 0);
+                    list.Add(q);
+                }
+            }
+            return list;
+        }
 
         // Animation angles
         double armAngle = Math.Sin(animTime) * 0.35;
@@ -8949,47 +10913,19 @@ public sealed class MainWindow : Window
         foreach (var (dir, card) in _instanceCardBorders)
         {
             var isSelected = string.Equals(dir, _selectedProfile?.InstanceDirectory, StringComparison.Ordinal);
-            bool isFugo = card.Tag is bool b && b;
+            var accent = Color.Parse(currentAccent);
 
-            if (isFugo)
+            if (isSelected)
             {
-                if (isSelected)
-                {
-                    card.BorderBrush = new LinearGradientBrush
-                    {
-                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                        GradientStops = { new GradientStop(Color.Parse("#FFE066"), 0.0), new GradientStop(Color.Parse("#38D6C4"), 0.5), new GradientStop(Color.Parse("#FFE066"), 1.0) }
-                    };
-                    card.BorderThickness = new Thickness(2);
-                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(120, 56, 214, 196), OffsetX = 0, OffsetY = 0 });
-                }
-                else
-                {
-                    card.BorderBrush = new LinearGradientBrush
-                    {
-                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                        GradientStops = { new GradientStop(Color.Parse("#5B21B6"), 0.0), new GradientStop(Color.Parse("#3730A3"), 1.0) }
-                    };
-                    card.BorderThickness = new Thickness(1);
-                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 0, Color = Colors.Transparent, OffsetX = 0, OffsetY = 0 });
-                }
+                card.BorderBrush = new SolidColorBrush(accent);
+                card.BorderThickness = new Thickness(1);
+                card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 8, Color = Color.FromArgb(40, accent.R, accent.G, accent.B), OffsetX = 0, OffsetY = 2 });
             }
             else
             {
-                if (isSelected)
-                {
-                    card.BorderBrush = new SolidColorBrush(Color.Parse(currentAccent));
-                    card.BorderThickness = new Thickness(2);
-                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Color = Color.FromArgb(90, Color.Parse(currentAccent).R, Color.Parse(currentAccent).G, Color.Parse(currentAccent).B), OffsetX = 0, OffsetY = 0 });
-                }
-                else
-                {
-                    card.BorderBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
-                    card.BorderThickness = new Thickness(1);
-                    card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 0, Color = Colors.Transparent, OffsetX = 0, OffsetY = 0 });
-                }
+                card.BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
+                card.BorderThickness = new Thickness(1);
+                card.BoxShadow = new BoxShadows(new BoxShadow { Blur = 0, Color = Colors.Transparent, OffsetX = 0, OffsetY = 0 });
             }
         }
     }
@@ -10065,20 +12001,29 @@ public sealed class MainWindow : Window
             }}
         };
 
-        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 12) };
-        header.Children.Add(new TextBlock { Text = "Servers", FontSize = 26, FontWeight = FontWeight.Bold, Foreground = Brushes.White });
-        header.Children.Add(new Border
+        var headerStats = new StackPanel
         {
-            CornerRadius = new CornerRadius(8),
-            Background = new SolidColorBrush(Color.Parse("#15141D")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#29273A")),
-            BorderThickness = new Thickness(1),
-            Child = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Children = { Metric("Total servers", servers.Count.ToString()), Metric("Online", online.ToString()), Metric("Storage", FormatServerStorage(storage)) }
-            }.With(column: 1)
-        }.With(column: 1));
+            Orientation = Orientation.Horizontal,
+            Spacing = 16,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { Metric("Total servers", servers.Count.ToString()), Metric("Online", online.ToString()), Metric("Storage", FormatServerStorage(storage)) }
+        };
+
+        var createBtn = CreatePrimaryButton("Create Server", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+        createBtn.Height = 34;
+        createBtn.Padding = new Thickness(16, 0);
+        createBtn.CornerRadius = new CornerRadius(6);
+        createBtn.Click += (_, _) => { _activeServerScreen = "create"; RefreshLayoutSection(); };
+
+        var header = new Grid 
+        { 
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), 
+            ColumnSpacing = 16,
+            Margin = new Thickness(0, 0, 0, 16) 
+        };
+        header.Children.Add(new TextBlock { Text = "Servers", FontSize = 26, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }.With(column: 0));
+        header.Children.Add(headerStats.With(column: 1));
+        header.Children.Add(createBtn.With(column: 2));
 
         var table = new StackPanel { Spacing = 0 };
         table.Children.Add(new Grid { ColumnDefinitions = GetServerTableColumns(), Margin = new Thickness(18, 10), Children = {
@@ -10092,64 +12037,13 @@ public sealed class MainWindow : Window
             table.Children.Add(CreateServerTableRow(server, accent));
 
         if (servers.Count == 0)
-            table.Children.Add(new Border { Padding = new Thickness(24), Child = new TextBlock { Text = "No local servers yet. Use the tool below to create one.", Foreground = new SolidColorBrush(Color.Parse("#9693A6")), HorizontalAlignment = HorizontalAlignment.Center } });
-
-        var addBtn = CreatePrimaryButton("Create server", _settings.AccentColor ?? "#8B5A2B", Colors.White);
-        addBtn.Height = 36; addBtn.MinWidth = 142; addBtn.Padding = new Thickness(14, 0); addBtn.CornerRadius = new CornerRadius(7);
-        addBtn.Click += (_, _) => { _activeServerScreen = "create"; RefreshLayoutSection(); };
-        var addTool = new Border
         {
-            BorderBrush = new SolidColorBrush(Color.Parse("#4A465E")),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(9),
-            Padding = new Thickness(16, 12),
-            Background = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Color.FromArgb(28, accent.R, accent.G, accent.B), 0),
-                    new GradientStop(Color.FromArgb(12, 20, 18, 28), 1)
-                }
-            },
-            Child = new Grid
-            {
-                Children =
-                {
-                    new Border
-                    {
-                        Padding = new Thickness(14, 10),
-                        Child = new Grid
-                        {
-                            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-                            ColumnSpacing = 12,
-                            Children =
-                            {
-                                CreateNavigationIcon("plus", 20, new SolidColorBrush(accent)),
-                                (new StackPanel { Spacing = 2, Children = { new TextBlock { Text = "Add new server", FontWeight = FontWeight.Bold, Foreground = Brushes.White }, new TextBlock { Text = "Create a local Vanilla, Fabric, Forge, or Paper server.", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#9693A6")) } } }).With(column: 1),
-                                addBtn.With(column: 2)
-                            }
-                        }
-                    },
-                    new Avalonia.Controls.Shapes.Rectangle
-                    {
-                        Stroke = new SolidColorBrush(Color.Parse("#5D5970")),
-                        StrokeThickness = 1,
-                        StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 6, 4 },
-                        Fill = Brushes.Transparent,
-                        RadiusX = 8,
-                        RadiusY = 8,
-                        IsHitTestVisible = false
-                    }
-                }
-            }
-        };
+            table.Children.Add(new Border { Padding = new Thickness(24), Child = new TextBlock { Text = "No local servers yet. Click 'Create Server' in the header to create one.", Foreground = new SolidColorBrush(Color.Parse("#9693A6")), HorizontalAlignment = HorizontalAlignment.Center } });
+        }
 
         var panel = new StackPanel { Spacing = 14, Children = {
             header,
             new Border { Background = new SolidColorBrush(Color.Parse("#111018")), BorderBrush = new SolidColorBrush(Color.Parse("#29273A")), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), ClipToBounds = true, Child = table },
-            addTool,
             BuildFriendTunnelsSection()
         }};
         return CreateSectionScroller(panel);
@@ -10486,7 +12380,7 @@ public sealed class MainWindow : Window
                         Padding = new Thickness(8, 2),
                         Margin = new Thickness(10, 0, 0, 0),
                         Height = 30,
-                        Cursor = new Cursor(StandardCursorType.Hand),
+                        Cursor = GetInteractiveCursor(),
                         VerticalContentAlignment = VerticalAlignment.Center
                     };
                     quickCopy.Click += async (_, _) =>
@@ -10682,22 +12576,14 @@ public sealed class MainWindow : Window
         var contentStack = new StackPanel { Spacing = 12 };
         var accent = Color.Parse(_settings.AccentColor ?? "#8B5A2B");
 
-        var actionsPanel = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 10,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
         var resolveInput = new TextBox 
         { 
             Watermark = "Enter invite code...", 
             MinWidth = 160, 
             Height = 34, 
             VerticalAlignment = VerticalAlignment.Center,
-            Background = new SolidColorBrush(Color.FromArgb(30, 0, 0, 0)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(55, accent.R, accent.G, accent.B)),
-            BorderThickness = new Thickness(1.5),
+            Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+            BorderThickness = new Thickness(0),
             CornerRadius = new CornerRadius(6),
             Foreground = Brushes.White,
             Padding = new Thickness(10, 5)
@@ -10716,49 +12602,26 @@ public sealed class MainWindow : Window
         refreshBtn.Padding = new Thickness(14, 0);
         refreshBtn.CornerRadius = new CornerRadius(6);
         refreshBtn.FontWeight = FontWeight.Bold;
-        refreshBtn.Foreground = new SolidColorBrush(Color.Parse("#38D6C4"));
-        refreshBtn.BorderBrush = new SolidColorBrush(Color.Parse("#38D6C4"));
 
-        actionsPanel.Children.Add(new Grid
+        var actionsPanel = new Grid
         {
-            Children =
-            {
-                new Border
-                {
-                    Padding = new Thickness(14, 10),
-                    Child = new Grid
-                    {
-                        ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-                        ColumnSpacing = 10,
-                        Children =
-                        {
-                            CreateNavigationIcon("server", 18, new SolidColorBrush(accent)),
-                            (new StackPanel
-                            {
-                                Spacing = 2,
-                                Children =
-                                {
-                                    new TextBlock { Text = "Friend servers", FontWeight = FontWeight.Bold, Foreground = Brushes.White },
-                                    new TextBlock { Text = "Connect directly with an invite code.", FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#9693A6")) }
-                                }
-                            }).With(column: 1),
-                            (new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { resolveInput, resolveBtn } }).With(column: 2)
-                        }
-                    }
-                },
-                new Avalonia.Controls.Shapes.Rectangle
-                {
-                    Stroke = new SolidColorBrush(Color.Parse("#5D5970")),
-                    StrokeThickness = 1,
-                    StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 6, 4 },
-                    Fill = Brushes.Transparent,
-                    RadiusX = 8,
-                    RadiusY = 8,
-                    IsHitTestVisible = false
-                }
-            }
-        }.With(column: 0));
-        actionsPanel.Children.Add(refreshBtn.With(column: 1));
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 16,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 16, 0, 8)
+        };
+
+        var heading = new TextBlock { Text = "Friend Servers", FontSize = 18, FontWeight = FontWeight.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
+        actionsPanel.Children.Add(heading.With(column: 0));
+
+        var inputsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { resolveInput, resolveBtn, refreshBtn }
+        };
+        actionsPanel.Children.Add(inputsPanel.With(column: 1));
 
         contentStack.Children.Add(actionsPanel);
 
@@ -10822,41 +12685,26 @@ public sealed class MainWindow : Window
                         {
                             Width = 9, Height = 9,
                             CornerRadius = new CornerRadius(4.5),
-                            Background = new SolidColorBrush(Color.Parse("#00FF87")),
-                            VerticalAlignment = VerticalAlignment.Center,
-                            BoxShadow = new BoxShadows(new BoxShadow { Blur = 8, Color = Color.FromArgb(180, 0, 255, 135), OffsetX = 0, OffsetY = 0 })
+                            Background = new SolidColorBrush(Color.Parse("#4ADE80")),
+                            VerticalAlignment = VerticalAlignment.Center
                         };
                         var nameRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
                         nameRow.Children.Add(onlineDot);
-                        nameRow.Children.Add(new TextBlock { Text = srv.ServerName, FontSize = 16, FontWeight = FontWeight.Bold, Foreground = Brushes.White });
+                        nameRow.Children.Add(new TextBlock { Text = srv.ServerName, FontSize = 15, FontWeight = FontWeight.Bold, Foreground = Brushes.White });
                         leftCol.Children.Add(nameRow);
                         
-                        var badgeRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-                        badgeRow.Children.Add(new Border
-                        {
-                            Background = new SolidColorBrush(GetAccentColor(40)),
-                            BorderBrush = new SolidColorBrush(GetAccentColor(100)),
-                            BorderThickness = new Thickness(1),
-                            Padding = new Thickness(8, 3),
-                            CornerRadius = new CornerRadius(5),
-                            Child = new TextBlock { Text = $"Invite: {srv.InviteCode}", FontSize = 11, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(GetAccentColor(255)), TextWrapping = TextWrapping.NoWrap }
-                        });
-                        badgeRow.Children.Add(new Border
-                        {
-                            Background = new SolidColorBrush(Color.FromArgb(40, 56, 214, 196)),
-                            BorderBrush = new SolidColorBrush(Color.FromArgb(100, 56, 214, 196)),
-                            BorderThickness = new Thickness(1),
-                            Padding = new Thickness(8, 3),
-                            CornerRadius = new CornerRadius(5),
-                            MaxWidth = 360,
-                            Child = new TextBlock { Text = srv.Endpoint, FontSize = 11, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(Color.Parse("#38D6C4")), TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis }
-                        });
-                        leftCol.Children.Add(badgeRow);
+                        var srvMetadata = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                        srvMetadata.Children.Add(new TextBlock { Text = $"Invite: {srv.InviteCode}", FontSize = 11, Foreground = new SolidColorBrush(accent) });
+                        srvMetadata.Children.Add(new TextBlock { Text = "•", Foreground = new SolidColorBrush(Color.Parse("#4E5A78")), FontSize = 10, VerticalAlignment = VerticalAlignment.Center });
+                        srvMetadata.Children.Add(new TextBlock { Text = srv.Endpoint, FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#8E96A8")), TextTrimming = TextTrimming.CharacterEllipsis });
+                        leftCol.Children.Add(srvMetadata);
 
-                        var copyIpBtn = CreatePrimaryButton("Copy Address", "#38D6C4", Colors.Black);
-                        copyIpBtn.Height = 34;
+                        var copyIpBtn = CreatePrimaryButton("Copy Address", _settings.AccentColor ?? "#8B5A2B", Colors.White);
+                        copyIpBtn.Height = 30;
                         copyIpBtn.CornerRadius = new CornerRadius(6);
                         copyIpBtn.FontWeight = FontWeight.Bold;
+                        copyIpBtn.Padding = new Thickness(12, 0);
+                        copyIpBtn.FontSize = 11.5;
                         copyIpBtn.VerticalAlignment = VerticalAlignment.Center;
                         
                         var endpointAddr = srv.Endpoint;
@@ -10871,38 +12719,29 @@ public sealed class MainWindow : Window
                         cardGrid.Children.Add(leftCol.With(column: 0));
                         cardGrid.Children.Add(copyIpBtn.With(column: 1));
 
-                        var activeBorderBrush = new SolidColorBrush(Color.Parse("#38D6C4"));
-                        var inactiveBorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
-                        var activeBoxShadow = new BoxShadows(new BoxShadow { Blur = 12, Color = Color.FromArgb(40, 56, 214, 196), OffsetX = 0, OffsetY = 4 });
-                        var inactiveBoxShadow = new BoxShadows(new BoxShadow { Blur = 8, Color = Color.FromArgb(10, 0, 0, 0), OffsetX = 0, OffsetY = 2 });
-
                         var serverCard = new Border
                         {
-                            Background = new SolidColorBrush(Color.FromArgb(140, 20, 24, 33)),
-                            BorderBrush = inactiveBorderBrush,
-                            BorderThickness = new Thickness(1),
-                            CornerRadius = new CornerRadius(14),
+                            Background = new SolidColorBrush(Color.FromArgb(15, 255, 255, 255)), // Flat integrated card bg
+                            BorderThickness = new Thickness(0),
+                            CornerRadius = new CornerRadius(10), // Standardized card radius
                             Padding = new Thickness(14),
                             Child = cardGrid,
-                            BoxShadow = inactiveBoxShadow,
                             Transitions = new Transitions
                             {
-                                new BrushTransition { Property = Border.BorderBrushProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() },
-                                new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() }
+                                new BrushTransition { Property = Border.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() },
+                                new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseInOut() }
                             },
                             RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative)
                         };
 
                         serverCard.PointerEntered += (s, e) =>
                         {
-                            serverCard.BorderBrush = activeBorderBrush;
-                            serverCard.BoxShadow = activeBoxShadow;
-                            serverCard.RenderTransform = TransformOperations.Parse("scale(1.015)");
+                            serverCard.Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)); // Flat hover bg shift
+                            serverCard.RenderTransform = TransformOperations.Parse("scale(1.015)"); // Subtle scale
                         };
                         serverCard.PointerExited += (s, e) =>
                         {
-                            serverCard.BorderBrush = inactiveBorderBrush;
-                            serverCard.BoxShadow = inactiveBoxShadow;
+                            serverCard.Background = new SolidColorBrush(Color.FromArgb(15, 255, 255, 255));
                             serverCard.RenderTransform = TransformOperations.Parse("scale(1.0)");
                         };
 
@@ -11964,7 +13803,7 @@ public sealed class MainWindow : Window
             Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
             Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
             BorderThickness = new Thickness(0),
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
         backBtn.PointerEntered += (s, e) => backBtn.Background = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
         backBtn.PointerExited  += (s, e) => backBtn.Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255));
@@ -12048,7 +13887,7 @@ public sealed class MainWindow : Window
             BorderBrush = new SolidColorBrush(Color.Parse("#8F70FF")),
             BorderThickness = new Thickness(1.5),
             IsEnabled = statusLabelText == "Offline",
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
         importWorldBtn.PointerEntered += (s, e) => { if (importWorldBtn.IsEnabled) importWorldBtn.Background = new SolidColorBrush(Color.FromArgb(18, 143, 112, 255)); };
         importWorldBtn.PointerExited  += (s, e) => importWorldBtn.Background = Brushes.Transparent;
@@ -12063,7 +13902,7 @@ public sealed class MainWindow : Window
             BorderBrush = new SolidColorBrush(Color.Parse("#8F70FF")),
             BorderThickness = new Thickness(1.5),
             IsVisible = !string.IsNullOrEmpty(server.InviteCode),
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
         copyInviteBtn.PointerEntered += (s, e) => copyInviteBtn.Background = new SolidColorBrush(Color.FromArgb(18, 143, 112, 255));
         copyInviteBtn.PointerExited  += (s, e) => copyInviteBtn.Background = Brushes.Transparent;
@@ -12196,7 +14035,7 @@ public sealed class MainWindow : Window
                 BorderBrush = isActive 
                     ? new SolidColorBrush(Color.Parse(brandColor))
                     : new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
-                Cursor = new Cursor(StandardCursorType.Hand),
+                Cursor = GetInteractiveCursor(),
                 Padding = new Thickness(0),
                 Background = isActive
                     ? new SolidColorBrush(Color.FromArgb(25, Color.Parse(brandColor).R, Color.Parse(brandColor).G, Color.Parse(brandColor).B))
@@ -12363,7 +14202,7 @@ public sealed class MainWindow : Window
                     BorderThickness = new Thickness(0),
                     HorizontalContentAlignment = HorizontalAlignment.Center,
                     VerticalContentAlignment = VerticalAlignment.Center,
-                    Cursor = new Cursor(StandardCursorType.Hand),
+                    Cursor = GetInteractiveCursor(),
                     VerticalAlignment = VerticalAlignment.Center
                 };
                 var startBtnWrapper = new Border
@@ -12598,7 +14437,7 @@ public sealed class MainWindow : Window
                         Padding = new Thickness(12, 0),
                         HorizontalAlignment = HorizontalAlignment.Stretch,
                         HorizontalContentAlignment = HorizontalAlignment.Left,
-                        Cursor = new Cursor(StandardCursorType.Hand)
+                        Cursor = GetInteractiveCursor()
                     };
                     var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
                     row.Children.Add(new TextBlock
@@ -13660,7 +15499,7 @@ public sealed class MainWindow : Window
                     Background = Brushes.Transparent,
                     Foreground = new SolidColorBrush(Color.Parse("#FF5555")),
                     BorderThickness = new Thickness(0),
-                    Cursor = new Cursor(StandardCursorType.Hand),
+                    Cursor = GetInteractiveCursor(),
                 };
                 ToolTip.SetTip(removeBtn, "Remove Player");
                 removeBtn.Click += (_, _) =>
@@ -13715,7 +15554,7 @@ public sealed class MainWindow : Window
             Height = 38,
             Padding = new Thickness(16, 0),
             CornerRadius = new CornerRadius(8),
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
 
         addPlayerBtn.Click += (_, _) =>
@@ -17040,7 +18879,7 @@ if __name__ == '__main__':
             CornerRadius = new CornerRadius(16),
             BorderBrush = Brushes.White,
             BorderThickness = new Thickness(_settings.AccentColor == hex ? 2 : 0),
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
         ToolTip.SetTip(btn, hex);
         btn.Click += (_, _) => {
@@ -17063,7 +18902,7 @@ if __name__ == '__main__':
             CornerRadius = new CornerRadius(16),
             BorderBrush = Brushes.White,
             BorderThickness = new Thickness((_settings.SecondaryAccentColor ?? "#8F70FF") == hex ? 2 : 0),
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
         ToolTip.SetTip(btn, hex);
         btn.Click += (_, _) => {
@@ -17075,6 +18914,477 @@ if __name__ == '__main__':
         };
         return btn;
     }
+
+    private Cursor? _activeCustomCursor = null;
+    private Cursor? _activeCustomHoverCursor = null;
+
+    private Cursor GetInteractiveCursor()
+    {
+        return _activeCustomHoverCursor ?? new Cursor(StandardCursorType.Hand);
+    }
+
+    private void UpdateAllInteractiveCursors(Cursor? oldHover, Cursor? newHover)
+    {
+        UpdateControlCursorsRecursive(this, oldHover, newHover);
+    }
+
+    private void UpdateControlCursorsRecursive(Avalonia.Visual visual, Cursor? oldHover, Cursor? newHover)
+    {
+        if (visual is Control ctrl)
+        {
+            var currentCursor = ctrl.Cursor;
+            if (currentCursor != null)
+            {
+                bool isTarget = (oldHover != null && currentCursor == oldHover) 
+                    || currentCursor.ToString().Contains("Hand", StringComparison.OrdinalIgnoreCase);
+
+                if (isTarget)
+                {
+                    ctrl.Cursor = newHover ?? new Cursor(StandardCursorType.Hand);
+                }
+            }
+        }
+
+        foreach (var child in Avalonia.VisualTree.VisualExtensions.GetVisualChildren(visual))
+        {
+            UpdateControlCursorsRecursive(child, oldHover, newHover);
+        }
+    }
+
+    private string GetCursorsDirectoryPath()
+    {
+        var baseDir = AppContext.BaseDirectory;
+        var cursorsDir = Path.Combine(baseDir, "cursors");
+        if (Directory.Exists(cursorsDir)) return cursorsDir;
+
+        var procDir = Path.GetDirectoryName(Environment.ProcessPath ?? "") ?? "";
+        cursorsDir = Path.Combine(procDir, "cursors");
+        if (Directory.Exists(cursorsDir)) return cursorsDir;
+
+        cursorsDir = Path.Combine(Directory.GetCurrentDirectory(), "cursors");
+        return cursorsDir;
+    }
+
+    private List<string> GetAvailableCursorOptions()
+    {
+        var list = new List<string>();
+        var cursorsDir = GetCursorsDirectoryPath();
+
+        if (Directory.Exists(cursorsDir))
+        {
+            foreach (var sub in Directory.GetDirectories(cursorsDir))
+            {
+                var dirName = Path.GetFileName(sub);
+                list.Add(dirName);
+            }
+
+            foreach (var file in Directory.GetFiles(cursorsDir))
+            {
+                var ext = Path.GetExtension(file).ToLowerInvariant();
+                if (ext == ".png" || ext == ".cur" || ext == ".jpg" || ext == ".ani")
+                {
+                    list.Add(Path.GetFileName(file));
+                }
+            }
+        }
+
+        var skyrimIndex = list.FindIndex(s => string.Equals(s, "skyrim set", StringComparison.OrdinalIgnoreCase));
+        if (skyrimIndex != -1)
+        {
+            list[skyrimIndex] = "Skyrim Set";
+        }
+        else
+        {
+            list.Insert(0, "Skyrim Set");
+        }
+
+        list.Add("System Default");
+        return list;
+    }
+
+    private static class CursorHelper
+    {
+        public static (Bitmap? bitmap, PixelPoint hotSpot) LoadCursor(string filePath, int targetSize = 32)
+        {
+            if (!File.Exists(filePath)) return (null, new PixelPoint(0, 0));
+
+            try
+            {
+                var ext = Path.GetExtension(filePath).ToLowerInvariant();
+                Bitmap? rawBmp = null;
+                PixelPoint rawHotspot = new PixelPoint(0, 0);
+
+                if (ext == ".cur")
+                {
+                    (rawBmp, rawHotspot) = LoadCurFile(filePath);
+                }
+                else if (ext == ".ani")
+                {
+                    (rawBmp, rawHotspot) = LoadAniFile(filePath);
+                }
+                else
+                {
+                    using var stream = File.OpenRead(filePath);
+                    rawBmp = new Bitmap(stream);
+                    rawHotspot = new PixelPoint(0, 0);
+                }
+
+                if (rawBmp == null) return (null, new PixelPoint(0, 0));
+
+                return ScaleCursorToStandardSize(rawBmp, rawHotspot, targetSize);
+            }
+            catch (Exception ex)
+            {
+                LauncherLog.Error($"[Cursor] Failed to load cursor file '{filePath}'", ex);
+                return (null, new PixelPoint(0, 0));
+            }
+        }
+
+        private static (Bitmap bitmap, PixelPoint hotSpot) ScaleCursorToStandardSize(Bitmap originalBmp, PixelPoint originalHotspot, int targetSize = 32)
+        {
+            int origW = (int)originalBmp.Size.Width;
+            int origH = (int)originalBmp.Size.Height;
+
+            if (origW == targetSize && origH == targetSize)
+            {
+                return (originalBmp, originalHotspot);
+            }
+
+            double scale = (double)targetSize / Math.Max(origW, origH);
+            int newW = Math.Max(1, (int)Math.Round(origW * scale));
+            int newH = Math.Max(1, (int)Math.Round(origH * scale));
+
+            var rtb = new RenderTargetBitmap(new PixelSize(newW, newH), new Vector(96, 96));
+            using (var ctx = rtb.CreateDrawingContext())
+            {
+                ctx.DrawImage(originalBmp, new Rect(0, 0, origW, origH), new Rect(0, 0, newW, newH));
+            }
+
+            int newHotX = Math.Clamp((int)Math.Round(originalHotspot.X * scale), 0, Math.Max(0, newW - 1));
+            int newHotY = Math.Clamp((int)Math.Round(originalHotspot.Y * scale), 0, Math.Max(0, newH - 1));
+
+            return (rtb, new PixelPoint(newHotX, newHotY));
+        }
+
+        private static (Bitmap? bitmap, PixelPoint hotSpot) LoadAniFile(string filePath)
+        {
+            byte[] data = File.ReadAllBytes(filePath);
+            int iconIdx = FindBytes(data, new byte[] { (byte)'i', (byte)'c', (byte)'o', (byte)'n' });
+            if (iconIdx != -1 && iconIdx + 8 < data.Length)
+            {
+                uint iconSize = BitConverter.ToUInt32(data, iconIdx + 4);
+                int iconDataStart = iconIdx + 8;
+                if (iconDataStart + iconSize <= data.Length)
+                {
+                    byte[] iconBytes = new byte[iconSize];
+                    Buffer.BlockCopy(data, iconDataStart, iconBytes, 0, (int)iconSize);
+                    return LoadCurFromBytes(iconBytes);
+                }
+            }
+            return (null, new PixelPoint(0, 0));
+        }
+
+        private static int FindBytes(byte[] src, byte[] pattern)
+        {
+            for (int i = 0; i <= src.Length - pattern.Length; i++)
+            {
+                bool match = true;
+                for (int j = 0; j < pattern.Length; j++)
+                {
+                    if (src[i + j] != pattern[j]) { match = false; break; }
+                }
+                if (match) return i;
+            }
+            return -1;
+        }
+
+        private static (Bitmap? bitmap, PixelPoint hotSpot) LoadCurFile(string filePath)
+        {
+            byte[] data = File.ReadAllBytes(filePath);
+            return LoadCurFromBytes(data);
+        }
+
+        private static (Bitmap? bitmap, PixelPoint hotSpot) LoadCurFromBytes(byte[] data)
+        {
+            if (data.Length < 22) return (null, new PixelPoint(0, 0));
+
+            ushort count = BitConverter.ToUInt16(data, 4);
+            if (count == 0) return (null, new PixelPoint(0, 0));
+
+            int bestIdx = 0;
+            int bestScore = 9999;
+
+            for (int i = 0; i < count; i++)
+            {
+                int entryOffset = 6 + i * 16;
+                if (entryOffset + 16 > data.Length) break;
+
+                int w = data[entryOffset];
+                if (w == 0) w = 256;
+
+                int score = Math.Abs(w - 32);
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    bestIdx = i;
+                }
+            }
+
+            int dirOffset = 6 + bestIdx * 16;
+            ushort hotX = BitConverter.ToUInt16(data, dirOffset + 4);
+            ushort hotY = BitConverter.ToUInt16(data, dirOffset + 6);
+            uint imageSize = BitConverter.ToUInt32(data, dirOffset + 8);
+            uint imageOffset = BitConverter.ToUInt32(data, dirOffset + 12);
+
+            if (imageOffset + imageSize > data.Length) return (null, new PixelPoint(0, 0));
+
+            if (imageSize >= 8 && data[imageOffset] == 0x89 && data[imageOffset + 1] == 0x50 && data[imageOffset + 2] == 0x4E && data[imageOffset + 3] == 0x47)
+            {
+                using var ms = new MemoryStream(data, (int)imageOffset, (int)imageSize);
+                var bmp = new Bitmap(ms);
+                return (bmp, new PixelPoint(hotX, hotY));
+            }
+
+            var parsedBmp = ParseCurDIB(data, (int)imageOffset, (int)imageSize);
+            if (parsedBmp != null)
+            {
+                return (parsedBmp, new PixelPoint(hotX, hotY));
+            }
+
+            try
+            {
+                byte[] singleCur = new byte[6 + 16 + imageSize];
+                Array.Copy(data, 0, singleCur, 0, 4);
+                BitConverter.GetBytes((ushort)1).CopyTo(singleCur, 4);
+                Array.Copy(data, dirOffset, singleCur, 6, 16);
+                BitConverter.GetBytes((uint)22).CopyTo(singleCur, 6 + 18);
+                Array.Copy(data, (int)imageOffset, singleCur, 22, (int)imageSize);
+
+                using var ms = new MemoryStream(singleCur);
+                var bmp = new Bitmap(ms);
+                return (bmp, new PixelPoint(hotX, hotY));
+            }
+            catch
+            {
+                return (null, new PixelPoint(0, 0));
+            }
+        }
+
+        private static Bitmap? ParseCurDIB(byte[] data, int offset, int size)
+        {
+            if (size < 40 || offset + 40 > data.Length) return null;
+
+            int headerSize = BitConverter.ToInt32(data, offset);
+            int w = BitConverter.ToInt32(data, offset + 4);
+            int rawH = BitConverter.ToInt32(data, offset + 8);
+            int h = Math.Abs(rawH) / 2;
+            if (h == 0) h = Math.Abs(rawH);
+            ushort bpp = BitConverter.ToUInt16(data, offset + 14);
+
+            if (w <= 0 || h <= 0 || w > 512 || h > 512) return null;
+
+            int numColors = BitConverter.ToInt32(data, offset + 32);
+            if (numColors == 0 && bpp <= 8) numColors = 1 << bpp;
+
+            int paletteOffset = offset + headerSize;
+            int pixelDataStart = paletteOffset + (numColors * 4);
+
+            var wb = new WriteableBitmap(new PixelSize(w, h), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+            using (var fb = wb.Lock())
+            {
+                Color[]? palette = null;
+                if (numColors > 0 && paletteOffset + (numColors * 4) <= data.Length)
+                {
+                    palette = new Color[numColors];
+                    for (int c = 0; c < numColors; c++)
+                    {
+                        int p = paletteOffset + (c * 4);
+                        palette[c] = Color.FromArgb(255, data[p + 2], data[p + 1], data[p]);
+                    }
+                }
+
+                int xorRowSize = ((w * bpp + 31) / 32) * 4;
+                int andRowSize = ((w + 31) / 32) * 4;
+                int andMaskStart = pixelDataStart + (h * xorRowSize);
+                byte[] pixelBuffer = new byte[fb.RowBytes * h];
+
+                for (int y = 0; y < h; y++)
+                {
+                    int srcY = h - 1 - y;
+                    int xorRowOffset = pixelDataStart + (srcY * xorRowSize);
+                    int andRowOffset = andMaskStart + (srcY * andRowSize);
+                    int destRowOffset = y * fb.RowBytes;
+
+                    for (int x = 0; x < w; x++)
+                    {
+                        byte r = 0, g = 0, b = 0, a = 255;
+
+                        if (bpp == 32)
+                        {
+                            int px = xorRowOffset + (x * 4);
+                            if (px + 3 < data.Length)
+                            {
+                                b = data[px];
+                                g = data[px + 1];
+                                r = data[px + 2];
+                                a = data[px + 3];
+                            }
+                        }
+                        else if (bpp == 24)
+                        {
+                            int px = xorRowOffset + (x * 3);
+                            if (px + 2 < data.Length)
+                            {
+                                b = data[px];
+                                g = data[px + 1];
+                                r = data[px + 2];
+                            }
+                        }
+                        else if (bpp == 8 && palette != null)
+                        {
+                            int px = xorRowOffset + x;
+                            if (px < data.Length)
+                            {
+                                byte idx = data[px];
+                                if (idx < palette.Length) { var col = palette[idx]; r = col.R; g = col.G; b = col.B; }
+                            }
+                        }
+                        else if (bpp == 4 && palette != null)
+                        {
+                            int px = xorRowOffset + (x / 2);
+                            if (px < data.Length)
+                            {
+                                byte val = data[px];
+                                byte idx = (x % 2 == 0) ? (byte)(val >> 4) : (byte)(val & 0x0F);
+                                if (idx < palette.Length) { var col = palette[idx]; r = col.R; g = col.G; b = col.B; }
+                            }
+                        }
+                        else if (bpp == 1 && palette != null)
+                        {
+                            int px = xorRowOffset + (x / 8);
+                            if (px < data.Length)
+                            {
+                                byte val = data[px];
+                                byte idx = (byte)((val >> (7 - (x % 8))) & 1);
+                                if (idx < palette.Length) { var col = palette[idx]; r = col.R; g = col.G; b = col.B; }
+                            }
+                        }
+
+                        if (andMaskStart < data.Length && bpp != 32)
+                        {
+                            int andByte = andRowOffset + (x / 8);
+                            if (andByte < data.Length)
+                            {
+                                int maskBit = (data[andByte] >> (7 - (x % 8))) & 1;
+                                if (maskBit != 0) a = 0;
+                            }
+                        }
+
+                        int outIdx = destRowOffset + (x * 4);
+                        pixelBuffer[outIdx]     = b;
+                        pixelBuffer[outIdx + 1] = g;
+                        pixelBuffer[outIdx + 2] = r;
+                        pixelBuffer[outIdx + 3] = a;
+                    }
+                }
+
+                System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, fb.Address, pixelBuffer.Length);
+            }
+
+            var rtb = new RenderTargetBitmap(new PixelSize(w, h), new Vector(96, 96));
+            using (var ctx = rtb.CreateDrawingContext())
+            {
+                ctx.DrawImage(wb, new Rect(0, 0, w, h));
+            }
+            return rtb;
+        }
+    }
+
+    public void ApplyCustomCursor()
+    {
+        Cursor? oldHover = _activeCustomHoverCursor;
+        try
+        {
+            var cursorsDir = GetCursorsDirectoryPath();
+            var style = string.IsNullOrWhiteSpace(_settings.CustomCursorStyle) ? "Skyrim Set" : _settings.CustomCursorStyle;
+
+            if (string.Equals(style, "System Default", StringComparison.OrdinalIgnoreCase))
+            {
+                _activeCustomCursor = null;
+                _activeCustomHoverCursor = null;
+                Cursor = Cursor.Default;
+                UpdateAllInteractiveCursors(oldHover, null);
+                return;
+            }
+
+            string targetFile = "";
+            if (string.Equals(style, "Skyrim Set", StringComparison.OrdinalIgnoreCase))
+            {
+                targetFile = Path.Combine(cursorsDir, "skyrim set", "Normal.cur");
+                if (!File.Exists(targetFile))
+                {
+                    targetFile = Path.Combine(cursorsDir, "skyrim set", "Normal-lefties.cur");
+                }
+            }
+            else
+            {
+                var directFile = Path.Combine(cursorsDir, style);
+                if (File.Exists(directFile))
+                {
+                    targetFile = directFile;
+                }
+                else if (Directory.Exists(directFile))
+                {
+                    targetFile = Path.Combine(directFile, "Normal.cur");
+                    if (!File.Exists(targetFile))
+                    {
+                        var files = Directory.GetFiles(directFile, "*.*");
+                        if (files.Length > 0) targetFile = files[0];
+                    }
+                }
+            }
+
+            if (File.Exists(targetFile))
+            {
+                var targetSize = Math.Clamp(_settings.CursorScale > 0 ? _settings.CursorScale : 32, 16, 64);
+                var (bmp, hs) = CursorHelper.LoadCursor(targetFile, targetSize);
+                if (bmp != null)
+                {
+                    _activeCustomCursor = new Cursor(bmp, hs);
+                    Cursor = _activeCustomCursor;
+
+                    // Load hover cursor (20px bigger)
+                    var hoverSize = Math.Clamp(targetSize + 20, 16, 120);
+                    var (bmpHover, hsHover) = CursorHelper.LoadCursor(targetFile, hoverSize);
+                    if (bmpHover != null)
+                    {
+                        _activeCustomHoverCursor = new Cursor(bmpHover, hsHover);
+                    }
+                    else
+                    {
+                        _activeCustomHoverCursor = _activeCustomCursor;
+                    }
+
+                    UpdateAllInteractiveCursors(oldHover, _activeCustomHoverCursor);
+                    return;
+                }
+            }
+
+            _activeCustomCursor = null;
+            _activeCustomHoverCursor = null;
+            Cursor = Cursor.Default;
+            UpdateAllInteractiveCursors(oldHover, null);
+        }
+        catch (Exception ex)
+        {
+            LauncherLog.Error("[Cursor] Failed to apply custom cursor", ex);
+            _activeCustomCursor = null;
+            _activeCustomHoverCursor = null;
+            Cursor = Cursor.Default;
+            UpdateAllInteractiveCursors(oldHover, null);
+        }
+    }
+
     private void UpdateSelectedProjectDetails()
     {
         if (modrinthResultsListBox.SelectedItem is not ModrinthProject project)
@@ -17112,6 +19422,173 @@ if __name__ == '__main__':
         modrinthDetailsTitle.Text = project.Title;
         modrinthDetailsMeta.Text = $"by {project.Author}  •  {project.Downloads:N0} downloads  •  {project.Follows:N0} follows";
         modrinthDetailsDesc.Text = $"{project.Description}\n\nCategories:\n{string.Join(", ", project.Categories)}";
+        
+        // Reset mod list panel
+        if (modrinthModListPanel != null)
+        {
+            modrinthModListPanel.Children.Clear();
+            modrinthModListPanel.IsVisible = false;
+        }
+
+        if (project.ProjectType == "modpack" && modrinthModListPanel != null)
+        {
+            // Show a loading indicator while we fetch the mod list
+            var loadingLabel = new TextBlock
+            {
+                Text = "⟳  Loading modpack contents…",
+                FontSize = 11,
+                Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")),
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+            modrinthModListPanel.Children.Add(loadingLabel);
+            modrinthModListPanel.IsVisible = true;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var gameVersion = string.IsNullOrWhiteSpace(modrinthVersionInput?.Text) ? null : modrinthVersionInput.Text.Trim();
+                    var loader = NormalizeLoaderFilter();
+                    var versions = await _modrinthClient.GetProjectVersionsAsync(project.ProjectId, gameVersion, loader, CancellationToken.None);
+                    // Fall back: get any version if filter returns nothing
+                    if (versions.Count == 0)
+                        versions = await _modrinthClient.GetProjectVersionsAsync(project.ProjectId, null, null, CancellationToken.None);
+
+                    var version = versions.FirstOrDefault(v => v.Files.Any(f => f.Filename.EndsWith(".mrpack", StringComparison.OrdinalIgnoreCase)))
+                                  ?? versions.FirstOrDefault();
+
+                    if (version == null)
+                    {
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            modrinthModListPanel.Children.Clear();
+                            modrinthModListPanel.Children.Add(new TextBlock { Text = "No compatible version found.", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")) });
+                        });
+                        return;
+                    }
+
+                    // Download and parse the .mrpack to get the file list
+                    var mrpackFile = version.Files.FirstOrDefault(f => f.Primary) ?? version.Files.FirstOrDefault(f => f.Filename.EndsWith(".mrpack", StringComparison.OrdinalIgnoreCase));
+                    if (mrpackFile == null)
+                    {
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            modrinthModListPanel.Children.Clear();
+                            modrinthModListPanel.Children.Add(new TextBlock { Text = "No .mrpack file found in this version.", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#6C7A9C")) });
+                        });
+                        return;
+                    }
+
+                    var tempPath = Path.Combine(Path.GetTempPath(), $"preview_{project.Slug}_{version.VersionNumber}.mrpack");
+                    if (!File.Exists(tempPath))
+                        await _modrinthClient.DownloadFileAsync(mrpackFile.Url, tempPath, null, CancellationToken.None);
+
+                    List<string> modNames = [];
+                    string packName = project.Title;
+                    string packVersion = version.VersionNumber;
+                    Dictionary<string, string> packDeps = [];
+
+                    using (var archive = System.IO.Compression.ZipFile.OpenRead(tempPath))
+                    {
+                        var indexEntry = archive.GetEntry("modrinth.index.json");
+                        if (indexEntry != null)
+                        {
+                            await using var indexStream = indexEntry.Open();
+                            var index = await System.Text.Json.JsonSerializer.DeserializeAsync<MrPackIndex>(indexStream);
+                            if (index != null)
+                            {
+                                packName = index.Name.Length > 0 ? index.Name : packName;
+                                packVersion = index.VersionId.Length > 0 ? index.VersionId : packVersion;
+                                packDeps = index.Dependencies;
+                                foreach (var f in index.Files)
+                                {
+                                    if (string.Equals(f.Env?.Client, "unsupported", StringComparison.OrdinalIgnoreCase)) continue;
+                                    var fileName = Path.GetFileNameWithoutExtension(f.Path.Split('/').Last());
+                                    modNames.Add(fileName);
+                                }
+                            }
+                        }
+                    }
+
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        modrinthModListPanel.Children.Clear();
+
+                        // Header
+                        var headerText = new TextBlock
+                        {
+                            Text = $"📦  {modNames.Count} mods included  •  {packVersion}",
+                            FontSize = 11.5,
+                            FontWeight = FontWeight.Bold,
+                            Foreground = new SolidColorBrush(Color.Parse("#C0CCDD")),
+                            Margin = new Thickness(0, 0, 0, 6)
+                        };
+                        modrinthModListPanel.Children.Add(headerText);
+
+                        // Dependency row (Minecraft + loader version)
+                        if (packDeps.Count > 0)
+                        {
+                            var depStr = string.Join("  •  ", packDeps.Select(kv => $"{kv.Key} {kv.Value}"));
+                            modrinthModListPanel.Children.Add(new TextBlock
+                            {
+                                Text = depStr,
+                                FontSize = 10,
+                                Foreground = new SolidColorBrush(Color.Parse("#5A6680")),
+                                Margin = new Thickness(0, 0, 0, 8)
+                            });
+                        }
+
+                        // Separator
+                        modrinthModListPanel.Children.Add(new Border
+                        {
+                            Height = 1,
+                            Background = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+                            Margin = new Thickness(0, 0, 0, 8)
+                        });
+
+                        // Mod rows
+                        foreach (var name in modNames.OrderBy(n => n))
+                        {
+                            modrinthModListPanel.Children.Add(new TextBlock
+                            {
+                                Text = $"  {name}",
+                                FontSize = 11,
+                                Foreground = new SolidColorBrush(Color.Parse("#A0AABB")),
+                                Padding = new Thickness(0, 1)
+                            });
+                        }
+
+                        if (modNames.Count == 0)
+                        {
+                            modrinthModListPanel.Children.Add(new TextBlock
+                            {
+                                Text = "No client-side mods found in this modpack.",
+                                FontSize = 11,
+                                Foreground = new SolidColorBrush(Color.Parse("#6C7A9C"))
+                            });
+                        }
+
+                        modrinthModListPanel.IsVisible = true;
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        modrinthModListPanel.Children.Clear();
+                        modrinthModListPanel.Children.Add(new TextBlock
+                        {
+                            Text = $"Could not load modpack contents: {ex.Message}",
+                            FontSize = 10,
+                            Foreground = new SolidColorBrush(Color.Parse("#9B3030")),
+                            TextWrapping = TextWrapping.Wrap
+                        });
+                        modrinthModListPanel.IsVisible = true;
+                    });
+                }
+            });
+        }
+
         
         if (modrinthDetailsIconFallback.Child is TextBlock ft)
         {
@@ -18154,6 +20631,7 @@ if __name__ == '__main__':
             "puzzle" => "M19 13.5V18a2 2 0 0 1-2 2h-4.5v-2.25a2.25 2.25 0 1 0-4.5 0V20H5a2 2 0 0 1-2-2v-4.5h2.25a2.25 2.25 0 1 0 0-4.5H3V6a2 2 0 0 1 2-2h3V1.75a2.25 2.25 0 1 1 4.5 0V4H17a2 2 0 0 1 2 2v3h2.25a2.25 2.25 0 1 1 0 4.5H19Z",
             "trash" => "M4 7h16M10 11v6M14 11v6M9 7V4h6v3m3 0-1 14H7L6 7",
             "server" => "M4 3h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 10h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2Zm2-7h.01M6 16h.01M10 7h8M10 17h8",
+            "palette" => "M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z M 13 6.5 A 0.5 0.5 0 1 0 14 6.5 A 0.5 0.5 0 1 0 13 6.5 M 17 10.5 A 0.5 0.5 0 1 0 18 10.5 A 0.5 0.5 0 1 0 17 10.5 M 6 12.5 A 0.5 0.5 0 1 0 7 12.5 A 0.5 0.5 0 1 0 6 12.5 M 8 7.5 A 0.5 0.5 0 1 0 9 7.5 A 0.5 0.5 0 1 0 8 7.5",
             "settings" => "M12 3.5a2 2 0 0 1 1.9 1.4l.35 1.1a6.7 6.7 0 0 1 1.5.87l1.1-.36a2 2 0 0 1 2.28.82l.75 1.3a2 2 0 0 1-.38 2.4l-.83.76a6.9 6.9 0 0 1 0 1.74l.83.76a2 2 0 0 1 .38 2.4l-.75 1.3a2 2 0 0 1-2.28.82l-1.1-.36a6.7 6.7 0 0 1-1.5.87l-.35 1.1a2 2 0 0 1-1.9 1.4h-1.5a2 2 0 0 1-1.9-1.4l-.35-1.1a6.7 6.7 0 0 1-1.5-.87l-1.1.36a2 2 0 0 1-2.28-.82l-.75-1.3a2 2 0 0 1 .38-2.4l.83-.76a6.9 6.9 0 0 1 0-1.74l-.83-.76a2 2 0 0 1-.38-2.4l.75-1.3a2 2 0 0 1 2.28-.82l1.1.36a6.7 6.7 0 0 1 1.5-.87l.35-1.1A2 2 0 0 1 10.5 3.5H12Zm-.75 5.25a3.25 3.25 0 1 0 0 6.5 3.25 3.25 0 0 0 0-6.5Z",
             _ => "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"
         };
@@ -19173,25 +21651,25 @@ if __name__ == '__main__':
         
         var transitions = new Transitions
         {
-            new DoubleTransition { Property = Control.OpacityProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) },
-            new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Easing = new BackEaseOut(), Duration = TimeSpan.FromMilliseconds(300) }
+            new DoubleTransition { Property = Control.OpacityProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(250) },
+            new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(300) }
         };
 
         if (control is TemplatedControl)
         {
-            transitions.Add(new BrushTransition { Property = TemplatedControl.BackgroundProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) });
-            transitions.Add(new BrushTransition { Property = TemplatedControl.ForegroundProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(200) });
-            transitions.Add(new BrushTransition { Property = TemplatedControl.BorderBrushProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) });
+            transitions.Add(new BrushTransition { Property = TemplatedControl.BackgroundProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(250) });
+            transitions.Add(new BrushTransition { Property = TemplatedControl.ForegroundProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(200) });
+            transitions.Add(new BrushTransition { Property = TemplatedControl.BorderBrushProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(250) });
         }
         else if (control is Border)
         {
-            transitions.Add(new BrushTransition { Property = Border.BackgroundProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) });
-            transitions.Add(new BrushTransition { Property = Border.BorderBrushProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) });
-            transitions.Add(new BoxShadowsTransition { Property = Border.BoxShadowProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) });
+            transitions.Add(new BrushTransition { Property = Border.BackgroundProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(250) });
+            transitions.Add(new BrushTransition { Property = Border.BorderBrushProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(250) });
+            transitions.Add(new BoxShadowsTransition { Property = Border.BoxShadowProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(250) });
         }
         else if (control is Panel)
         {
-            transitions.Add(new BrushTransition { Property = Panel.BackgroundProperty, Easing = new CubicEaseOut(), Duration = TimeSpan.FromMilliseconds(250) });
+            transitions.Add(new BrushTransition { Property = Panel.BackgroundProperty, Easing = new CubicEaseInOut(), Duration = TimeSpan.FromMilliseconds(250) });
         }
 
         control.Transitions = transitions;
@@ -19286,13 +21764,17 @@ if __name__ == '__main__':
                 var skinPath = Path.Combine(_defaultMinecraftPath.BasePath, "death-client", $"skin_{accountId}.png");
                 Directory.CreateDirectory(Path.GetDirectoryName(skinPath)!);
                 await using var stream = await files[0].OpenReadAsync();
-                await using var dest = File.Create(skinPath);
-                await stream.CopyToAsync(dest);
+                using var skin = await SixLabors.ImageSharp.Image.LoadAsync<SixLabors.ImageSharp.PixelFormats.Rgba32>(stream);
+                if (skin.Width != 64 || (skin.Height != 64 && skin.Height != 32))
+                    throw new InvalidOperationException($"Invalid skin dimensions {skin.Width}×{skin.Height}. Use a 64×64 or 64×32 Minecraft skin.");
+                SaveImageAsPng(skin, skinPath);
 
                 _settings.CustomSkinPath = skinPath;
                 _settingsStore.Save(_settings);
 
                 UpdateCharacterPreview();
+                if (_activeSection == "customize")
+                    RebuildUiFromLayoutState(_activeSection);
                 await DialogService.ShowInfoAsync(this, "Skin Applied", "Your skin has been updated and will be used when launching vanilla modpacks.");
             }
         }
@@ -19351,7 +21833,15 @@ if __name__ == '__main__':
                         {
                             LauncherLog.Warn($"[Cape] GIF conversion failed: {gifError}. Copying file directly.");
                         }
-                        File.Copy(tempFile, capePath, true);
+                        if (isGif)
+                            throw new InvalidOperationException(gifError ?? "The selected GIF cape could not be decoded.");
+
+                        using var cape = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(tempFile);
+                        bool validCape = (cape.Width == 64 && cape.Height >= 32 && cape.Height % 32 == 0)
+                            || (cape.Width == 128 && cape.Height >= 64 && cape.Height % 64 == 0);
+                        if (!validCape)
+                            throw new InvalidOperationException($"Invalid cape dimensions {cape.Width}×{cape.Height}. Use 64×32, 128×64, or a correctly-sized animated cape.");
+                        SaveImageAsPng(cape, capePath);
                     }
 
                     if (isGif)
@@ -19372,6 +21862,8 @@ if __name__ == '__main__':
                     _settingsStore.Save(_settings);
 
                     UpdateCharacterPreview();
+                    if (_activeSection == "customize")
+                        RebuildUiFromLayoutState(_activeSection);
                     await DialogService.ShowInfoAsync(this, "Cape Applied", "Your cape has been updated and will be used when launching vanilla modpacks.");
                 }
                 finally
@@ -20401,7 +22893,7 @@ if __name__ == '__main__':
             CornerRadius = new CornerRadius(8),
             Height = 32,
             Padding = new Thickness(10, 0),
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
         ToolTip.SetTip(wsSettingsBtn, "Instance Settings");
         var settingsStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
@@ -20418,7 +22910,7 @@ if __name__ == '__main__':
             CornerRadius = new CornerRadius(8),
             Height = 32,
             Padding = new Thickness(10, 0),
-            Cursor = new Cursor(StandardCursorType.Hand),
+            Cursor = GetInteractiveCursor(),
         };
         var consoleStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
         consoleStack.Children.Add(CreateVectorIcon("logs", 12, "#AAAAAA"));
@@ -20434,7 +22926,7 @@ if __name__ == '__main__':
             CornerRadius = new CornerRadius(8),
             Height = 32,
             Padding = new Thickness(10, 0),
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
         ToolTip.SetTip(wsMoreBtn, "More Options");
         var moreStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
@@ -20622,7 +23114,7 @@ if __name__ == '__main__':
                 Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
-                Cursor = new Cursor(StandardCursorType.Hand)
+                Cursor = GetInteractiveCursor()
             };
             string capturedSubKey = subKey;
             subBtn.Click += (_, _) => SwitchContentSubTab(capturedSubKey);
@@ -20654,7 +23146,7 @@ if __name__ == '__main__':
             BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
         refreshBtn.Click += (_, _) => RefreshActiveSubTabList();
         ToolTip.SetTip(refreshBtn, "Refresh List");
@@ -20675,7 +23167,7 @@ if __name__ == '__main__':
             Padding = new Thickness(16, 0),
             Background = new SolidColorBrush(Color.Parse(_settings.AccentColor)),
             CornerRadius = new CornerRadius(8),
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = GetInteractiveCursor()
         };
         addBtn.Click += (_, _) => AddNewContentClicked();
         ToolTip.SetTip(addBtn, "Browse and install new content");
@@ -20760,7 +23252,7 @@ if __name__ == '__main__':
                 BorderThickness = new Thickness(0),
                 Padding = new Thickness(12, 6),
                 CornerRadius = new CornerRadius(8),
-                Cursor = new Cursor(StandardCursorType.Hand)
+                Cursor = GetInteractiveCursor()
             };
             string capturedKey = key;
             btn.Click += (_, _) => SwitchWorkspaceTab(capturedKey);
@@ -21016,7 +23508,7 @@ if __name__ == '__main__':
             BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
-            Cursor = new Cursor(StandardCursorType.Hand),
+            Cursor = GetInteractiveCursor(),
             HorizontalAlignment = HorizontalAlignment.Center
         };
         browseBtn.Click += (_, _) => AddNewContentClicked();
@@ -21123,7 +23615,7 @@ if __name__ == '__main__':
             BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
-            Cursor = new Cursor(StandardCursorType.Hand),
+            Cursor = GetInteractiveCursor(),
             HorizontalAlignment = HorizontalAlignment.Center
         };
         browseBtn.Click += (_, _) => AddNewContentClicked();
@@ -21211,7 +23703,7 @@ if __name__ == '__main__':
             BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
-            Cursor = new Cursor(StandardCursorType.Hand),
+            Cursor = GetInteractiveCursor(),
             HorizontalAlignment = HorizontalAlignment.Center
         };
         browseBtn.Click += (_, _) => AddNewContentClicked();
@@ -21494,7 +23986,7 @@ if __name__ == '__main__':
                 Padding = new Thickness(8, 2),
                 CornerRadius = new CornerRadius(6),
                 Margin = new Thickness(0, 0, 4, 0),
-                Cursor = new Cursor(StandardCursorType.Hand)
+                Cursor = GetInteractiveCursor()
             };
         }
 
@@ -22175,7 +24667,7 @@ if __name__ == '__main__':
                             ClipToBounds = true,
                             Margin = new Thickness(6),
                             Child = img,
-                            Cursor = new Cursor(StandardCursorType.Hand)
+                            Cursor = GetInteractiveCursor()
                         };
                         border.PointerPressed += (s, e) =>
                         {

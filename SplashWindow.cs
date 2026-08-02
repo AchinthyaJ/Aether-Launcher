@@ -1,158 +1,96 @@
 using System;
-using System.Threading.Tasks;
 using Avalonia;
-using Avalonia.Animation;
-using Avalonia.Animation.Easings;
 using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Threading;
-using CmlLib.Core;
 
 namespace OfflineMinecraftLauncher;
 
-public class SplashWindow : Window
+/// <summary>
+/// Custom-drawn startup card: white background with curvy lines.
+/// SlideProgress (0→1) slides a black panel from left to right,
+/// changing the pattern colour to faint white.
+/// </summary>
+public class StartupPatternCard : Control
 {
-    public SplashWindow()
+    public static readonly StyledProperty<double> SlideProgressProperty =
+        AvaloniaProperty.Register<StartupPatternCard, double>(nameof(SlideProgress), 0.0);
+
+    public double SlideProgress
     {
-        Title = "Fugo Launcher";
-        Width = 480;
-        Height = 300;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        SystemDecorations = SystemDecorations.None;
-        Background = Brushes.Transparent;
-        TransparencyLevelHint = new[]
-        {
-            WindowTransparencyLevel.Mica,
-            WindowTransparencyLevel.AcrylicBlur,
-            WindowTransparencyLevel.Transparent
-        };
-
-        // Start fully transparent — animation runs in Opened
-        Opacity = 0;
-
-        var titleText = new TextBlock
-        {
-            Text = "F U G O",
-            FontSize = 42,
-            FontWeight = FontWeight.Black,
-            Foreground = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Color.Parse("#00F2FE"), 0),
-                    new GradientStop(Color.Parse("#5972FF"), 1)
-                }
-            },
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 0, 0, 6)
-        };
-
-        var subtitleText = new TextBlock
-        {
-            Text = "PROJECT CLIENT LAUNCHER",
-            FontSize = 10,
-            FontWeight = FontWeight.Light,
-            LetterSpacing = 5,
-            Foreground = new SolidColorBrush(Color.Parse("#8E96A3")),
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-
-        var content = new StackPanel
-        {
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Spacing = 0,
-            Children = { titleText, subtitleText }
-        };
-
-        Content = new Border
-        {
-            Background = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Color.Parse("#0D111A"), 0),
-                    new GradientStop(Color.Parse("#161924"), 1)
-                }
-            },
-            BorderBrush = new SolidColorBrush(Color.Parse("#2A2D3D")),
-            BorderThickness = new Thickness(1.5),
-            CornerRadius = new CornerRadius(16),
-            BoxShadow = BoxShadows.Parse("0 12 36 0 #7F000000, 0 0 30 0 #1A00F2FE"),
-            Padding = new Thickness(32),
-            Child = content
-        };
-
-        // All sequencing happens here — after the window is actually on screen
-        Opened += async (_, _) =>
-        {
-            // Kick off skin server in background immediately
-            _ = Task.Run(async () =>
-            {
-                try { await AppRuntime.SkinServer.StartAsync(); }
-                catch (Exception ex) { LauncherLog.Error("Failed to initialize node skin server.", ex); }
-            });
-
-            // Allow one layout/render pass before animating
-            await Task.Delay(30);
-
-            // ── Fade IN (200ms) ──────────────────────────────────────────────
-            Transitions = new Transitions
-            {
-                new DoubleTransition
-                {
-                    Property = Window.OpacityProperty,
-                    Duration = TimeSpan.FromMilliseconds(200),
-                    Easing = new CubicEaseOut()
-                }
-            };
-            Opacity = 1.0;
-
-            // Stay visible for ~650ms (fade-in takes 200ms of this slot)
-            await Task.Delay(650);
-
-            // ── Fade OUT (150ms, quick) ──────────────────────────────────────
-            Transitions = new Transitions
-            {
-                new DoubleTransition
-                {
-                    Property = Window.OpacityProperty,
-                    Duration = TimeSpan.FromMilliseconds(150),
-                    Easing = new CubicEaseIn()
-                }
-            };
-            Opacity = 0.0;
-
-            await Task.Delay(160); // wait for fade-out to complete
-
-            // ── Navigate ────────────────────────────────────────────────────
-            Dispatcher.UIThread.Post(() =>
-            {
-                bool needsOnboarding = true;
-                try
-                {
-                    var initialPath = new MinecraftPath();
-                    initialPath.CreateDirs();
-                    var store = new UserSettingsStore(initialPath.BasePath);
-                    var settings = store.Load();
-                    needsOnboarding = settings.IsFirstRun || settings.Accounts.Count == 0;
-                }
-                catch { }
-
-                var nextWindow = needsOnboarding ? (Window)new FirstRunAccountWindow() : new MainWindow();
-
-                if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-                    desktop.MainWindow = nextWindow;
-
-                nextWindow.Show();
-                Close();
-            });
-        };
+        get => GetValue(SlideProgressProperty);
+        set => SetValue(SlideProgressProperty, value);
     }
+
+    static StartupPatternCard()
+    {
+        AffectsRender<StartupPatternCard>(SlideProgressProperty);
+    }
+
+    public override void Render(DrawingContext context)
+    {
+        base.Render(context);
+
+        double w = Bounds.Width;
+        double h = Bounds.Height;
+        if (w <= 0 || h <= 0) return;
+
+        var fullRect = new Rect(0, 0, w, h);
+
+        using (context.PushClip(fullRect))
+        {
+            // ── White layer ──────────────────────────────────────────────────
+            context.FillRectangle(Brushes.White, fullRect);
+
+            // Subtle dark pattern on white
+            var darkPen = new Pen(new SolidColorBrush(Color.FromArgb(55, 150, 165, 185)), 1.5);
+            DrawCurvyLines(context, w, h, darkPen);
+
+            // ── Black slide layer (clips from left) ──────────────────────────
+            double slideW = w * Math.Clamp(SlideProgress, 0.0, 1.0);
+            if (slideW > 0)
+            {
+                var slideClip = new Rect(0, 0, slideW, h);
+                using (context.PushClip(slideClip))
+                {
+                    context.FillRectangle(new SolidColorBrush(Color.Parse("#0B0B0E")), fullRect);
+
+                    // Faint white pattern on black
+                    var whitePen = new Pen(new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)), 1.5);
+                    DrawCurvyLines(context, w, h, whitePen);
+                }
+            }
+        }
+    }
+
+    private static void DrawCurvyLines(DrawingContext ctx, double w, double h, Pen pen)
+    {
+        var geo = new StreamGeometry();
+        using (var c = geo.Open())
+        {
+            c.BeginFigure(new Point(-0.1 * w, 0.25 * h), false);
+            c.CubicBezierTo(new Point(0.3 * w, 0.05 * h), new Point(0.65 * w, 0.5 * h),  new Point(1.1 * w, 0.2 * h));
+
+            c.BeginFigure(new Point(-0.05 * w, 0.6 * h), false);
+            c.CubicBezierTo(new Point(0.25 * w, 0.2 * h), new Point(0.7 * w, 0.85 * h), new Point(1.05 * w, 0.45 * h));
+
+            c.BeginFigure(new Point(-0.1 * w, 0.85 * h), false);
+            c.CubicBezierTo(new Point(0.35 * w, 0.55 * h), new Point(0.6 * w, 0.95 * h), new Point(1.1 * w, 0.7 * h));
+
+            c.BeginFigure(new Point(0.1 * w, -0.1 * h), false);
+            c.CubicBezierTo(new Point(0.4 * w, 0.4 * h), new Point(0.8 * w, -0.05 * h), new Point(1.05 * w, 0.15 * h));
+
+            c.BeginFigure(new Point(-0.05 * w, 0.4 * h), false);
+            c.CubicBezierTo(new Point(0.2 * w, 0.9 * h), new Point(0.75 * w, 0.3 * h),  new Point(1.1 * w, 0.9 * h));
+
+            c.BeginFigure(new Point(0.2 * w, 1.1 * h), false);
+            c.CubicBezierTo(new Point(0.5 * w, 0.3 * h), new Point(0.75 * w, 0.7 * h),  new Point(0.95 * w, -0.1 * h));
+        }
+        ctx.DrawGeometry(null, pen, geo);
+    }
+}
+
+// Stub — no longer used as a standalone window.
+public class SplashWindow : Avalonia.Controls.Window
+{
+    public SplashWindow() { }
 }

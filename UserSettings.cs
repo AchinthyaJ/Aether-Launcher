@@ -303,6 +303,13 @@ internal sealed class UserSettings
     public bool IsFirstRun { get; set; } = true;
     public string AfterLaunchBehavior { get; set; } = "close"; // "close" | "minimize" | "background"
 
+    // Custom Cursor Settings
+    public string CustomCursorStyle { get; set; } = "Skyrim Set";
+    public string CustomCursorPath { get; set; } = string.Empty;
+    public int CustomCursorHotspotX { get; set; } = 0;
+    public int CustomCursorHotspotY { get; set; } = 0;
+    public int CursorScale { get; set; } = 32;
+
     /// <summary>
     /// Migrates legacy ClientLayout semicolon-tokens into the new Style object.
     /// Called once on startup; clears ClientLayout after migration.

@@ -287,218 +287,216 @@ internal static class DialogService
 
     public static async Task<bool> ShowMicrosoftAuthDialogAsync(Window owner, string userCode, string verificationUri, CancellationTokenSource cts)
     {
-        var accentColor = Color.Parse("#3ED6B4");
-        var secondaryColor = Color.Parse("#3E56D6");
-        var cancelColor = Color.Parse("#FF5757");
+        var bg          = Color.Parse("#0D0F14");
+        var surface     = Color.FromArgb(20, 255, 255, 255);
+        var border      = Color.FromArgb(28, 255, 255, 255);
+        var textPrimary = Color.Parse("#E8EDF5");
+        var textMuted   = Color.Parse("#6C7A9C");
+        var accent      = Color.Parse("#3B82F6"); // calm blue, not neon
 
-        var okButton = new Button
+        // ── Code block ─────────────────────────────────────────────────────
+        var codeBlock = new Border
         {
-            Content = "Cancel Login",
-            MinWidth = 120,
+            Background       = new SolidColorBrush(surface),
+            BorderBrush      = new SolidColorBrush(border),
+            BorderThickness  = new Thickness(1),
+            CornerRadius     = new CornerRadius(10),
+            Padding          = new Thickness(28, 14),
             HorizontalAlignment = HorizontalAlignment.Center,
-            Background = new SolidColorBrush(cancelColor, 0.2),
-            BorderBrush = new SolidColorBrush(cancelColor),
-            BorderThickness = new Thickness(1),
-            Foreground = Brushes.White,
-            Padding = new Thickness(16, 8),
-            CornerRadius = new CornerRadius(8),
+            Cursor           = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+            Child = new TextBlock
+            {
+                Text            = userCode,
+                FontSize        = 32,
+                FontWeight      = FontWeight.Bold,
+                Foreground      = new SolidColorBrush(textPrimary),
+                LetterSpacing   = 6,
+                HorizontalAlignment = HorizontalAlignment.Center
+            },
             Transitions = new Transitions
             {
-                new BrushTransition { Property = Button.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(200) }
-            }
-        };
-        okButton.PointerEntered += (_, _) => okButton.Background = new SolidColorBrush(cancelColor);
-        okButton.PointerExited += (_, _) => okButton.Background = new SolidColorBrush(cancelColor, 0.2);
-
-        var copyButton = new Button
-        {
-            Content = "📋 Copy Code",
-            MinWidth = 120,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Background = new SolidColorBrush(secondaryColor),
-            Foreground = Brushes.White,
-            Padding = new Thickness(16, 8),
-            CornerRadius = new CornerRadius(8),
-            Transitions = new Transitions
-            {
-                new TransformOperationsTransition { Property = Button.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(200) }
+                new BrushTransition { Property = Border.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(150) }
             }
         };
 
-        var copyWrapper = new Border
+        var copyHint = new TextBlock
         {
-            BoxShadow = new BoxShadows(new BoxShadow { Blur = 10, Color = Color.FromArgb(40, 0, 0, 0) }),
-            CornerRadius = new CornerRadius(8),
-            Child = copyButton
-        };
-
-        var browserButton = new Button
-        {
-            Content = "🌐 Open Browser",
-            MinWidth = 120,
+            Text       = "Click code to copy",
+            FontSize   = 10,
+            Foreground = new SolidColorBrush(textMuted),
             HorizontalAlignment = HorizontalAlignment.Center,
-            Background = Brushes.Transparent,
-            BorderBrush = new SolidColorBrush(accentColor),
-            BorderThickness = new Thickness(1),
-            Foreground = new SolidColorBrush(accentColor),
-            Padding = new Thickness(16, 8),
-            CornerRadius = new CornerRadius(8),
-            Transitions = new Transitions
-            {
-                new BrushTransition { Property = Button.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(200) }
-            }
-        };
-        browserButton.PointerEntered += (_, _) => browserButton.Background = new SolidColorBrush(accentColor, 0.1);
-        browserButton.PointerExited += (_, _) => browserButton.Background = Brushes.Transparent;
-
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Spacing = 16,
-            Children = { copyWrapper, browserButton, okButton }
+            Margin     = new Thickness(0, 4, 0, 0)
         };
 
+        // ── Progress bar ───────────────────────────────────────────────────
         var progressBar = new ProgressBar
         {
-            IsIndeterminate = true,
-            Height = 4,
-            Foreground = new SolidColorBrush(accentColor),
-            Background = new SolidColorBrush(Colors.White, 0.05),
-            CornerRadius = new CornerRadius(2),
+            IsIndeterminate     = true,
+            Height              = 2,
+            Foreground          = new SolidColorBrush(accent),
+            Background          = new SolidColorBrush(Color.FromArgb(15, 255, 255, 255)),
+            CornerRadius        = new CornerRadius(1),
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            MaxWidth = 300,
-            Margin = new Thickness(0, 8)
+            Margin              = new Thickness(0, 0, 0, 6)
         };
 
+        // ── Buttons ────────────────────────────────────────────────────────
+        var openBrowserBtn = new Button
+        {
+            Content    = "Open Browser",
+            Padding    = new Thickness(20, 9),
+            CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(accent),
+            Foreground = Brushes.White,
+            FontWeight = FontWeight.SemiBold,
+            FontSize   = 13,
+            BorderThickness = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center
+        };
+
+        var cancelBtn = new Button
+        {
+            Content    = "Cancel",
+            Padding    = new Thickness(20, 9),
+            CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(Color.FromArgb(18, 255, 255, 255)),
+            Foreground = new SolidColorBrush(textMuted),
+            FontWeight = FontWeight.Medium,
+            FontSize   = 13,
+            BorderThickness = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Transitions = new Transitions
+            {
+                new BrushTransition { Property = Button.ForegroundProperty, Duration = TimeSpan.FromMilliseconds(150) }
+            }
+        };
+        cancelBtn.PointerEntered += (_, _) => cancelBtn.Foreground = new SolidColorBrush(textPrimary);
+        cancelBtn.PointerExited  += (_, _) => cancelBtn.Foreground = new SolidColorBrush(textMuted);
+
+        // ── Dialog window ─────────────────────────────────────────────────
         var dialog = new Window
         {
-            Title = "Microsoft Sign-In",
-            Width = 520,
-            Height = 360,
-            CanResize = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            SystemDecorations = SystemDecorations.Full,
+            Title                          = "Sign in with Microsoft",
+            Width                          = 400,
+            Height                         = 380,
+            CanResize                      = false,
+            WindowStartupLocation          = WindowStartupLocation.CenterOwner,
+            SystemDecorations              = SystemDecorations.Full,
             ExtendClientAreaToDecorationsHint = true,
             ExtendClientAreaTitleBarHeightHint = -1,
-            Background = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Color.Parse("#0F111A"), 0),
-                    new GradientStop(Color.Parse("#090C12"), 1)
-                }
-            },
+            Background = new SolidColorBrush(bg),
             Content = new Border
             {
-                Padding = new Thickness(40),
-                Child = new StackPanel
+                Padding = new Thickness(32, 28, 32, 28),
+                Child   = new StackPanel
                 {
-                    Spacing = 24,
+                    Spacing = 20,
                     Children =
                     {
+                        // Header
                         new StackPanel
                         {
-                            Spacing = 4,
+                            Spacing = 6,
                             Children =
                             {
                                 new TextBlock
                                 {
-                                    Text = "Microsoft Authentication",
-                                    FontSize = 26,
+                                    Text       = "Sign in with Microsoft",
+                                    FontSize   = 18,
                                     FontWeight = FontWeight.Bold,
-                                    Foreground = Brushes.White,
+                                    Foreground = new SolidColorBrush(textPrimary),
                                     HorizontalAlignment = HorizontalAlignment.Center
                                 },
                                 new TextBlock
                                 {
-                                    Text = "SECURE LOGIN GATEWAY",
-                                    FontSize = 10,
-                                    FontWeight = FontWeight.Light,
-                                    LetterSpacing = 2,
-                                    Foreground = new SolidColorBrush(accentColor, 0.8),
+                                    Text       = $"Go to {verificationUri.Replace("https://", "")} and enter:",
+                                    FontSize   = 12,
+                                    Foreground = new SolidColorBrush(textMuted),
                                     HorizontalAlignment = HorizontalAlignment.Center
                                 }
                             }
                         },
-                        new TextBlock
-                        {
-                            Text = "Please enter the code below on the Microsoft website to continue:",
-                            FontSize = 14,
-                            LineHeight = 20,
-                            Foreground = new SolidColorBrush(Color.Parse("#8E96A3")),
-                            HorizontalAlignment = HorizontalAlignment.Center,
-                            TextAlignment = TextAlignment.Center,
-                            TextWrapping = TextWrapping.Wrap
-                        },
-                        new Border
-                        {
-                            Background = new SolidColorBrush(Colors.White, 0.03),
-                            BorderBrush = new SolidColorBrush(Colors.White, 0.1),
-                            BorderThickness = new Thickness(1),
-                            Padding = new Thickness(24, 12),
-                            CornerRadius = new CornerRadius(16),
-                            HorizontalAlignment = HorizontalAlignment.Center,
-                            BoxShadow = new BoxShadows(new BoxShadow { Blur = 30, Color = Color.FromArgb(20, 0, 0, 0), OffsetX = 0, OffsetY = 10 }),
-                            Child = new TextBlock
-                            {
-                                Text = userCode,
-                                FontSize = 40,
-                                FontWeight = FontWeight.Black,
-                                Foreground = new SolidColorBrush(accentColor),
-                                LetterSpacing = 6
-                            }
-                        },
+
+                        // Code + click-to-copy hint
                         new StackPanel
                         {
-                            Spacing = 8,
+                            Spacing  = 0,
+                            Children = { codeBlock, copyHint }
+                        },
+
+                        // Waiting indicator
+                        new StackPanel
+                        {
+                            Spacing = 6,
                             Children =
                             {
                                 progressBar,
                                 new TextBlock
                                 {
-                                    Text = "Waiting for authorization...",
-                                    FontSize = 12,
-                                    Foreground = new SolidColorBrush(Colors.White, 0.4),
+                                    Text       = "Waiting for you to sign in…",
+                                    FontSize   = 11,
+                                    Foreground = new SolidColorBrush(textMuted),
                                     HorizontalAlignment = HorizontalAlignment.Center
                                 }
                             }
                         },
-                        buttons
+
+                        // Action buttons
+                        new Grid
+                        {
+                            ColumnDefinitions = new ColumnDefinitions("*,12,*"),
+                            Children =
+                            {
+                                openBrowserBtn.With(column: 0),
+                                cancelBtn.With(column: 2)
+                            }
+                        }
                     }
                 }
             }
         };
 
+        // ── Interactions ──────────────────────────────────────────────────
         bool cancelled = false;
-        okButton.Click += (_, _) => { cancelled = true; try { cts.Cancel(); } catch { } dialog.Close(); };
-        
-        copyButton.Click += async (_, _) => 
+
+        // Click the code block to copy it
+        codeBlock.PointerEntered += (_, _) => codeBlock.Background = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
+        codeBlock.PointerExited  += (_, _) => codeBlock.Background = new SolidColorBrush(surface);
+        codeBlock.PointerPressed += async (_, _) =>
         {
             var topLevel = TopLevel.GetTopLevel(dialog);
-            if (topLevel?.Clipboard != null) 
+            if (topLevel?.Clipboard != null)
             {
                 await topLevel.Clipboard.SetTextAsync(userCode);
-                copyButton.Content = "✅ Copied!";
-                await Task.Delay(1000);
-                copyButton.Content = "📋 Copy Code";
+                copyHint.Text = "✓ Copied to clipboard";
+                copyHint.Foreground = new SolidColorBrush(accent);
+                await Task.Delay(1800);
+                copyHint.Text = "Click code to copy";
+                copyHint.Foreground = new SolidColorBrush(textMuted);
             }
         };
-        
-        browserButton.Click += (_, _) => 
+
+        openBrowserBtn.Click += (_, _) =>
         {
             try { Process.Start(new ProcessStartInfo { FileName = verificationUri, UseShellExecute = true }); } catch { }
         };
 
-        dialog.Closed += (_, _) => 
-        { 
-            if (!cancelled) 
+        cancelBtn.Click += (_, _) =>
+        {
+            cancelled = true;
+            try { cts.Cancel(); } catch { }
+            dialog.Close();
+        };
+
+        dialog.Closed += (_, _) =>
+        {
+            if (!cancelled)
             {
-                try { cts.Cancel(); } 
+                try { cts.Cancel(); }
                 catch (ObjectDisposedException) { }
-            } 
+            }
         };
 
         await dialog.ShowDialog(owner);
